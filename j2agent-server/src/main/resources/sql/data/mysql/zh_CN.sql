@@ -1,6 +1,6 @@
 INSERT INTO j2agent.user (id, username, password_hash, create_time, role)
 VALUES ('AZ5EsB1JcMqXv6z1FcfEUw', 'aiadmin',
-        '35339f8c3a2d91f4ea67acdce7078562cf4f6c385a0782c82830a1993cd7fd53',
+        '2ce7958ba2ae2cea0f66d17bcf3e0ef02dd4db2747c8dc470010e355491fd9df',
         null, 1);
 
 INSERT INTO j2agent.api_key_info (api_key, api_key_owner, create_time, expire_time)
