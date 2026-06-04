@@ -2,7 +2,7 @@
 
 [![GitHub](https://img.shields.io/badge/GitHub-J2Agent-blue?logo=github)](https://github.com/jerryt92/j2agent)
 
-J2Agent 是一个基于 Java Spring Boot 的智能体平台，在 RAG（检索增强生成）、MCP 工具接入与 Spring AI Alibaba Agent 运行时之上，为 Java 生态提供可扩展的多智能体对话、知识检索与插件化业务能力。平台支持接入 Ollama、OpenAI 等主流大语言模型接口，并集成 Milvus 向量库、MySQL 与 Redis，提供高效的向量检索与会话记忆能力。
+J2Agent 是一个基于 Java Spring AI 的 Agent 运行平台。基于 Spring AI 与 Spring AI Alibaba，提供 Agent 推理执行、多智能体路由、RAG 检索增强、MCP / Skills 工具接入与可插拔业务 Agent 扩展，并集成 MySQL、Redis、Milvus 等基础设施。
 
 ## 贡献者
 
@@ -213,41 +213,19 @@ graph TD
 
 ## 用途
 
-目前为止开源的智能体 / RAG 平台中，很多由 Python 实现。作为 Java 开发者，希望 J2Agent 更适合 Java 技术栈，提供 Agent 运行时、RAG、MCP 与可插拔业务智能体的一体化集成。
+开源 Agent 平台多以 Python 实现。J2Agent 面向 Java 开发者，在 Spring AI 生态内提供可运行的 Agent 底座，便于将 RAG、MCP、Skills 与业务智能体集成到现有 Java 项目中。
 
 ## 特性
 
-- **多模型支持**：兼容 Ollama 和 OpenAI 风格接口，灵活切换不同的大语言模型。
-- **向量数据库集成**：支持 Milvus 向量数据库，满足不同场景下的性能需求。
-- **Agent 运行时**：基于 Spring AI Alibaba `ReactAgent`，支持 `AiAgent` 抽象与 `AgentRouter` 多智能体路由。
-- **Function Calling**：支持函数调用，让 LLM 能够调用其他系统的 API。
-- **MCP 支持**：支持 MCP（模型上下文协议），实现模型工具调用的标准化。
-- MCP Client 与 LLM 交互使用 Function Calling 技术，而不是 Prompt，节约 Token 消耗。
-- **Skills 渐进式披露**：通过 `read_skill` 与 `SkillRegistry` 按需加载技能文档。
-- **AgentUi 事件流**：WebSocket 下发 `AgentUiEventEnvelope`，支持工具调用与状态机可视化。
-- **Java 生态优化**：专为 Java 开发者设计，简化智能体技术在 Java 项目中的集成与应用。
-- **JDK 21**：J2Agent 基于 JDK 21 开发，可使用虚拟线程，提升并发性能。
-- **知识维护**：提供知识库管理功能，支持知识库知识的增加、修改、删除和命中测试等操作。
-
-## 界面
-
-界面风格灵动，采用毛玻璃风格，支持暗色模式。
-
-![ui1](assets/ui/1.png)
-
-![ui2](assets/ui/2.png)
-
-![ui3](assets/ui/3.png)
-
-## 知识维护
-
-![ui4](assets/ui/4.png)
-
-![ui5](assets/ui/5.png)
-
-![ui6](assets/ui/6.png)
-
-![ui7](assets/ui/7.png)
+- **Agent 运行时**：基于 Spring AI Alibaba `ReactAgent`；`AiAgent` 抽象封装模型、工具、Hooks 与单轮/流式编排（`ChatService`）。
+- **多智能体路由**：`AgentRouter` 按 `agent-id` 分发；插件中 `extends AiAgent` 的业务 Agent 经 Spring 注入自动注册。
+- **Spring AI 模型与工具**：`ChatClient`、Advisor 链、Function / Tool Calling；兼容 Ollama、OpenAI 等接口。
+- **RAG 知识检索**：Milvus + `RetrievalAugmentationAdvisor`；Collection 级 `AbstractCollectionKbRetriever`，支持知识同步与命中测试。
+- **MCP 工具接入**：`McpService` 外连 MCP 服务；Client 与 LLM 以 Function Calling 交互，降低 Prompt Token 消耗。
+- **Skills 渐进式披露**：`SkillRegistry` + `read_skill` 按需加载 `SKILL.md`；加载过程可审计并推送 AgentUi 事件。
+- **对话记忆**：可扩展 `ChatMemory` 策略；`RedissonCachingChatMemoryRepository`（Redis 缓存 + JDBC 落库）。
+- **AgentUi 事件流**：WebSocket 推送 `AgentUiEventEnvelope`；`AgentTurnStateMachine`、工具调用与 Skill 加载可视化。
+- **JDK 21**：虚拟线程提升并发；Docker Compose 一键部署 MySQL / Redis / Milvus。
 
 ## 待完善
 
@@ -257,7 +235,7 @@ graph TD
 
 ## 默认账号密码
 
-admin  
+aiadmin  
 j2agent@2025
 
 ## 前端

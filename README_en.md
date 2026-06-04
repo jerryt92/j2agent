@@ -2,7 +2,7 @@
 
 [![GitHub](https://img.shields.io/badge/GitHub-J2Agent-blue?logo=github)](https://github.com/jerryt92/j2agent)
 
-J2Agent is an agent platform based on Java Spring Boot. Built on RAG (Retrieval-Augmented Generation), MCP tool integration, and the Spring AI Alibaba Agent runtime, it provides extensible multi-agent chat, knowledge retrieval, and pluggable business agents for the Java ecosystem. The platform supports mainstream LLM APIs such as Ollama and OpenAI, and integrates Milvus, MySQL, and Redis for vector search and conversational memory.
+J2Agent is an Agent runtime platform built on Java Spring AI. Powered by Spring AI and Spring AI Alibaba, it provides agent execution, multi-agent routing, RAG retrieval augmentation, MCP / Skills tool integration, pluggable business agents, and infrastructure integration with MySQL, Redis, and Milvus.
 
 ## Contributors
 
@@ -213,41 +213,19 @@ graph TD
 
 ## Purpose
 
-Many open-source agent / RAG platforms are implemented in Python. As a Java developer, J2Agent aims to provide Agent runtime, RAG, MCP, and pluggable business agents in one Java-native stack.
+Most open-source Agent platforms are Python-based. J2Agent targets Java developers with a runnable Agent foundation on Spring AI, making it straightforward to integrate RAG, MCP, Skills, and business agents into existing Java projects.
 
 ## Features
 
-- **Multi-model support**: Compatible with Ollama and OpenAI-style interfaces.
-- **Vector database integration**: Supports Milvus for various performance scenarios.
-- **Agent runtime**: Spring AI Alibaba `ReactAgent` with `AiAgent` abstraction and `AgentRouter` multi-agent routing.
-- **Function Calling**: Enables LLMs to call APIs from other systems.
-- **MCP support**: Model Context Protocol for standardized tool invocation.
-- MCP Client interacts with LLM via Function Calling instead of prompts to save tokens.
-- **Skills progressive disclosure**: Load skill docs on demand via `read_skill` and `SkillRegistry`.
-- **AgentUi event stream**: WebSocket `AgentUiEventEnvelope` for tool calls and state machine visualization.
-- **Java ecosystem optimization**: Designed for Java developers integrating agent capabilities.
-- **JDK 21**: Virtual threads for improved concurrency.
-- **Knowledge management**: Knowledge base CRUD and hit testing.
-
-## Interface
-
-Dynamic frosted-glass UI with dark mode support.
-
-![ui1](assets/ui/1.png)
-
-![ui2](assets/ui/2.png)
-
-![ui3](assets/ui/3.png)
-
-## Knowledge Management
-
-![ui4](assets/ui/4.png)
-
-![ui5](assets/ui/5.png)
-
-![ui6](assets/ui/6.png)
-
-![ui7](assets/ui/7.png)
+- **Agent runtime**: Spring AI Alibaba `ReactAgent`; `AiAgent` abstraction for models, tools, hooks, and single-turn/stream orchestration (`ChatService`).
+- **Multi-agent routing**: `AgentRouter` dispatches by `agent-id`; business agents (`extends AiAgent`) auto-register via Spring injection in plugins.
+- **Spring AI models & tools**: `ChatClient`, Advisor chain, Function / Tool Calling; compatible with Ollama, OpenAI-style APIs, and more.
+- **RAG retrieval**: Milvus + `RetrievalAugmentationAdvisor`; per-collection `AbstractCollectionKbRetriever` with sync and hit testing.
+- **MCP integration**: `McpService` connects external MCP servers; clients interact with LLMs via Function Calling to reduce prompt token usage.
+- **Skills progressive disclosure**: `SkillRegistry` + `read_skill` loads `SKILL.md` on demand; load events are auditable and pushed to AgentUi.
+- **Conversation memory**: Extensible `ChatMemory`; `RedissonCachingChatMemoryRepository` (Redis cache + JDBC persistence).
+- **AgentUi event stream**: WebSocket `AgentUiEventEnvelope`; `AgentTurnStateMachine`, tool calls, and skill loading visualization.
+- **JDK 21**: Virtual threads for concurrency; Docker Compose for MySQL / Redis / Milvus.
 
 ## To Be Improved
 
@@ -257,7 +235,7 @@ Dynamic frosted-glass UI with dark mode support.
 
 ## Default Account Credentials
 
-admin  
+aiadmin  
 j2agent@2025
 
 ## Frontend
