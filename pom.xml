@@ -2,15 +2,15 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <groupId>io.github.jerryt92.jrag</groupId>
-    <artifactId>jrag</artifactId>
+    <groupId>io.github.jerryt92.j2agent</groupId>
+    <artifactId>j2agent</artifactId>
     <packaging>pom</packaging>
     <version>1.0.0-SNAPSHOT</version>
     <modules>
-        <module>jrag-client</module>
-        <module>jrag-model</module>
-        <module>jrag-server</module>
-        <module>jrag-starter</module>
+        <module>j2agent-client</module>
+        <module>j2agent-model</module>
+        <module>j2agent-server</module>
+        <module>j2agent-starter</module>
     </modules>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -18,7 +18,8 @@
         <maven.compiler.target>21</maven.compiler.target>
         <maven.build.timestamp.format>yyyyMMddHHmmss</maven.build.timestamp.format>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <springframework.ai.version>1.1.2</springframework.ai.version>
+        <springframework.ai.version>1.1.5</springframework.ai.version>
+        <spring.ai.alibaba.version>1.1.2.2</spring.ai.alibaba.version>
         <jackson.version>2.18.3</jackson.version>
     </properties>
     <dependencyManagement>
@@ -39,28 +40,17 @@
             </dependency>
             <dependency>
                 <groupId>org.springframework.ai</groupId>
-                <artifactId>spring-ai-mcp</artifactId>
+                <artifactId>spring-ai-bom</artifactId>
                 <version>${springframework.ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
             <dependency>
-                <groupId>org.springframework.ai</groupId>
-                <artifactId>spring-ai-mcp-annotations</artifactId>
-                <version>${springframework.ai.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.springframework.ai</groupId>
-                <artifactId>spring-ai-autoconfigure-mcp-client-common</artifactId>
-                <version>${springframework.ai.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.springframework.ai</groupId>
-                <artifactId>spring-ai-openai</artifactId>
-                <version>${springframework.ai.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.springframework.ai</groupId>
-                <artifactId>spring-ai-ollama</artifactId>
-                <version>${springframework.ai.version}</version>
+                <groupId>com.alibaba.cloud.ai</groupId>
+                <artifactId>spring-ai-alibaba-bom</artifactId>
+                <version>${spring.ai.alibaba.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
             <dependency>
                 <groupId>mysql</groupId>
@@ -180,11 +170,15 @@
                 <artifactId>jsoup</artifactId>
                 <version>1.18.1</version>
             </dependency>
-            <!-- Apache Commons Compress for tar, gzip -->
             <dependency>
-                <groupId>org.apache.commons</groupId>
-                <artifactId>commons-compress</artifactId>
-                <version>1.27.1</version>
+                <groupId>com.fasterxml.uuid</groupId>
+                <artifactId>java-uuid-generator</artifactId>
+                <version>5.2.0</version>
+            </dependency>
+            <dependency>
+                <groupId>org.redisson</groupId>
+                <artifactId>redisson</artifactId>
+                <version>3.29.0</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

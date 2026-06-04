@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:tx="http://www.springframework.org/schema/tx"
+       xmlns:mybatis="http://mybatis.org/schema/mybatis-spring"
+       xmlns:aop="http://www.springframework.org/schema/aop"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+        http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx.xsd
+        http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+        http://mybatis.org/schema/mybatis-spring http://mybatis.org/schema/mybatis-spring.xsd
+        http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd">
+    <!--  bean扫描  -->
+    <context:component-scan base-package="io.github.jerryt92.j2agent"/>
+    <!--  mapper扫描  -->
+    <mybatis:scan base-package="io.github.jerryt92.j2agent.mapper,io.github.jerryt92.j2agent.dao" factory-ref="sqlSessionFactory"/>
+    <!--  @Transaction注解  -->
+    <tx:annotation-driven/>
+
+<!--    &lt;!&ndash;  数据源  &ndash;&gt;-->
+<!--    <bean name="dataSource" class="com.alibaba.druid.pool.DruidDataSource">-->
+<!--        <property name="url"-->
+<!--                  value="jdbc:mysql://${inc.spring.datasource.endpoint}/j2agent?characterEncoding=UTF-8&amp;useUnicode=true&amp;useSSL=false&amp;tinyInt1isBit=false&amp;autoReconnect=true&amp;autoReconnectForPools=true&amp;useLocalSessionState=true&amp;allowMultiQueries=true&amp;allowPublicKeyRetrieval=true&amp;serverTimezone=UTC"/>-->
+<!--        <property name="driverClassName" value="com.mysql.cj.jdbc.Driver"/>-->
+<!--        <property name="username" value="${spring.datasource.username}"/>-->
+<!--        <property name="password" value="${spring.datasource.password}"/>-->
+<!--    </bean>-->
+<!--    &lt;!&ndash;  mybatis  &ndash;&gt;-->
+<!--    <bean name="sqlSessionFactory" class="org.mybatis.spring.SqlSessionFactoryBean">-->
+<!--        <property name="dataSource" ref="dataSource"/>-->
+<!--        <property name="mapperLocations">-->
+<!--            <list>-->
+<!--                <value>classpath:/mapper/ai/*.xml</value>-->
+<!--            </list>-->
+<!--        </property>-->
+<!--        <property name="defaultEnumTypeHandler" value="org.apache.ibatis.type.EnumOrdinalTypeHandler"/>-->
+<!--        <property name="configLocation" value="classpath:/mapper/mybatis-config.xml"/>-->
+<!--    </bean>-->
+<!--    &lt;!&ndash;  数据库事务  &ndash;&gt;-->
+<!--    <bean name="transactionManager" class="org.springframework.jdbc.support.JdbcTransactionManager">-->
+<!--        <constructor-arg name="dataSource" ref="dataSource"/>-->
+<!--    </bean>-->
+</beans>

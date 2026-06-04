@@ -1,0 +1,945 @@
+openapi: 3.0.3
+info:
+  title: ai operate - OpenAPI 3.0
+  description: |-
+    This is ai operate OpenAPI.
+  version: 1.0.1
+tags:
+  - name: HealthCheck
+  - name: RefreshConfig
+  - name: Login
+  - name: Session
+  - name: Embedding
+  - name: Knowledge
+  - name: QaTemplate
+  - name: Chat
+  - name: AgentPlugin
+  - name: Property
+  - name: ProviderConfig
+  - name: MCP
+  - name: User
+  - name: Register
+  - name: ResetPassword
+paths:
+  # HealthCheck API
+  /v1/api/j2agent/health-check:
+    get:
+      tags:
+        - HealthCheck
+      summary: do health check.
+      description: do health check.
+      operationId: checkHealth
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Bad Request
+        '404':
+          description: Not Found
+        '405':
+          description: Method Not Allowed
+        '500':
+          description: Internal Server Error
+  /refresh-config:
+    get:
+      tags:
+        - RefreshConfig
+      summary: refreshConfig
+      description: refreshConfig
+      operationId: refreshConfig
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Bad Request
+        '404':
+          description: Not Found
+        '405':
+          description: Method Not Allowed
+        '500':
+          description: Internal Server Error
+  /v1/auth/j2agent/login:
+    post:
+      tags: [ Login ]
+      summary: do login.
+      description: do login.
+      operationId: login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/LoginRequestDto'
+      responses:
+        '200':
+          description: OK
+  /v1/auth/j2agent/logout:
+    get:
+      tags: [ Login ]
+      summary: do logout.
+      description: do logout.
+      operationId: logout
+      responses:
+        '200':
+          description: OK
+  /v1/auth/j2agent/register/enabled:
+    get:
+      tags: [ Register ]
+      summary: 查询邮箱注册是否开启
+      description: 查询邮箱注册是否开启
+      operationId: getRegisterEnabled
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/RegisterEnabledDto'
+  /v1/auth/j2agent/register/send-code:
+    post:
+      tags: [ Register ]
+      summary: 发送邮箱注册验证码
+      description: 发送邮箱注册验证码
+      operationId: sendRegisterCode
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/RegisterSendCodeRequestDto'
+      responses:
+        '200':
+          description: OK
+  /v1/auth/j2agent/register:
+    post:
+      tags: [ Register ]
+      summary: 邮箱自助注册
+      description: 邮箱自助注册
+      operationId: registerByEmail
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/RegisterRequestDto'
+      responses:
+        '200':
+          description: OK
+  /v1/auth/j2agent/reset-password/send-code:
+    post:
+      tags: [ ResetPassword ]
+      summary: 发送邮箱找回密码验证码
+      description: 发送邮箱找回密码验证码
+      operationId: sendResetPasswordCode
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/ResetPasswordSendCodeRequestDto'
+      responses:
+        '200':
+          description: OK
+  /v1/auth/j2agent/reset-password:
+    post:
+      tags: [ ResetPassword ]
+      summary: 邮箱找回密码
+      description: 邮箱找回密码
+      operationId: resetPasswordByEmail
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/ResetPasswordRequestDto'
+      responses:
+        '200':
+          description: OK
+  /v1/rest/j2agent/session:
+    get:
+      tags: [ Session ]
+      summary: 获取当前会话信息
+      description: 获取当前会话信息
+      operationId: getSessionInfo
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/SessionInfoDto'
+  /v1/rest/j2agent/users:
+    get:
+      tags: [ User ]
+      summary: 获取用户列表
+      description: 获取用户列表
+      operationId: getUsers
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/UserListDto'
+    post:
+      tags: [ User ]
+      summary: 创建用户
+      description: 创建用户
+      operationId: createUser
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/UserCreateRequestDto'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/UserDto'
+    delete:
+      tags: [ User ]
+      summary: 删除用户
+      description: 删除用户
+      operationId: deleteUser
+      parameters:
+        - name: user-id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /v1/rest/j2agent/users/role:
+    put:
+      tags: [ User ]
+      summary: 修改用户角色
+      description: 修改用户角色
+      operationId: updateUserRole
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/UserRoleUpdateRequestDto'
+      responses:
+        '200':
+          description: OK
+  /v1/rest/j2agent/users/password:
+    put:
+      tags: [ User ]
+      summary: 修改用户密码
+      description: 修改用户密码
+      operationId: updateUserPassword
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/UserPasswordUpdateRequestDto'
+      responses:
+        '200':
+          description: OK
+  /v1/auth/j2agent/captcha/slide:
+    get:
+      operationId: getSlideCaptcha
+      tags: [ Login ]
+      summary: 滑动验证码
+      responses:
+        200:
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/SlideCaptchaResp'
+  /v1/auth/j2agent/captcha/slide/validate:
+    post:
+      operationId: verifySlideCaptcha
+      tags: [ Login ]
+      summary: 验证滑动验证码并得到经典验证码的值
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/ValidateCaptchaDto'
+      responses:
+        200:
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: boolean
+                    description: 验证结果
+                  code:
+                    type: string
+                    description: 验证码
+  /v1/auth/j2agent/captcha/pow:
+    get:
+      operationId: getPowCaptcha
+      tags: [ Login ]
+      summary: 纯 PoW 验证挑战
+      responses:
+        200:
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/PowCaptchaResp'
+  /v1/auth/j2agent/captcha/pow/validate:
+    post:
+      operationId: verifyPowCaptcha
+      tags: [ Login ]
+      summary: 验证纯 PoW 并得到经典验证码的值
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/ValidatePowCaptchaDto'
+      responses:
+        200:
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: boolean
+                    description: 验证结果
+                  code:
+                    type: string
+                    description: 验证码
+  /v1/api/j2agent/embed:
+    post:
+      tags:
+        - Embedding
+      summary: do embedding.
+      description: do embedding.
+      operationId: embed
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/EmbeddingsRequestDto'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/EmbeddingsResponseDto'
+  /v1/rest/j2agent/knowledge:
+    get:
+      tags: [ Knowledge ]
+      summary: 查询知识数据
+      description: 查询知识数据
+      operationId: getKnowledge
+      parameters:
+        - name: offset
+          in: query
+          description: 偏移量
+          required: true
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          description: 获取数量
+          required: true
+          schema:
+            type: integer
+        - name: search
+          in: query
+          description: 搜索文本（嵌入文本值、文本块）
+          schema:
+            type: string
+        - name: collection
+          in: query
+          description: 知识库 collection
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/KnowledgeGetListDto'
+    put:
+      tags: [ Knowledge ]
+      summary: 覆盖知识数据
+      description: 覆盖知识数据
+      operationId: putKnowledge
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: './openapi-model.yaml#/components/schemas/KnowledgeAddDto'
+      responses:
+        "200":
+          description: ok
+  /v1/rest/j2agent/knowledge/collections:
+    get:
+      tags: [ Knowledge ]
+      summary: 查询知识库 collection
+      description: 查询知识库 collection
+      operationId: getKnowledgeCollections
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/KnowledgeCollectionListDto'
+  /v1/rest/j2agent/knowledge/sync:
+    post:
+      tags: [ Knowledge ]
+      summary: 手动触发知识库目录增量同步
+      description: 扫描知识库根目录下 Markdown，按哈希差异增量写入 Milvus；fullRebuild=true 时先清空 Milvus 全部 collection 与哈希记录表再重建
+      operationId: syncKnowledge
+      parameters:
+        - name: fullRebuild
+          in: query
+          description: 是否完全重建（清空 Milvus 全部 collection 与 knowledge_source_file_hash 后重建）
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: 同步成功
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/KnowledgeSyncResult'
+        "400":
+          description: 同步失败
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/KnowledgeSyncResult'
+  /v1/rest/j2agent/knowledge/delete:
+    post:
+      tags: [ Knowledge ]
+      summary: 删除知识数据
+      description: 删除知识数据
+      operationId: deleteKnowledge
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+                description: 文本块ID
+      responses:
+        "200":
+          description: ok
+  /v1/rest/j2agent/knowledge/retrieve:
+    get:
+      tags: [ Knowledge ]
+      summary: 搜索知识
+      description: 搜索知识
+      operationId: retrieveKnowledge
+      parameters:
+        - in: query
+          name: query-text
+          schema:
+            type: string
+            description: 查询文本
+        - in: query
+          name: top-k
+          schema:
+            type: integer
+            description: 搜索数量
+        - in: query
+          name: collection
+          required: true
+          schema:
+            type: string
+            description: 知识库 collection
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/KnowledgeRetrieveResponseDto'
+  /v1/rest/j2agent/knowledge/json-template:
+    post:
+      tags: [ Knowledge ]
+      summary: 通过json模版文件导入知识
+      description: 通过json模版文件导入知识
+      operationId: importKnowledgeByJson
+      requestBody:
+        description: json模版文件
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                jsonTemplate:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Successful operation
+    get:
+      tags: [ Knowledge ]
+      summary: 获取新增知识json模板
+      description: 获取新增知识json模板
+      operationId: getJsonTemplate
+      responses:
+        '200':
+          description: OK
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+  /v1/rest/j2agent/context/id:
+    get:
+      tags:
+        - Chat
+      summary: get a new context id
+      description: get a new context id
+      operationId: getNewContextId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/ContextIdDto'
+  /v1/rest/j2agent/agents:
+    get:
+      tags:
+        - Chat
+      summary: 列出可用智能体
+      description: 列出当前服务已注册的 LLM 智能体
+      operationId: listAgents
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/AgentInfoList'
+  /v1/rest/j2agent/plugins/agents:
+    get:
+      tags:
+        - AgentPlugin
+      summary: 查询 Agent 插件状态
+      description: 返回目录内 JAR 列表及已加载的插件 agentId
+      operationId: getAgentPlugins
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/AgentPluginStatusDto'
+  /v1/rest/j2agent/agents/reload:
+    post:
+      tags:
+        - AgentPlugin
+      summary: 重新加载 Agent 插件 JAR
+      description: 重新扫描插件目录下的 JAR 并注册 Agent；与内置 agentId 冲突时整次失败
+      operationId: reloadAgents
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/AgentReloadResult'
+        '400':
+          description: 重载失败（如 agentId 冲突）
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/AgentReloadResult'
+  /v1/rest/j2agent/context/list:
+    get:
+      tags:
+        - Chat
+      summary: 获取历史对话列表
+      description: 获取历史对话列表
+      operationId: getHistoryContextList
+      parameters:
+        - name: agent-id
+          in: query
+          description: 仅返回指定智能体的会话行；不传则返回全部
+          required: false
+          schema:
+            type: string
+        - name: offset
+          in: query
+          description: offset
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: limit
+          in: query
+          description: limit
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/HistoryContextList'
+  /v1/rest/j2agent/context:
+    get:
+      tags:
+        - Chat
+      summary: 获取历史对话
+      description: 获取历史对话
+      operationId: getHistoryContext
+      parameters:
+        - name: context-id
+          in: query
+          description: context-id
+          required: true
+          schema:
+            type: string
+        - name: agent-id
+          in: query
+          description: 智能体ID，与 WebSocket 会话一致；空串表示历史默认记忆行
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/ChatContextDto'
+    delete:
+      tags: [ Chat ]
+      summary: 删除历史对话
+      description: 删除历史对话
+      operationId: deleteHistoryContext
+      parameters:
+        - name: context-id
+          in: query
+          description: context-id
+          required: true
+          schema:
+            type: array
+            items:
+              type:
+                string
+        - name: agent-id
+          in: query
+          description: 仅删除该智能体下记忆；不传则删除各 context-id 下当前用户全部智能体行
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description:
+            删除成功
+  /v1/rest/j2agent/context/message/feedback:
+    post:
+      tags: [ Chat ]
+      summary: 添加消息反馈
+      description: 添加消息反馈
+      operationId: addMessageFeedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/MessageFeedbackRequest'
+      responses:
+        '200':
+          description: 添加成功
+  /v1/rest/j2agent/check:
+    get:
+      tags:
+        - Chat
+      summary: 检查服务api是否可用
+      description: 检查服务api是否可用
+      operationId: checkApi
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/CheckApiResponse'
+  /v1/rest/j2agent/qa-template:
+    get:
+      tags: [ QaTemplate ]
+      summary: 获取问题模板
+      description: 获取问题模板
+      operationId: getQaTemplate
+      parameters:
+        - name: agent-id
+          in: query
+          description: 智能体唯一标识
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: 数量
+          required: true
+          schema:
+            default: 6
+            type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/QaTemplateList'
+  /v1/rest/j2agent/property/get:
+    post:
+      tags: [ Property ]
+      summary: 获取属性
+      description: 获取属性
+      operationId: getProperty
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+  /v1/rest/j2agent/property:
+    put:
+      tags: [ Property ]
+      summary: 覆盖属性
+      description: 覆盖属性
+      operationId: putProperty
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: './openapi-model.yaml#/components/schemas/PropertyDto'
+      responses:
+        '200':
+          description: OK
+
+  /v1/rest/j2agent/provider-config:
+    get:
+      tags: [ ProviderConfig ]
+      summary: 列出模型提供商配置
+      description: 按 apiType 列出 LLM 或 Embedding 的全部配置；apiKey 已脱敏。
+      operationId: listProviderConfigs
+      parameters:
+        - name: apiType
+          in: query
+          description: API 类型（llm / embedding）
+          required: true
+          schema:
+            type: string
+            enum: [ llm, embedding ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './openapi-model.yaml#/components/schemas/ProviderConfigDto'
+    post:
+      tags: [ ProviderConfig ]
+      summary: 新建模型提供商配置
+      description: 新建一条 LLM 或 Embedding 配置；可选立即设为当前生效。
+      operationId: createProviderConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/ProviderConfigUpsertDto'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/ProviderConfigDto'
+
+  /v1/rest/j2agent/provider-config/{id}:
+    put:
+      tags: [ ProviderConfig ]
+      summary: 更新模型提供商配置
+      description: 更新指定 id 的配置；apiKey 留空表示沿用原密钥。
+      operationId: updateProviderConfig
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/ProviderConfigUpsertDto'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/ProviderConfigDto'
+    delete:
+      tags: [ ProviderConfig ]
+      summary: 删除模型提供商配置
+      description: 删除指定 id 的配置；当前生效项需先切换才能删除。
+      operationId: deleteProviderConfig
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: OK
+
+  /v1/rest/j2agent/provider-config/{id}/activate:
+    post:
+      tags: [ ProviderConfig ]
+      summary: 设为当前生效
+      description: 将指定 id 设为该 api_type 下当前生效配置，并热更新运行时客户端。
+      operationId: activateProviderConfig
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/ProviderConfigDto'
+
+  /v1/rest/j2agent/mcp/config:
+    get:
+      tags: [ MCP ]
+      summary: 获取 MCP 配置
+      description: 获取 MCP 配置
+      operationId: getMcpConfig
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+    put:
+      tags: [ MCP ]
+      summary: 保存 MCP 配置
+      description: 保存 MCP 配置
+      operationId: updateMcpConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: OK
+
+  /v1/rest/j2agent/mcp/status:
+    get:
+      tags: [ MCP ]
+      summary: 获取 MCP 服务器状态
+      description: 获取 MCP 服务器状态与接口
+      operationId: getMcpStatus
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './openapi-model.yaml#/components/schemas/McpStatusItem'
+
+  /v1/rest/j2agent/agent/config:
+    get:
+      tags: [ AgentGlobalConfig ]
+      summary: 获取智能体全局配置
+      description: 获取智能体全局配置 JSON
+      operationId: getAgentGlobalConfig
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+    put:
+      tags: [ AgentGlobalConfig ]
+      summary: 保存智能体全局配置
+      description: 保存智能体全局配置 JSON
+      operationId: updateAgentGlobalConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: OK
+
+components:
+  schemas:
+    ErrorResponseDto:
+      type: object
+      properties:
+        message:
+          type: string
+    RagInfoDto:
+      $ref: './openapi-model.yaml#/components/schemas/RagInfoDto'
+    TurnStepDto:
+      $ref: './openapi-model.yaml#/components/schemas/TurnStepDto'
+    Message:
+      $ref: './openapi-model.yaml#/components/schemas/MessageDto'
+    ChatRequestDto:
+      $ref: './openapi-model.yaml#/components/schemas/ChatRequestDto'
+    ChatResponseDto:
+      $ref: './openapi-model.yaml#/components/schemas/ChatResponseDto'

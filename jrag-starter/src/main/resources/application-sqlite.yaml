@@ -1,7 +1,0 @@
-spring:
-  datasource:
-    driver-class-name: org.sqlite.JDBC
-    url: jdbc:sqlite:${user.home}/jrag/jrag.sqlite
-mybatis:
-  configLocation: classpath:mapper/mybatis-config.xml
-  mapperLocations: classpath*:mapper/jrag/base/**/*.xml,classpath*:mapper/ai/mysql/**/*.xml

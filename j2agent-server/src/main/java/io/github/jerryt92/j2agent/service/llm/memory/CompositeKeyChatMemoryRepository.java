@@ -1,0 +1,214 @@
+package io.github.jerryt92.j2agent.service.llm.memory;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import io.github.jerryt92.j2agent.mapper.ext.ChatMemoryExtMapper;
+import io.github.jerryt92.j2agent.mapper.mgb.ChatContextItemMapper;
+import io.github.jerryt92.j2agent.mapper.mgb.ChatContextRecordMapper;
+import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemExample;
+import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemWithBLOBs;
+import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecord;
+import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecordExample;
+import org.springframework.ai.chat.memory.ChatMemoryRepository;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
+
+import io.github.jerryt92.j2agent.service.llm.reasoning.SpringAiReasoningMetadataAdapter;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+/**
+ * 复合会话键（userId:contextId:agentId）下的对话记忆 JDBC 持久化实现。
+ */
+@Component("jdbcChatMemoryRepository")
+@Qualifier("jdbcChatMemoryRepository")
+public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
+
+    private final ChatContextRecordMapper chatContextRecordMapper;
+    private final ChatContextItemMapper chatContextItemMapper;
+    private final ChatMemoryExtMapper chatMemoryExtMapper;
+    private final ChatMemoryMessageCodec messageCodec;
+
+    public CompositeKeyChatMemoryRepository(ChatContextRecordMapper chatContextRecordMapper,
+                                            ChatContextItemMapper chatContextItemMapper,
+                                            ChatMemoryExtMapper chatMemoryExtMapper,
+                                            ChatMemoryMessageCodec messageCodec) {
+        this.chatContextRecordMapper = chatContextRecordMapper;
+        this.chatContextItemMapper = chatContextItemMapper;
+        this.chatMemoryExtMapper = chatMemoryExtMapper;
+        this.messageCodec = messageCodec;
+    }
+
+    /**
+     * 返回所有会话ID，统一拼接为 userId:contextId:agentId。
+     */
+    @Override
+    public List<String> findConversationIds() {
+        ChatContextRecordExample example = new ChatContextRecordExample();
+        return chatContextRecordMapper.selectByExample(example).stream()
+                .map(record -> ConversationIdCodec.format(
+                        record.getUserId() == null ? "anonymous" : record.getUserId(),
+                        record.getContextId(),
+                        record.getAgentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : record.getAgentId()))
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 按会话ID读取历史消息，并转换成 Spring AI 消息模型。
+     */
+    @Override
+    public List<Message> findByConversationId(String conversationId) {
+        ConversationIdCodec.Parts parts = ConversationIdCodec.parse(conversationId);
+        ChatContextItemExample example = new ChatContextItemExample();
+        example.createCriteria()
+                .andContextIdEqualTo(parts.contextId())
+                .andAgentIdEqualTo(parts.agentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : parts.agentId())
+                .andChatRoleNotEqualTo(0);
+        example.setOrderByClause("message_index asc");
+        List<ChatContextItemWithBLOBs> items = chatContextItemMapper.selectByExampleWithBLOBs(example);
+        List<Message> messages = new ArrayList<>();
+        for (ChatContextItemWithBLOBs item : items) {
+            Message m = messageCodec.decode(item.getChatRole(), item.getContent(), item.getMetaJson());
+            if (m != null) {
+                messages.add(m);
+            }
+        }
+        return messages;
+    }
+
+    /**
+     * 持久化本批新增消息（delta），按 {@code lastMessageIndex + 1} 连续追加；支持 user、assistant（含 tool_calls）、tool 响应；忽略 system。
+     * <p>
+     * 调用方须只传入本次 {@link org.springframework.ai.chat.memory.ChatMemory#add} 的新消息，
+     * 勿传整段会话列表（旧版按列表下标与 {@code message_index} 对齐的写法已废弃）。
+     */
+    @Override
+    @Transactional(rollbackFor = Throwable.class)
+    public void saveAll(String conversationId, List<Message> messages) {
+        if (CollectionUtils.isEmpty(messages)) {
+            return;
+        }
+        ConversationIdCodec.Parts parts = ConversationIdCodec.parse(conversationId);
+        ensureContextRecord(parts, messages);
+        String agentId = parts.agentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : parts.agentId();
+        Integer lastMessageIndex = chatMemoryExtMapper.selectLastMessageIndexForUpdate(parts.contextId(), agentId);
+        int nextIndex = lastMessageIndex == null ? 0 : lastMessageIndex + 1;
+
+        int insertCount = 0;
+        for (Message message : messages) {
+            if (message instanceof SystemMessage) {
+                continue;
+            }
+            if (message instanceof AssistantMessage am) {
+                if (!am.hasToolCalls() && !StringUtils.hasText(am.getText()) && !hasReasoningMetadata(am)) {
+                    continue;
+                }
+            }
+            ChatMemoryMessageCodec.PersistedRow row;
+            try {
+                row = messageCodec.encode(message);
+            } catch (JsonProcessingException e) {
+                continue;
+            }
+            if (row == null) {
+                continue;
+            }
+            if (chatMemoryExtMapper.existsByContextAgentIndexRoleContent(
+                    parts.contextId(), agentId, nextIndex, row.chatRole(), row.content()) > 0) {
+                nextIndex++;
+                continue;
+            }
+            String messageId = UUID.randomUUID().toString();
+            long now = System.currentTimeMillis();
+            chatMemoryExtMapper.insertChatContextItem(
+                    parts.contextId(),
+                    agentId,
+                    nextIndex,
+                    row.chatRole(),
+                    row.content(),
+                    0,
+                    null,
+                    now,
+                    messageId,
+                    null,
+                    row.metaJson()
+            );
+            nextIndex++;
+            insertCount++;
+        }
+        if (insertCount > 0) {
+            chatMemoryExtMapper.updateRecordCursor(parts.contextId(), agentId, nextIndex - 1, System.currentTimeMillis());
+        }
+    }
+
+    /**
+     * 删除会话对应的上下文记录与消息明细。
+     */
+    @Override
+    @Transactional(rollbackFor = Throwable.class)
+    public void deleteByConversationId(String conversationId) {
+        ConversationIdCodec.Parts parts = ConversationIdCodec.parse(conversationId);
+        String agentId = parts.agentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : parts.agentId();
+        ChatContextItemExample itemExample = new ChatContextItemExample();
+        itemExample.createCriteria()
+                .andContextIdEqualTo(parts.contextId())
+                .andAgentIdEqualTo(agentId);
+        chatContextItemMapper.deleteByExample(itemExample);
+        chatContextRecordMapper.deleteByPrimaryKey(parts.contextId(), agentId);
+    }
+
+    /**
+     * 首次落库时确保主记录存在，避免明细孤儿数据。
+     */
+    private void ensureContextRecord(ConversationIdCodec.Parts parts, List<Message> messages) {
+        String agentId = parts.agentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : parts.agentId();
+        ChatContextRecord existing = chatContextRecordMapper.selectByPrimaryKey(parts.contextId(), agentId);
+        if (existing != null) {
+            return;
+        }
+        ChatContextRecord insertRecord = new ChatContextRecord();
+        insertRecord.setContextId(parts.contextId());
+        insertRecord.setAgentId(agentId);
+        insertRecord.setUserId(parts.userId());
+        insertRecord.setMemoryVersion(1);
+        insertRecord.setLastMessageIndex(-1);
+        insertRecord.setTitle(extractTitle(messages));
+        long now = System.currentTimeMillis();
+        insertRecord.setUpdateTime(now);
+        chatContextRecordMapper.insertSelective(insertRecord);
+    }
+
+    /**
+     * 取首条用户消息作为会话标题，最长 64 字符。
+     */
+    private String extractTitle(List<Message> messages) {
+        for (Message message : messages) {
+            if (message instanceof UserMessage) {
+                String text = message.getText();
+                if (text == null) {
+                    return "New Chat";
+                }
+                return text.length() > 64 ? text.substring(0, 64) : text;
+            }
+        }
+        return "New Chat";
+    }
+
+    private static boolean hasReasoningMetadata(AssistantMessage am) {
+        if (am == null) {
+            return false;
+        }
+        Map<String, Object> metadata = am.getMetadata();
+        return metadata != null && metadata.containsKey(SpringAiReasoningMetadataAdapter.UNIFIED_REASONING_KEY);
+    }
+}

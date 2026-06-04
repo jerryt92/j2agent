@@ -1,0 +1,16 @@
+package io.github.jerryt92.j2agent.service.llm.agent;
+
+/**
+ * 放入 {@link com.alibaba.cloud.ai.graph.RunnableConfig#context()} 的键名常量，供工具拦截器等读取。
+ */
+public final class AgentRunnableContextKeys {
+
+    private AgentRunnableContextKeys() {
+    }
+
+    /**
+     * 复合会话 ID（与 {@link org.springframework.ai.chat.memory.ChatMemory} 使用的 conversationId 一致），用于工具链内落库。
+     */
+    public static final String CONTEXT_KEY_CHAT_CONVERSATION_ID =
+            AgentRunnableContextKeys.class.getName() + ".chatConversationId";
+}

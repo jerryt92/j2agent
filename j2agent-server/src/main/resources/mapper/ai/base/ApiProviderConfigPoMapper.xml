@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="io.github.jerryt92.j2agent.mapper.mgb.ApiProviderConfigPoMapper">
+    <resultMap id="BaseResultMap" type="io.github.jerryt92.j2agent.model.po.mgb.ApiProviderConfigPo">
+        <id column="id" jdbcType="BIGINT" property="id"/>
+        <result column="api_type" jdbcType="VARCHAR" property="apiType"/>
+        <result column="config_name" jdbcType="VARCHAR" property="configName"/>
+        <result column="provider_type" jdbcType="VARCHAR" property="providerType"/>
+        <result column="config_json" jdbcType="LONGVARCHAR" property="configJson"/>
+        <result column="enabled" jdbcType="TINYINT" property="enabled"/>
+        <result column="is_current" jdbcType="TINYINT" property="isCurrent"/>
+        <result column="description" jdbcType="VARCHAR" property="description"/>
+        <result column="create_time" jdbcType="BIGINT" property="createTime"/>
+        <result column="update_time" jdbcType="BIGINT" property="updateTime"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, api_type, config_name, provider_type, config_json,
+        enabled, is_current, description, create_time, update_time
+    </sql>
+
+    <select id="selectByPrimaryKey" resultMap="BaseResultMap">
+        select
+        <include refid="Base_Column_List"/>
+        from api_provider_config
+        where id = #{id,jdbcType=BIGINT}
+    </select>
+
+    <select id="selectByApiType" resultMap="BaseResultMap">
+        select
+        <include refid="Base_Column_List"/>
+        from api_provider_config
+        where api_type = #{apiType,jdbcType=VARCHAR}
+        order by id asc
+    </select>
+
+    <select id="selectByApiTypeAndName" resultMap="BaseResultMap">
+        select
+        <include refid="Base_Column_List"/>
+        from api_provider_config
+        where api_type = #{apiType,jdbcType=VARCHAR}
+          and config_name = #{configName,jdbcType=VARCHAR}
+        limit 1
+    </select>
+
+    <select id="selectCurrentByApiType" resultMap="BaseResultMap">
+        select
+        <include refid="Base_Column_List"/>
+        from api_provider_config
+        where api_type = #{apiType,jdbcType=VARCHAR}
+          and is_current = 1
+          and enabled = 1
+        order by id asc
+        limit 1
+    </select>
+
+    <insert id="insert" parameterType="io.github.jerryt92.j2agent.model.po.mgb.ApiProviderConfigPo"
+            useGeneratedKeys="true" keyProperty="id">
+        insert into api_provider_config
+        (api_type, config_name, provider_type, config_json,
+         enabled, is_current, description, create_time, update_time)
+        values
+        (#{apiType,jdbcType=VARCHAR}, #{configName,jdbcType=VARCHAR},
+         #{providerType,jdbcType=VARCHAR}, #{configJson,jdbcType=LONGVARCHAR},
+         #{enabled,jdbcType=TINYINT}, #{isCurrent,jdbcType=TINYINT},
+         #{description,jdbcType=VARCHAR},
+         #{createTime,jdbcType=BIGINT}, #{updateTime,jdbcType=BIGINT})
+    </insert>
+
+    <update id="updateByPrimaryKey" parameterType="io.github.jerryt92.j2agent.model.po.mgb.ApiProviderConfigPo">
+        update api_provider_config
+        set api_type      = #{apiType,jdbcType=VARCHAR},
+            config_name   = #{configName,jdbcType=VARCHAR},
+            provider_type = #{providerType,jdbcType=VARCHAR},
+            config_json   = #{configJson,jdbcType=LONGVARCHAR},
+            enabled       = #{enabled,jdbcType=TINYINT},
+            is_current    = #{isCurrent,jdbcType=TINYINT},
+            description   = #{description,jdbcType=VARCHAR},
+            update_time   = #{updateTime,jdbcType=BIGINT}
+        where id = #{id,jdbcType=BIGINT}
+    </update>
+
+    <delete id="deleteByPrimaryKey">
+        delete from api_provider_config
+        where id = #{id,jdbcType=BIGINT}
+    </delete>
+
+    <update id="clearCurrentByApiType">
+        update api_provider_config
+        set is_current = 0
+        where api_type = #{apiType,jdbcType=VARCHAR}
+          and is_current = 1
+    </update>
+
+    <update id="markCurrent">
+        update api_provider_config
+        set is_current  = 1,
+            update_time = #{updateTime,jdbcType=BIGINT}
+        where id = #{id,jdbcType=BIGINT}
+    </update>
+</mapper>
