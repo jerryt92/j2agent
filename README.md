@@ -1,13 +1,13 @@
 简体中文 | [English](README_en.md)
 
-[![GitHub](https://img.shields.io/badge/GitHub-J2Agent-blue?logo=github)](https://github.com/jerryt92/j2agent)
+[![GitHub](https://img.shields.io/badge/GitHub-J2Agent-blue?logo=github)](https://github.com/j2agent-ai/j2agent)
 
 J2Agent 是一个基于 Java Spring AI 的 Agent 运行平台。基于 Spring AI 与 Spring AI Alibaba，提供 Agent 推理执行、多智能体路由、RAG 检索增强、MCP / Skills 工具接入与可插拔业务 Agent 扩展，并集成 MySQL、Redis、Milvus 等基础设施。
 
 ## 贡献者
 
-<a href="https://github.com/jerryt92/j2agent/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=jerryt92/j2agent" />
+<a href="https://github.com/j2agent-ai/j2agent/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=j2agent-ai/j2agent" />
 </a>
 
 ## Docker 一键部署
@@ -24,21 +24,19 @@ docker pull milvusdb/milvus:v2.6.9
 docker pull debian:bookworm-slim
 ```
 
-2. 拉取前端
+2. 构建并部署前端
 
 ```shell
-rm -rf j2agent-starter/src/main/resources/dist
-git clone -b dist https://github.com/jerryt92/j2agent-ui.git j2agent-starter/src/main/resources/dist
+git clone https://github.com/j2agent-ai/j2agent-ui.git /tmp/j2agent-ui
+cd /tmp/j2agent-ui && npm install && npm run build
+mv dist ui
+mv ui ${J2AGENT_BASE_PATH}/volumes/j2agent/
 ```
 
-Windows
+或者直接拉取预编译产物：
 
 ```shell
-Remove-Item -Recurse -Force j2agent-starter\src\main\resources\dist
-```
-
-```shell
-git clone -b dist https://github.com/jerryt92/j2agent-ui.git j2agent-starter\src\main\resources\dist
+git clone -b dist https://github.com/j2agent-ai/j2agent-ui.git ${J2AGENT_BASE_PATH}/volumes/j2agent/ui
 ```
 
 3. 部署
@@ -240,4 +238,4 @@ j2agent@2025
 
 ## 前端
 
-[j2agent-ui](https://github.com/jerryt92/j2agent-ui)
+[j2agent-ui](https://github.com/j2agent-ai/j2agent-ui)

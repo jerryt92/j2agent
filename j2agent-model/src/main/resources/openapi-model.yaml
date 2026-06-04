@@ -109,10 +109,6 @@ components:
         userId:
           type: string
           description: 用户ID，不传时修改当前用户密码
-        oldPassword:
-          type: string
-          format: password
-          description: 旧密码
         newPassword:
           type: string
           format: password
