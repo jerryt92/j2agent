@@ -21,11 +21,11 @@ services:
       - "${MYSQL_PORT}:3306"
     volumes:
       # 1. 数据持久化：宿主机数据目录 -> 容器内 MySQL 默认 datadir
-      - ${J2AGENT_BASE_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}mysql${DIR_PATH_SEPARATOR}data:/var/lib/mysql
+      - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}mysql${DIR_PATH_SEPARATOR}data:/var/lib/mysql
       # 2. 自定义配置：挂到 conf.d 让 MySQL 自动加载，避免覆盖镜像自带的 /etc/mysql/my.cnf
-      - ${J2AGENT_BASE_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}mysql${DIR_PATH_SEPARATOR}conf${DIR_PATH_SEPARATOR}my.cnf:/etc/mysql/conf.d/my.cnf:ro
+      - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}mysql${DIR_PATH_SEPARATOR}conf${DIR_PATH_SEPARATOR}my.cnf:/etc/mysql/conf.d/my.cnf:ro
       # 3. Socket 目录映射：宿主机可直接使用 ${MP_BASE_PATH}/mysql/run/mysqld.sock
-      - ${J2AGENT_BASE_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}mysql${DIR_PATH_SEPARATOR}run:/var/run/mysqld
+      - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}mysql${DIR_PATH_SEPARATOR}run:/var/run/mysqld
     healthcheck:
       test: [ "CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent" ]
       interval: 15s
@@ -36,13 +36,13 @@ services:
   redis:
     image: *redis_image
     platform: linux/amd64
-    command: [ "redis-server", "--appendonly", "yes", "--port", "30379" ]
+    command: [ "redis-server", "--appendonly", "yes", "--port", "6379" ]
     ports:
-      - "${REDIS_PORT}:30379"
+      - "${REDIS_PORT}:6379"
     volumes:
-      - ${J2AGENT_BASE_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}redis${DIR_PATH_SEPARATOR}data:/data
+      - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}redis${DIR_PATH_SEPARATOR}data:/data
     healthcheck:
-      test: [ "CMD", "redis-cli", "-p", "30379", "ping" ]
+      test: [ "CMD", "redis-cli", "-p", "6379", "ping" ]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -62,7 +62,7 @@ services:
       - -listen-client-urls=http://0.0.0.0:2379
       - --data-dir=/etcd
     volumes:
-      - ${J2AGENT_BASE_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}etcd:/etcd
+      - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}etcd:/etcd
     healthcheck:
       test: [ "CMD", "etcdctl", "endpoint", "health" ]
       interval: 15s
@@ -82,7 +82,7 @@ services:
       - "${MINIO_API_PORT}:9000"
       - "${MINIO_CONSOLE_PORT}:9001"
     volumes:
-      - ${J2AGENT_BASE_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}minio${DIR_PATH_SEPARATOR}data:/data
+      - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}minio${DIR_PATH_SEPARATOR}data:/data
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live" ]
       interval: 15s
@@ -119,8 +119,8 @@ services:
       - "${MILVUS_PORT}:19530"
       - "${MILVUS_HEALTH_PORT}:9091"
     volumes:
-      - ${J2AGENT_BASE_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}milvus${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}milvus:/var/lib/milvus
-      - ${J2AGENT_BASE_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}milvus:/milvus/external_configs
+      - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}milvus${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}milvus:/var/lib/milvus
+      - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}milvus:/milvus/external_configs
     depends_on:
       etcd:
         condition: service_healthy
@@ -147,23 +147,23 @@ services:
       JAVA_OPTS: "${JAVA_OPTS}"
       SPRING_OPTIONS: "${SPRING_OPTIONS}"
       J2AGENT_PORT: "${J2AGENT_PORT}"
-      J2AGENT_MYSQL_HOST: mysql
-      J2AGENT_MYSQL_PORT: 3306
-      J2AGENT_DB_USERNAME: root
-      J2AGENT_DB_PASSWORD: "${MYSQL_ROOT_PASSWORD}"
+      J2AGENT_MYSQL_HOST: "${J2AGENT_MYSQL_HOST}"
+      J2AGENT_MYSQL_PORT: "${J2AGENT_MYSQL_PORT}"
+      J2AGENT_DB_USERNAME: "${J2AGENT_DB_USERNAME}"
+      J2AGENT_DB_PASSWORD: "${J2AGENT_DB_PASSWORD}"
       MYSQL_DATABASE: "${MYSQL_DATABASE}"
-      J2AGENT_REDIS_HOST: redis
-      J2AGENT_REDIS_PORT: 30379
-      J2AGENT_REDIS_PASSWORD: "${REDIS_PASSWORD}"
-      J2AGENT_MILVUS_HOST: milvus
-      J2AGENT_MILVUS_PORT: 19530
-      J2AGENT_MILVUS_TOKEN: "${MILVUS_TOKEN}"
+      J2AGENT_REDIS_HOST: "${J2AGENT_REDIS_HOST}"
+      J2AGENT_REDIS_PORT: "${J2AGENT_REDIS_PORT}"
+      J2AGENT_REDIS_PASSWORD: "${J2AGENT_REDIS_PASSWORD}"
+      J2AGENT_MILVUS_HOST: "${J2AGENT_MILVUS_HOST}"
+      J2AGENT_MILVUS_PORT: "${J2AGENT_MILVUS_PORT}"
+      J2AGENT_MILVUS_TOKEN: "${J2AGENT_MILVUS_TOKEN}"
       J2AGENT_MILVUS_SCHEMA_CONFIG_PATH: "${J2AGENT_MILVUS_SCHEMA_CONFIG_PATH}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ${J2AGENT_BASE_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}j2agent:/opt/j2agent/volume
-      - ${J2AGENT_BASE_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}j2agent${DIR_PATH_SEPARATOR}plugins${DIR_PATH_SEPARATOR}agents:/opt/j2agent/volume/plugins/agents
+      - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}j2agent:/opt/j2agent/volume
+      - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}j2agent${DIR_PATH_SEPARATOR}plugins${DIR_PATH_SEPARATOR}agents:/opt/j2agent/volume/plugins/agents
     depends_on:
       mysql:
         condition: service_healthy

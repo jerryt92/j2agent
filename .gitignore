@@ -180,3 +180,5 @@ logs/
 
 .env
 /docker/images_offline_amd64_dir/
+
+volumes/

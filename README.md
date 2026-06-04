@@ -17,11 +17,12 @@ Docker 配置都在 `docker/` 目录下，默认会启动 Milvus（v2.6.9）、M
 1. 拉取所有依赖镜像（可选）
 
 ```shell
-docker pull maven:3.8.8-amazoncorretto-21-debian
 docker pull eclipse-temurin:21-jre
-docker pull alpine/git
-docker pull milvusdb/milvus:v2.6.9
-docker pull debian:bookworm-slim
+docker pull mysql:8.0.36
+docker pull redis:7.4.2
+docker pull quay.io/coreos/etcd:v3.5.25
+docker pull minio/minio:RELEASE.2024-12-18T13-15-44Z
+docker pull milvusdb/milvus:v2.6.17
 ```
 
 2. 构建并部署前端
@@ -30,13 +31,13 @@ docker pull debian:bookworm-slim
 git clone https://github.com/j2agent-ai/j2agent-ui.git /tmp/j2agent-ui
 cd /tmp/j2agent-ui && npm install && npm run build
 mv dist ui
-mv ui ${J2AGENT_BASE_PATH}/volumes/j2agent/
+mv ui ${J2AGENT_VOLUMES_PATH}/volumes/j2agent/
 ```
 
 或者直接拉取预编译产物：
 
 ```shell
-git clone -b dist https://github.com/j2agent-ai/j2agent-ui.git ${J2AGENT_BASE_PATH}/volumes/j2agent/ui
+git clone -b dist https://github.com/j2agent-ai/j2agent-ui.git ${J2AGENT_VOLUMES_PATH}/volumes/j2agent/ui
 ```
 
 3. 部署
@@ -47,7 +48,7 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 可配置项（`docker/.env`，参考 `docker/.env.example`）：
 
-- `J2AGENT_BASE_PATH`：宿主机配置/数据根目录（默认 `~/j2agent`）
+- `J2AGENT_VOLUMES_PATH`：宿主机配置/数据根目录（默认 `~/j2agent`）
 - `COMPOSE_PROJECT_NAME`：容器前缀（默认 `j2agent`）
 - `J2AGENT_PORT`：服务端口（默认 `30111`）
 - `TAG`：镜像标签
