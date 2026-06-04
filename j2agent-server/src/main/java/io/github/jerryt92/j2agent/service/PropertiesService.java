@@ -38,8 +38,8 @@ public class PropertiesService {
     public static final String USER_EMAIL_REGISTER_WHITELIST_RULES = "user-email-register-whitelist-rules";
     /** 邮箱不在白名单时的自定义拒绝提示 */
     public static final String USER_EMAIL_REGISTER_WHITELIST_DENIED_MESSAGE = "user-email-register-whitelist-denied-message";
-    /** NMS 网管连接配置 JSON */
-    public static final String NMS_CONFIG_JSON = "nms-config-json";
+    /** 智能体全局配置 JSON */
+    public static final String AGENT_GLOBAL_CONFIG_JSON = "agent-global-config-json";
 
     private final Map<String, String> properties = new HashMap<>();
     private final PropertiesPoMapper propertiesPoMapper;

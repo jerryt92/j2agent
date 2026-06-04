@@ -4,9 +4,6 @@ VALUES ('AZ5EsB1JcMqXv6z1FcfEUw', 'aiadmin',
         null, 1);
 
 INSERT INTO j2agent.api_key_info (api_key, api_key_owner, create_time, expire_time)
-VALUES ('f7181443b9a9468ebae377c0dac74de4', '阿里云iNC', 1756796400000, null);
-
-INSERT INTO j2agent.api_key_info (api_key, api_key_owner, create_time, expire_time)
 VALUES ('publicaidemo', '公开试用', 1756796400000, null);
 
 INSERT INTO j2agent.ai_properties (property_name, property_value, description)

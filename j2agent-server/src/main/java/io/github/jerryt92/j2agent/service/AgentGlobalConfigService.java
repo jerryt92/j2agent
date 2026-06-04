@@ -11,10 +11,10 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * 网管（NMS）连接配置：从 {@code ai_properties.nms-config-json} 读取，供智能报表等工具按 key 取值。
+ * 智能体全局配置：从 {@code ai_properties.agent-global-config-json} 读取，供智能报表等工具按 key 取值。
  */
 @Service
-public class NmsConfigService {
+public class AgentGlobalConfigService {
 
     private static final JSONObject DEFAULT_CONFIG = JSONObject.parseObject(
             "{\"datasource\":{\"jdbcUrl\":\"\",\"username\":\"\",\"password\":\"\","
@@ -23,7 +23,7 @@ public class NmsConfigService {
     private final PropertiesService propertiesService;
     private volatile JSONObject cachedConfig = DEFAULT_CONFIG;
 
-    public NmsConfigService(PropertiesService propertiesService) {
+    public AgentGlobalConfigService(PropertiesService propertiesService) {
         this.propertiesService = propertiesService;
     }
 
@@ -37,7 +37,7 @@ public class NmsConfigService {
         if (event.getPropertyNames() == null) {
             return;
         }
-        if (event.getPropertyNames().contains(PropertiesService.NMS_CONFIG_JSON)) {
+        if (event.getPropertyNames().contains(PropertiesService.AGENT_GLOBAL_CONFIG_JSON)) {
             reloadFromDb();
         }
     }
@@ -46,25 +46,25 @@ public class NmsConfigService {
      * 从数据库重新加载配置到内存缓存。
      */
     public void reloadFromDb() {
-        cachedConfig = parseConfig(propertiesService.getProperty(PropertiesService.NMS_CONFIG_JSON));
+        cachedConfig = parseConfig(propertiesService.getProperty(PropertiesService.AGENT_GLOBAL_CONFIG_JSON));
     }
 
     /**
-     * 返回完整 NMS 配置 JSON。
+     * 返回完整智能体全局配置 JSON。
      */
     public JSONObject getConfig() {
         return cachedConfig.clone();
     }
 
     /**
-     * 更新 NMS 配置并持久化。
+     * 更新智能体全局配置并持久化。
      */
     public void updateConfig(JSONObject config) {
         if (config == null) {
             return;
         }
         PropertyDto propertyDto = new PropertyDto();
-        propertyDto.setPropertyName(PropertiesService.NMS_CONFIG_JSON);
+        propertyDto.setPropertyName(PropertiesService.AGENT_GLOBAL_CONFIG_JSON);
         propertyDto.setPropertyValue(JSONObject.toJSONString(config));
         propertiesService.putProperty(List.of(propertyDto));
         cachedConfig = config.clone();
@@ -100,7 +100,7 @@ public class NmsConfigService {
     }
 
     /**
-     * 是否已配置网管 JDBC 数据源（jdbcUrl 非空）。
+     * 是否已配置智能体全局 JDBC 数据源（jdbcUrl 非空）。
      */
     public boolean isDatasourceEnabled() {
         return StringUtils.isNotBlank(getString("datasource.jdbcUrl"));

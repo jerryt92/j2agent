@@ -5,11 +5,10 @@ import io.github.jerryt92.j2agent.model.AgentEventType;
 import io.github.jerryt92.j2agent.model.AgentState;
 import io.github.jerryt92.j2agent.model.AgentStateTransition;
 import io.github.jerryt92.j2agent.model.AgentUiEventEnvelope;
+import io.github.jerryt92.j2agent.utils.UUIDv7Utils;
 
 import java.util.HashMap;
 import java.util.Map;
-
-import io.github.jerryt92.j2agent.utils.UUIDv7Utils;
 
 /**
  * 统一构建 Agent-UI 事件信封，避免业务代码重复拼装字段。
@@ -48,11 +47,11 @@ public final class AgentEventBuilder {
      * 调用方在共享 turnLock 场景下应在外层 synchronized。
      */
     public static AgentUiEventEnvelope buildTurnFailure(String contextId,
-                                                          String turnId,
-                                                          long seq,
-                                                          AgentTurnStateMachine stateMachine,
-                                                          String errorCode,
-                                                          Throwable cause) {
+                                                        String turnId,
+                                                        long seq,
+                                                        AgentTurnStateMachine stateMachine,
+                                                        String errorCode,
+                                                        Throwable cause) {
         AgentStateTransition transition = stateMachine.transit(AgentState.FAILED, errorCode);
         return build(
                 contextId,

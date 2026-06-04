@@ -285,11 +285,7 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
                     log.info("Registered dynamic plugin bean definition: {} from {} (aiAgent={})",
                             beanName, clazz.getName(), aiAgent);
                 } catch (Throwable e) {
-                    if (className.startsWith("com.nms.platsvc.ai.center.")) {
-                        log.warn("Skip class {} from JAR {}: {}", className, jarFile.getName(), e.toString());
-                    } else {
-                        log.debug("Skip class {} from JAR {}: {}", className, jarFile.getName(), e.toString());
-                    }
+                    log.error("", e);
                 }
             }
         } catch (Exception e) {

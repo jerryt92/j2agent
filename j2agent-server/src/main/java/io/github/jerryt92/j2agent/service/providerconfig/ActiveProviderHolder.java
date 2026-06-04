@@ -1,7 +1,6 @@
 package io.github.jerryt92.j2agent.service.providerconfig;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.jerryt92.j2agent.event.ProviderConfigChangedEvent;
 import io.github.jerryt92.j2agent.mapper.mgb.ApiProviderConfigPoMapper;
 import io.github.jerryt92.j2agent.model.po.mgb.ApiProviderConfigPo;
 import jakarta.annotation.PostConstruct;
@@ -16,7 +15,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * 持有当前生效的 LLM / Embedding 解析后配置，供运行时（ChatModel、EmbeddingService 等）订阅式读取。
  *
  * <p>启动时从 {@code api_provider_config} 表加载 {@code is_current=1 且 enabled=1} 的记录；
- * 收到 {@link ProviderConfigChangedEvent} 后由
+ * 收到 {@link io.github.jerryt92.j2agent.event.ProviderConfigChangedEvent} 后由
  * {@code AiRuntimeReloadService} 调用 {@link #reloadFromDb()} 刷新。
  */
 @Slf4j

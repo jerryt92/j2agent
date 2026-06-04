@@ -2,8 +2,8 @@ package io.github.jerryt92.j2agent.controller;
 
 import com.alibaba.fastjson2.JSONObject;
 import io.github.jerryt92.j2agent.config.annotation.RequiredRole;
-import io.github.jerryt92.j2agent.server.api.NmsApi;
-import io.github.jerryt92.j2agent.service.NmsConfigService;
+import io.github.jerryt92.j2agent.server.api.AgentGlobalConfigApi;
+import io.github.jerryt92.j2agent.service.AgentGlobalConfigService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -11,21 +11,21 @@ import java.util.Map;
 
 @RestController
 @RequiredRole(RequiredRole.ADMIN)
-public class NmsController implements NmsApi {
+public class AgentGlobalConfigController implements AgentGlobalConfigApi {
 
-    private final NmsConfigService nmsConfigService;
+    private final AgentGlobalConfigService agentGlobalConfigService;
 
-    public NmsController(NmsConfigService nmsConfigService) {
-        this.nmsConfigService = nmsConfigService;
+    public AgentGlobalConfigController(AgentGlobalConfigService agentGlobalConfigService) {
+        this.agentGlobalConfigService = agentGlobalConfigService;
     }
 
     @Override
-    public ResponseEntity<Object> getNmsConfig() {
-        return ResponseEntity.ok(nmsConfigService.getConfig());
+    public ResponseEntity<Object> getAgentGlobalConfig() {
+        return ResponseEntity.ok(agentGlobalConfigService.getConfig());
     }
 
     @Override
-    public ResponseEntity<Void> updateNmsConfig(Object body) {
+    public ResponseEntity<Void> updateAgentGlobalConfig(Object body) {
         if (body == null) {
             return ResponseEntity.badRequest().build();
         }
@@ -37,7 +37,7 @@ public class NmsController implements NmsApi {
         } else {
             config = JSONObject.parseObject(JSONObject.toJSONString(body));
         }
-        nmsConfigService.updateConfig(config);
+        agentGlobalConfigService.updateConfig(config);
         return ResponseEntity.ok().build();
     }
 }

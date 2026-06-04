@@ -898,12 +898,12 @@ paths:
                 items:
                   $ref: './openapi-model.yaml#/components/schemas/McpStatusItem'
 
-  /v1/rest/j2agent/nms/config:
+  /v1/rest/j2agent/agent/config:
     get:
-      tags: [ NMS ]
-      summary: 获取 NMS 配置
-      description: 获取 NMS 网管连接配置
-      operationId: getNmsConfig
+      tags: [ AgentGlobalConfig ]
+      summary: 获取智能体全局配置
+      description: 获取智能体全局配置 JSON
+      operationId: getAgentGlobalConfig
       responses:
         '200':
           description: OK
@@ -912,10 +912,10 @@ paths:
               schema:
                 type: object
     put:
-      tags: [ NMS ]
-      summary: 保存 NMS 配置
-      description: 保存 NMS 网管连接配置
-      operationId: updateNmsConfig
+      tags: [ AgentGlobalConfig ]
+      summary: 保存智能体全局配置
+      description: 保存智能体全局配置 JSON
+      operationId: updateAgentGlobalConfig
       requestBody:
         required: true
         content:

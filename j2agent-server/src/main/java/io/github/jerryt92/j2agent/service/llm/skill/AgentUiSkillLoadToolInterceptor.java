@@ -6,7 +6,6 @@ import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallRequest;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallResponse;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolInterceptor;
 import com.alibaba.fastjson2.JSONObject;
-import io.github.jerryt92.j2agent.model.AgentState;
 import io.github.jerryt92.j2agent.service.llm.agent.AgentRunnableContextKeys;
 import io.github.jerryt92.j2agent.service.llm.memory.ChatMemoryMessageCodec;
 import io.github.jerryt92.j2agent.service.llm.tool.AgentUiToolEventInterceptor;
@@ -21,7 +20,7 @@ import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 拦截官方 {@code read_skill} 工具：通过 {@link ToolEventEmitter#onSkillLoadStart} 等驱动 {@link AgentState#LOAD_SKILL}，
+ * 拦截官方 {@code read_skill} 工具：通过 {@link ToolEventEmitter#onSkillLoadStart} 等驱动 {@link io.github.jerryt92.j2agent.model.AgentState#LOAD_SKILL}，
  * 并在成功后写入审计消息到会话记忆表。
  */
 @Slf4j

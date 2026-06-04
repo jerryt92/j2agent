@@ -1,15 +1,5 @@
 USE j2agent;
 
-DROP TABLE IF EXISTS context_record;
-CREATE TABLE context_record
-(
-    context_id  varchar(64) NOT NULL,
-    title       varchar(64) NOT NULL,
-    user_id     varchar(64) NOT NULL,
-    update_time bigint      NOT NULL,
-    PRIMARY KEY (context_id)
-) COMMENT ='所有上下文记录';
-
 DROP TABLE IF EXISTS api_key_info;
 CREATE TABLE api_key_info
 (

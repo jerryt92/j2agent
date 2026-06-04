@@ -3,9 +3,6 @@ package io.github.jerryt92.j2agent.service.llm.agent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 /**
  * Agent 插件 JAR 热加载门面：协调注册表刷新与路由表更新。
  */

@@ -2,7 +2,6 @@ package io.github.jerryt92.j2agent.service;
 
 import io.github.jerryt92.j2agent.config.ReloadableRoutingChatModel;
 import io.github.jerryt92.j2agent.config.VectorDatabaseInit;
-import io.github.jerryt92.j2agent.event.ProviderConfigChangedEvent;
 import io.github.jerryt92.j2agent.service.embedding.EmbeddingService;
 import io.github.jerryt92.j2agent.service.llm.mcp.McpRuntimeProperties;
 import io.github.jerryt92.j2agent.service.providerconfig.ActiveProviderHolder;
@@ -41,7 +40,7 @@ public class AiRuntimeReloadService {
 
     /**
      * MCP / RAG 等 ai_properties 变更后调用：刷新 MCP runtime 与（必要时）向量库。
-     * LLM/Embedding 提供商配置改由 {@link ProviderConfigChangedEvent} 触发。
+     * LLM/Embedding 提供商配置改由 {@link io.github.jerryt92.j2agent.event.ProviderConfigChangedEvent} 触发。
      */
     public void reloadOnPropertiesUpdated(Collection<String> changedPropertyNames) {
         reloadMcpRuntime();

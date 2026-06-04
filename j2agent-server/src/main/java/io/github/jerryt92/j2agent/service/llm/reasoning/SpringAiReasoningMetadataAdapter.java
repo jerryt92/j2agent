@@ -59,7 +59,7 @@ public final class SpringAiReasoningMetadataAdapter {
     /**
      * Anthropic redacted thinking 数据键（无可见正文，应跳过）
      */
-    private static final String META_DATA = "data";
+    private static final String META_DATA = "sql/data";
 
     /**
      * 从 Provider metadata 适配出的统一深度思考片段。

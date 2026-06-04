@@ -1,6 +1,5 @@
 package io.github.jerryt92.j2agent.service.llm.advisor;
 
-import io.github.jerryt92.j2agent.service.llm.agent.AgentRunContext;
 import io.github.jerryt92.j2agent.service.llm.memory.ConversationIdCodec;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClientMessageAggregator;
@@ -39,7 +38,7 @@ import java.util.Map;
 public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMemoryAdvisor {
 
     /**
-     * 单次 Agent 调用内作为 conversationId 的辅助传递（与 {@link AgentRunContext#conversationId()} 一致）。
+     * 单次 Agent 调用内作为 conversationId 的辅助传递（与 {@link io.github.jerryt92.j2agent.service.llm.agent.AgentRunContext#conversationId()} 一致）。
      */
     private static final ThreadLocal<String> THREAD_CONVERSATION_ID = new ThreadLocal<>();
 
@@ -69,7 +68,7 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
     }
 
     /**
-     * 绑定当前线程的会话键（入口与 {@link AgentRunContext#conversationId()} 一致）。
+     * 绑定当前线程的会话键（入口与 {@link io.github.jerryt92.j2agent.service.llm.agent.AgentRunContext#conversationId()} 一致）。
      */
     public static void setConversationId(String conversationId) {
         THREAD_CONVERSATION_ID.set(conversationId);
