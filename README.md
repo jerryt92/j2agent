@@ -31,13 +31,13 @@ docker pull milvusdb/milvus:v2.6.17
 git clone https://github.com/j2agent-ai/j2agent-ui.git /tmp/j2agent-ui
 cd /tmp/j2agent-ui && npm install && npm run build
 mv dist ui
-mv ui ${J2AGENT_BASE_PATH}/volumes/j2agent/
+mv ui ${J2AGENT_VOLUMES_PATH}/volumes/j2agent/
 ```
 
 或者直接拉取预编译产物：
 
 ```shell
-git clone -b dist https://github.com/j2agent-ai/j2agent-ui.git ${J2AGENT_BASE_PATH}/volumes/j2agent/ui
+git clone -b dist https://github.com/j2agent-ai/j2agent-ui.git ${J2AGENT_VOLUMES_PATH}/volumes/j2agent/ui
 ```
 
 3. 部署
@@ -48,7 +48,7 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 可配置项（`docker/.env`，参考 `docker/.env.example`）：
 
-- `J2AGENT_BASE_PATH`：宿主机配置/数据根目录（默认 `~/j2agent`）
+- `J2AGENT_VOLUMES_PATH`：宿主机配置/数据根目录（默认 `~/j2agent`）
 - `COMPOSE_PROJECT_NAME`：容器前缀（默认 `j2agent`）
 - `J2AGENT_PORT`：服务端口（默认 `30111`）
 - `TAG`：镜像标签

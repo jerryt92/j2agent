@@ -31,13 +31,13 @@ docker pull milvusdb/milvus:v2.6.17
 git clone https://github.com/j2agent-ai/j2agent-ui.git /tmp/j2agent-ui
 cd /tmp/j2agent-ui && npm install && npm run build
 mv dist ui
-mv ui ${J2AGENT_BASE_PATH}/volumes/j2agent/
+mv ui ${J2AGENT_VOLUMES_PATH}/volumes/j2agent/
 ```
 
 Or pull pre-built artifacts directly:
 
 ```shell
-git clone -b dist https://github.com/j2agent-ai/j2agent-ui.git ${J2AGENT_BASE_PATH}/volumes/j2agent/ui
+git clone -b dist https://github.com/j2agent-ai/j2agent-ui.git ${J2AGENT_VOLUMES_PATH}/volumes/j2agent/ui
 ```
 
 3. Deploy
@@ -48,7 +48,7 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 Configurable options (`docker/.env`, see `docker/.env.example`):
 
-- `J2AGENT_BASE_PATH`: Host configuration/data root directory (default `~/j2agent`)
+- `J2AGENT_VOLUMES_PATH`: Host configuration/data root directory (default `~/j2agent`)
 - `COMPOSE_PROJECT_NAME`: Container prefix (default `j2agent`)
 - `J2AGENT_PORT`: Service port (default `30111`)
 - `TAG`: Image tag
