@@ -1,18 +1,18 @@
 [简体中文](README.md) | English
 
-[![GitHub](https://img.shields.io/badge/GitHub-Jrag-blue?logo=github)](https://github.com/jerryt92/jrag)
+[![GitHub](https://img.shields.io/badge/GitHub-J2Agent-blue?logo=github)](https://github.com/jerryt92/j2agent)
 
-Jrag is a Retrieval-Augmented Generation (RAG) and MCP tool integration platform based on Java Spring Boot. It aims to enhance the application capabilities of large language models in the Java ecosystem by combining retrieval, MCP tools, and generative AI model technologies. The platform supports access to various mainstream large language model interfaces, including Ollama and OpenAI, and integrates with Milvus vector database to provide efficient vector storage and retrieval services.
+J2Agent is an agent platform based on Java Spring Boot. Built on RAG (Retrieval-Augmented Generation), MCP tool integration, and the Spring AI Alibaba Agent runtime, it provides extensible multi-agent chat, knowledge retrieval, and pluggable business agents for the Java ecosystem. The platform supports mainstream LLM APIs such as Ollama and OpenAI, and integrates Milvus, MySQL, and Redis for vector search and conversational memory.
 
 ## Contributors
 
-<a href="https://github.com/jerryt92/jrag/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=jerryt92/jrag" />
+<a href="https://github.com/jerryt92/j2agent/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=jerryt92/j2agent" />
 </a>
 
 ## One-Click Deployment with Docker
 
-All Docker configurations are located in the `docker/` directory. By default, it will start Milvus (v2.6.9) and Jrag.
+All Docker configurations are located in the `docker/` directory. By default, it starts Milvus (v2.6.9), MySQL, Redis, and J2Agent.
 
 1. Pull all dependency images (optional)
 
@@ -26,18 +26,19 @@ docker pull debian:bookworm-slim
 
 2. Pull frontend
 
-shell
 ```shell
-rm -rf jrag-starter/src/main/resources/dist
-git clone -b dist https://github.com/jerryt92/jrag-ui.git jrag-starter/src/main/resources/dist
+rm -rf j2agent-starter/src/main/resources/dist
+git clone -b dist https://github.com/jerryt92/j2agent-ui.git j2agent-starter/src/main/resources/dist
 ```
 
 Windows
+
 ```shell
-Remove-Item -Recurse -Force jrag-starter\src\main\resources\dist
+Remove-Item -Recurse -Force j2agent-starter\src\main\resources\dist
 ```
+
 ```shell
-git clone -b dist https://github.com/jerryt92/jrag-ui.git jrag-starter\src\main\resources\dist
+git clone -b dist https://github.com/jerryt92/j2agent-ui.git j2agent-starter\src\main\resources\dist
 ```
 
 3. Deploy
@@ -46,56 +47,191 @@ git clone -b dist https://github.com/jerryt92/jrag-ui.git jrag-starter\src\main\
 docker compose -f docker/docker-compose.yml up -d --build
 ```
 
-Configurable options (`docker/.env`):
+Configurable options (`docker/.env`, see `docker/.env.example`):
 
-- `JRAG_BASE_DIR`: Host configuration/data root directory (default `~/jrag`)
-- `COMPOSE_PROJECT_NAME`: Container prefix (default `jrag`)
-- `UPDATE_UI`: Whether to pull the latest `dist` from `jrag-ui` (`true`/`false`)
-- `JRAG_UI_REPO`: UI repository address (default `https://github.com/jerryt92/jrag-ui.git`)
-- `JRAG_UI_BRANCH`: UI branch (default `dist`)
+- `J2AGENT_BASE_PATH`: Host configuration/data root directory (default `~/j2agent`)
+- `COMPOSE_PROJECT_NAME`: Container prefix (default `j2agent`)
+- `J2AGENT_PORT`: Service port (default `30111`)
+- `TAG`: Image tag
+- `I18N`: Locale (e.g. `zh_CN` / `en_US`)
 
 Access:
 
-- UI: `http://localhost:30110/`
-- Health check: `http://localhost:30110/v1/api/jrag/health-check`
+- UI: `http://localhost:30111/` (port follows `J2AGENT_PORT`)
+- Health check: `http://localhost:30111/v1/api/j2agent/health-check`
 
 Host access within containers:
 
 - macOS/Windows: `host.docker.internal`
-- Linux: `host.docker.internal` (requires Docker 20.10+ and configuration of `extra_hosts: ["host.docker.internal:host-gateway"]`)
-
-## Demo
-
-[Data Communication Encyclopedia Assistant](https://jerryt92.github.io/data-communication-encyclopedia)
-
-**Data Communication Encyclopedia Assistant**, based on Jrag, can answer various data communication-related questions.
-
-## Architecture
-
-![architecture](assets/architecture.png)
+- Linux: `host.docker.internal` (requires Docker 20.10+ and `extra_hosts: ["host.docker.internal:host-gateway"]`)
 
 ## Demo
 
 ![demo](assets/demo.gif)
 
+## Architecture
+
+### Platform Overview
+
+```mermaid
+graph TD
+    subgraph presentation ["Presentation Layer"]
+        dialog["Chat Dialog"]
+        agentUi["AgentUi Event Consumer"]
+        uiStateMachine["UI State Machine & Event Visualization"]
+    end
+
+    subgraph access ["Access Layer"]
+        chatCtrl["ChatController (ChatApi + WS)"]
+        login["Login Interceptors"]
+        plugin["Agent Extensions (prodplugin-j2agent-agent)"]
+    end
+
+    subgraph runtime ["Agent Runtime"]
+        chatSvc["ChatService"]
+        router["AgentRouter"]
+        aiAgent["AiAgent Base Class"]
+        sm["AgentTurnStateMachine"]
+        toolEmitter["ToolEventEmitter"]
+        ws["WebSocket AgentUiEventEnvelope"]
+
+        subgraph memory ["Conversation Memory"]
+            chatMemory["ChatMemory"]
+            redisRepo["RedissonCachingChatMemoryRepository"]
+        end
+
+        subgraph rag ["Knowledge Retrieval RAG"]
+            knowSvc["KnowledgeService"]
+            retriever["AbstractCollectionKbRetriever"]
+            ragAdvisor["RetrievalAugmentationAdvisor"]
+        end
+
+        subgraph tools ["Tools & Skills"]
+            mcp["McpService"]
+            toolReg["Tool Registration"]
+            toolInterceptor["AgentUiToolEventInterceptor"]
+            skillReg["Skill Registration"]
+        end
+    end
+
+    subgraph infrastructure ["Infrastructure"]
+        mysql["MySQL"]
+        redis["Redis"]
+        milvus["Milvus"]
+        springAiModel["Spring AI ChatModel"]
+        llmApi["LLM Provider APIs"]
+    end
+
+    chatCtrl --> chatSvc
+    chatSvc --> router
+    plugin --> router
+    router --> aiAgent
+    aiAgent --> chatMemory
+    aiAgent --> retriever
+    aiAgent --> toolReg
+    aiAgent --> skillReg
+```
+
+### Technology Stack (Spring AI)
+
+```mermaid
+graph TD
+    subgraph assistant ["Assistant Agent"]
+        aa1["Code-as-Action"]
+        aa2["GraalVM Multi-Language Sandbox"]
+        aa3["Multi-Dimensional Evaluation + Dynamic Prompt"]
+        aa4["Experience Learning & Fast Path"]
+        aa5["Knowledge Retrieval SPI"]
+        aa6["Tool Ecosystem (MCP/HTTP)"]
+        aa7["Proactive Services"]
+        aa8["Multi-Channel SPI"]
+    end
+
+    subgraph saia ["Spring AI Alibaba"]
+        saia1["Agent Framework"]
+        saia2["Augmented LLM"]
+        saia3["Context Engineering & Human-in-the-Loop"]
+        saia4["Cloud & Model Integration"]
+        saia5["Multi-Agent Orchestration"]
+        saia6["Graph Runtime"]
+        saia7["Hooks / Interceptors"]
+        saia8["Skills"]
+    end
+
+    subgraph sai ["Spring AI"]
+        sai1["Model Abstraction"]
+        sai2["Vector Store & RAG"]
+        sai3["ChatClient + Prompt Templates"]
+        sai4["Advisor Chain"]
+        sai5["Chat Memory"]
+        sai6["Tools & Structured Output"]
+        sai7["McpClient Protocol"]
+    end
+
+    subgraph jvm ["JVM"]
+        java21["Java 21"]
+    end
+
+    subgraph deploy ["Deployment"]
+        dockerNode["Docker"]
+    end
+
+    assistant --> saia
+    saia --> sai
+    sai --> jvm
+    jvm --> deploy
+```
+
+### Code Boundaries
+
+```mermaid
+graph TD
+    subgraph platform ["Platform Code"]
+        pTools["Generic Tools"]
+        pLoadedTools["All Loaded Tools"]
+        pSkills["Generic Skills"]
+        pLoadedSkills["All Loaded Skills"]
+        pRag["Generic RAG"]
+        pMemory["Default Memory Strategy"]
+
+        pTools --> pLoadedTools
+        pSkills --> pLoadedSkills
+    end
+
+    subgraph dev ["Agent Developer Code"]
+        dTools["Business-Specific Tools"]
+        dSkills["Business-Specific Skills"]
+        dRag["Custom RAG"]
+        dMemory["Custom Memory Strategy"]
+
+        dTools --> pLoadedTools
+        dSkills --> pLoadedSkills
+        dRag --> pRag
+        dMemory --> pMemory
+    end
+```
+
 ## Purpose
 
-So far, most open-source RAG platforms are implemented in Python. As a Java developer, I hope Jrag can better suit Java developers' needs and provide more suitable LLM integration and applications for the Java ecosystem.
+Many open-source agent / RAG platforms are implemented in Python. As a Java developer, J2Agent aims to provide Agent runtime, RAG, MCP, and pluggable business agents in one Java-native stack.
 
 ## Features
 
-- **Multi-model support**: Compatible with Ollama and OpenAI-style interfaces, allowing flexible switching between different large language models.
-- **Vector database integration**: Supports Milvus vector database to meet performance requirements in various scenarios.
-- **Function Calling**: Supports function calling, enabling LLMs to call APIs from other systems.
-- **MCP support**: Supports MCP (Model Context Protocol) to standardize model tool invocation.
-- MCP Client interacts with LLM using Function Calling technology instead of Prompt, saving token consumption.
-- **Java ecosystem optimization**: Designed specifically for Java developers to simplify the integration and application of RAG technology in Java projects.
-- **JDK21**: Jrag is developed based on JDK21, utilizing virtual threads to improve concurrent performance.
-- **Knowledge management**: Provides knowledge base management functions, supporting operations such as adding, modifying, deleting, and hit testing of knowledge base content.
+- **Multi-model support**: Compatible with Ollama and OpenAI-style interfaces.
+- **Vector database integration**: Supports Milvus for various performance scenarios.
+- **Agent runtime**: Spring AI Alibaba `ReactAgent` with `AiAgent` abstraction and `AgentRouter` multi-agent routing.
+- **Function Calling**: Enables LLMs to call APIs from other systems.
+- **MCP support**: Model Context Protocol for standardized tool invocation.
+- MCP Client interacts with LLM via Function Calling instead of prompts to save tokens.
+- **Skills progressive disclosure**: Load skill docs on demand via `read_skill` and `SkillRegistry`.
+- **AgentUi event stream**: WebSocket `AgentUiEventEnvelope` for tool calls and state machine visualization.
+- **Java ecosystem optimization**: Designed for Java developers integrating agent capabilities.
+- **JDK 21**: Virtual threads for improved concurrency.
+- **Knowledge management**: Knowledge base CRUD and hit testing.
 
 ## Interface
 
-The interface style is dynamic, featuring frosted glass design and dark mode support.
+Dynamic frosted-glass UI with dark mode support.
 
 ![ui1](assets/ui/1.png)
 
@@ -115,15 +251,15 @@ The interface style is dynamic, featuring frosted glass design and dark mode sup
 
 ## To Be Improved
 
-- **Rerank**: Provide reranking functionality to sort and filter retrieval results.
-- Streamable HTTP transport layer adapted to MCP protocol (awaiting Spring AI release).
-- **Knowledge base maintenance**: Provide knowledge base management functions, supporting operations such as creation, import, export, and deletion of knowledge bases.
+- **Rerank**: Reranking for retrieval results.
+- Streamable HTTP transport for MCP (awaiting Spring AI release).
+- **Knowledge base maintenance**: Create, import, export, and delete knowledge bases.
 
 ## Default Account Credentials
 
 admin  
-jrag@2025
+j2agent@2025
 
 ## Frontend
 
-[jrag-ui](https://github.com/jerryt92/jrag-ui)
+[j2agent-ui](https://github.com/jerryt92/j2agent-ui)
