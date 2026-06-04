@@ -1,13 +1,13 @@
 [简体中文](README.md) | English
 
-[![GitHub](https://img.shields.io/badge/GitHub-J2Agent-blue?logo=github)](https://github.com/jerryt92/j2agent)
+[![GitHub](https://img.shields.io/badge/GitHub-J2Agent-blue?logo=github)](https://github.com/j2agent-ai/j2agent)
 
 J2Agent is an Agent runtime platform built on Java Spring AI. Powered by Spring AI and Spring AI Alibaba, it provides agent execution, multi-agent routing, RAG retrieval augmentation, MCP / Skills tool integration, pluggable business agents, and infrastructure integration with MySQL, Redis, and Milvus.
 
 ## Contributors
 
-<a href="https://github.com/jerryt92/j2agent/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=jerryt92/j2agent" />
+<a href="https://github.com/j2agent-ai/j2agent/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=j2agent-ai/j2agent" />
 </a>
 
 ## One-Click Deployment with Docker
@@ -24,21 +24,19 @@ docker pull milvusdb/milvus:v2.6.9
 docker pull debian:bookworm-slim
 ```
 
-2. Pull frontend
+2. Build and deploy frontend
 
 ```shell
-rm -rf j2agent-starter/src/main/resources/dist
-git clone -b dist https://github.com/jerryt92/j2agent-ui.git j2agent-starter/src/main/resources/dist
+git clone https://github.com/j2agent-ai/j2agent-ui.git /tmp/j2agent-ui
+cd /tmp/j2agent-ui && npm install && npm run build
+mv dist ui
+mv ui ${J2AGENT_BASE_PATH}/volumes/j2agent/
 ```
 
-Windows
+Or pull pre-built artifacts directly:
 
 ```shell
-Remove-Item -Recurse -Force j2agent-starter\src\main\resources\dist
-```
-
-```shell
-git clone -b dist https://github.com/jerryt92/j2agent-ui.git j2agent-starter\src\main\resources\dist
+git clone -b dist https://github.com/j2agent-ai/j2agent-ui.git ${J2AGENT_BASE_PATH}/volumes/j2agent/ui
 ```
 
 3. Deploy
@@ -240,4 +238,4 @@ j2agent@2025
 
 ## Frontend
 
-[j2agent-ui](https://github.com/jerryt92/j2agent-ui)
+[j2agent-ui](https://github.com/j2agent-ai/j2agent-ui)

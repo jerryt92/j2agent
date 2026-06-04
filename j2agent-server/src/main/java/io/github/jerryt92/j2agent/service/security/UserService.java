@@ -1,7 +1,7 @@
 package io.github.jerryt92.j2agent.service.security;
 
-import io.github.jerryt92.j2agent.mapper.mgb.UserPoMapper;
 import io.github.jerryt92.j2agent.constants.ErrorConstants;
+import io.github.jerryt92.j2agent.mapper.mgb.UserPoMapper;
 import io.github.jerryt92.j2agent.model.RegisterRequestDto;
 import io.github.jerryt92.j2agent.model.ResetPasswordRequestDto;
 import io.github.jerryt92.j2agent.model.UserCreateRequestDto;
@@ -164,7 +164,7 @@ public class UserService {
     }
 
     /**
-     * 管理员可重置他人密码，普通用户仅可凭旧密码修改自己的密码。
+     * 管理员可重置他人密码，普通用户仅可修改自己的密码。
      */
     public void updateUserPassword(UserPasswordUpdateRequestDto request) {
         if (request == null || isBlank(request.getNewPassword())) {
@@ -177,9 +177,6 @@ public class UserService {
         if (!session.isAdmin()) {
             if (!session.getUserId().equals(targetUserId)) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "cannot modify another user's password");
-            }
-            if (isBlank(request.getOldPassword()) || !UserUtil.verifyPassword(user.getId(), request.getOldPassword(), user.getPasswordHash())) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "old password is invalid");
             }
         } else if (!session.getUserId().equals(targetUserId)) {
             ensureMutableUser(user);
