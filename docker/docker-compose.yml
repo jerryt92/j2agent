@@ -36,13 +36,13 @@ services:
   redis:
     image: *redis_image
     platform: linux/amd64
-    command: [ "redis-server", "--appendonly", "yes", "--port", "30379" ]
+    command: [ "redis-server", "--appendonly", "yes", "--port", "6379" ]
     ports:
-      - "${REDIS_PORT}:30379"
+      - "${REDIS_PORT}:6379"
     volumes:
       - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}redis${DIR_PATH_SEPARATOR}data:/data
     healthcheck:
-      test: [ "CMD", "redis-cli", "-p", "30379", "ping" ]
+      test: [ "CMD", "redis-cli", "-p", "6379", "ping" ]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -147,17 +147,17 @@ services:
       JAVA_OPTS: "${JAVA_OPTS}"
       SPRING_OPTIONS: "${SPRING_OPTIONS}"
       J2AGENT_PORT: "${J2AGENT_PORT}"
-      J2AGENT_MYSQL_HOST: mysql
-      J2AGENT_MYSQL_PORT: 3306
-      J2AGENT_DB_USERNAME: root
-      J2AGENT_DB_PASSWORD: "${MYSQL_ROOT_PASSWORD}"
+      J2AGENT_MYSQL_HOST: "${J2AGENT_MYSQL_HOST}"
+      J2AGENT_MYSQL_PORT: "${J2AGENT_MYSQL_PORT}"
+      J2AGENT_DB_USERNAME: "${J2AGENT_DB_USERNAME}"
+      J2AGENT_DB_PASSWORD: "${J2AGENT_DB_PASSWORD}"
       MYSQL_DATABASE: "${MYSQL_DATABASE}"
-      J2AGENT_REDIS_HOST: redis
-      J2AGENT_REDIS_PORT: 30379
-      J2AGENT_REDIS_PASSWORD: "${REDIS_PASSWORD}"
-      J2AGENT_MILVUS_HOST: milvus
-      J2AGENT_MILVUS_PORT: 19530
-      J2AGENT_MILVUS_TOKEN: "${MILVUS_TOKEN}"
+      J2AGENT_REDIS_HOST: "${J2AGENT_REDIS_HOST}"
+      J2AGENT_REDIS_PORT: "${J2AGENT_REDIS_PORT}"
+      J2AGENT_REDIS_PASSWORD: "${J2AGENT_REDIS_PASSWORD}"
+      J2AGENT_MILVUS_HOST: "${J2AGENT_MILVUS_HOST}"
+      J2AGENT_MILVUS_PORT: "${J2AGENT_MILVUS_PORT}"
+      J2AGENT_MILVUS_TOKEN: "${J2AGENT_MILVUS_TOKEN}"
       J2AGENT_MILVUS_SCHEMA_CONFIG_PATH: "${J2AGENT_MILVUS_SCHEMA_CONFIG_PATH}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
