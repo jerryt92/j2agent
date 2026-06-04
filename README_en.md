@@ -17,11 +17,12 @@ All Docker configurations are located in the `docker/` directory. By default, it
 1. Pull all dependency images (optional)
 
 ```shell
-docker pull maven:3.8.8-amazoncorretto-21-debian
 docker pull eclipse-temurin:21-jre
-docker pull alpine/git
-docker pull milvusdb/milvus:v2.6.9
-docker pull debian:bookworm-slim
+docker pull mysql:8.0.36
+docker pull redis:7.4.2
+docker pull quay.io/coreos/etcd:v3.5.25
+docker pull minio/minio:RELEASE.2024-12-18T13-15-44Z
+docker pull milvusdb/milvus:v2.6.17
 ```
 
 2. Build and deploy frontend
