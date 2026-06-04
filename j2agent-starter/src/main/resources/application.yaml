@@ -1,0 +1,112 @@
+server:
+  port: 30111
+  servlet:
+    encoding:
+      charset: UTF-8 # 需要强制设置编码，否则SSE会出现乱码
+      force: true
+spring:
+  application:
+    name: j2agent
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 10GB # 文件最大上传大小
+      max-request-size: 10GB # 请求最大上传大小
+  web:
+    resources:
+      # 生产前端由宿主机卷挂载；末尾 / 符合 Spring 6.2+ 资源路径约定
+      static-locations: classpath:/ui/
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    type: com.alibaba.druid.pool.DruidDataSource
+    url: jdbc:mysql://127.0.0.1:30136/j2agent?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&autoReconnect=true&autoReconnectForPools=true&useLocalSessionState=true&allowMultiQueries=true&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: root
+    # 关于明文密码的问题，后期打包时再做处理，包括url也是需要在部署时动态调整。
+    password: Raisecom3##
+    druid:
+      initial-size: 5
+      minIdle: 5
+      maxActive: 20
+      # 配置获取连接等待超时的时间，单位是毫秒
+      maxWait: 60000
+      # 配置间隔多久才进行一次检测，检测需要关闭的空闲连接，单位是毫秒
+      timeBetweenEvictionRunsMillis: 60000
+      # 配置一个连接在池中最小生存的时间，单位是毫秒
+      minEvictableIdleTimeMillis: 30000
+      validationQuery: select 'x'
+      testWhileIdle: true
+      testOnBorrow: false
+      testOnReturn: false
+      #druid recycle
+      removeAbandoned: true
+      #单位:秒
+      removeAbandonedTimeout: 2400
+      logAbandoned: true
+      # 打开PSCache，并且指定每个连接上PSCache的大小
+      poolPreparedStatements: true
+      maxPoolPreparedStatementPerConnectionSize: 20
+      # 配置监控统计拦截的filters，去掉后监控界面sql无法统计，'wall'用于防火墙
+      filters: stat,slf4j
+      # 通过connectProperties属性来打开mergeSql功能；慢SQL记录
+      connectionProperties: druid.stat.mergeSql=true;druid.stat.slowSqlMillis=5000
+  flyway:
+    enabled: true
+    clean-disabled: true
+    table: flyway_schema_history
+    baseline-on-migrate: true
+    encoding: UTF-8
+    out-of-order: false
+    validate-on-migrate: true
+    # 指定 baseline 的版本号,默认值为 1, 小于等于该版本号的 SQL 文件, migrate 时会被忽略
+    baseline-version: 0
+    # sql 文件的位置
+    # 文件名格式必须是 V{version}__{description}.sql、V{version}__{description}.java，version必须是整数
+    locations: classpath:/sql/migration/mysql/zh_CN,classpath:/com/nms/platsvc/inventory/db/migration/mysql
+  http:
+    codec:
+      max-in-memory-size: 1MB
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 30379
+mybatis:
+  configLocation: classpath:mapper/mybatis-config.xml
+  mapperLocations: classpath*:mapper/ai/base/**/*.xml,classpath*:mapper/ai/mysql/**/*.xml
+  file-path:
+    export-file: /var/backup/ftp/virtual/exportfiles/logs
+com:
+  nms:
+    ai:
+      security:
+        captcha:
+          expire-seconds: 300
+          pow-difficulty: 4
+      websocket:
+        # websocket最大消息字节数BufferSize (1M)
+        max_message_buffer_size: 1048576
+      vector-database:
+        provider: milvus
+        milvus:
+          cluster-endpoint: http://127.0.0.1:19530
+          token: root:Milvus
+          schema-config-path:
+      knowledge:
+        repo:
+          # 知识库仓库根目录
+          root-path: ${user.home}/j2agent/knowledge-repo
+          watch-enabled: true
+      # 回合结束后是否生成「建议追问」NOTICE（关 WebSocket 前发出）
+      follow-up-suggestions:
+        enabled: false
+        timeout-seconds: 12
+        max-items: 5
+        max-item-length: 120
+      chat-input:
+        max-user-message-length: 32768
+      retrieve:
+        max-embedding-input-chars: 8192
+        query-chunk-overlap-chars: 50
+        max-query-chunks: 5
+      # 智能体插件配置
+      plugin:
+        path: ${user.home}/j2agent/volume/j2agent/plugins/agents

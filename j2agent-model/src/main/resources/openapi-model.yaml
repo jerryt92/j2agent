@@ -1,0 +1,807 @@
+openapi: 3.0.3
+info:
+  title: ai operate - OpenAPI 3.0
+  description: |-
+    This is ai operate OpenAPI.
+  version: 1.0.0
+components:
+  schemas:
+    FileDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: 文件ID
+        fullFileName:
+          type: string
+          description: 文件全名
+        url:
+          type: string
+          description: 文件URL
+    RagInfoDto:
+      type: object
+      properties:
+        textChunkId:
+          type: string
+          description: 文本块ID
+        textChunk:
+          type: string
+          description: 文本块
+        srcFile:
+          $ref: '#/components/schemas/FileDto'
+    LoginRequestDto:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+        validateCode:
+          type: string
+          description: 验证码
+        hash:
+          type: string
+          description: 验证码Hash
+    SessionInfoDto:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: 用户ID
+        username:
+          type: string
+          description: 用户名
+        role:
+          type: integer
+          description: 用户角色
+    UserDto:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: 用户ID
+        username:
+          type: string
+          description: 用户名
+        role:
+          type: integer
+          description: 用户角色，1-管理员，2-普通用户
+        createTime:
+          type: integer
+          format: int64
+          description: 创建时间
+        email:
+          type: string
+          description: 邮箱
+    UserListDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserDto'
+    UserCreateRequestDto:
+      type: object
+      properties:
+        username:
+          type: string
+          description: 用户名
+        password:
+          type: string
+          format: password
+          description: 密码
+        role:
+          type: integer
+          description: 用户角色，1-管理员，2-普通用户
+    UserRoleUpdateRequestDto:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: 用户ID
+        role:
+          type: integer
+          description: 用户角色，1-管理员，2-普通用户
+    UserPasswordUpdateRequestDto:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: 用户ID，不传时修改当前用户密码
+        oldPassword:
+          type: string
+          format: password
+          description: 旧密码
+        newPassword:
+          type: string
+          format: password
+          description: 新密码
+    RegisterEnabledDto:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          description: 是否开启邮箱自助注册
+    RegisterSendCodeRequestDto:
+      type: object
+      properties:
+        email:
+          type: string
+          description: 注册邮箱
+        validateCode:
+          type: string
+          description: 人机验证码
+        hash:
+          type: string
+          description: 人机验证码 Hash
+    RegisterRequestDto:
+      type: object
+      properties:
+        username:
+          type: string
+          description: 用户名（可选，默认与邮箱相同）
+        password:
+          type: string
+          format: password
+          description: 密码
+        email:
+          type: string
+          description: 邮箱
+        code:
+          type: string
+          description: 邮箱验证码
+    ResetPasswordSendCodeRequestDto:
+      type: object
+      properties:
+        email:
+          type: string
+          description: 注册邮箱
+        validateCode:
+          type: string
+          description: 人机验证码
+        hash:
+          type: string
+          description: 人机验证码 Hash
+    ResetPasswordRequestDto:
+      type: object
+      properties:
+        email:
+          type: string
+          description: 邮箱
+        newPassword:
+          type: string
+          format: password
+          description: 新密码
+        code:
+          type: string
+          description: 邮箱验证码
+    ValidateCaptchaDto:
+      type: object
+      properties:
+        sliderX:
+          type: number
+          format: float
+        hash:
+          type: string
+        track:
+          type: array
+          items:
+            $ref: '#/components/schemas/Track'
+      required:
+        - sliderX
+        - hash
+    ValidatePowCaptchaDto:
+      type: object
+      properties:
+        hash:
+          type: string
+        powNonce:
+          type: string
+      required:
+        - hash
+        - powNonce
+    Track:
+      type: object
+      properties:
+        t:
+          type: integer
+          format: int64
+          description: 时间戳
+        pointerX:
+          type: number
+          format: float
+          description: 光标在屏幕上的x坐标
+        pointerY:
+          type: number
+          format: float
+          description: 光标在屏幕上的y坐标
+    SlideCaptchaResp:
+      type: object
+      description: 滑动验证码
+      properties:
+        hash:
+          type: string
+          description: 验证码签名
+        puzzleUrl:
+          type: string
+          description: 凹槽图片url
+        width:
+          type: integer
+          format: int32
+          description: 凹槽图片宽度
+        height:
+          type: integer
+          format: int32
+          description: 凹槽图片高度
+        sliderUrl:
+          type: string
+          description: 滑块图片url
+        sliderSize:
+          type: integer
+          format: int32
+          description: 滑块图片宽度
+        sliderY:
+          type: number
+          format: float
+          description: 滑块图片高度
+    PowCaptchaResp:
+      type: object
+      description: 纯 PoW 验证挑战
+      properties:
+        hash:
+          type: string
+          description: 验证码签名
+        powSalt:
+          type: string
+          description: PoW salt
+        powDifficulty:
+          type: integer
+          format: int32
+          description: PoW 难度（前导零个数）
+    EmbeddingsRequestDto:
+      type: object
+      properties:
+        input:
+          type: array
+          items:
+            type: string
+    EmbeddingsResponseDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmbeddingsDtoItem'
+    EmbeddingsDtoItem:
+      type: object
+      properties:
+        hash:
+          type: string
+        embeddingModel:
+          type: string
+        embeddingProvider:
+          type: string
+        text:
+          type: string
+        embeddings:
+          type: array
+          items:
+            type: number
+            format: float
+    KnowledgeRetrieveItemDto:
+      type: object
+      properties:
+        hash:
+          description: 嵌入text的哈希值（SHA-1），同时也作为唯一标识符
+          type: string
+        score:
+          description: 匹配度[-1,1]
+          type: number
+          format: float
+        hybridScore:
+          description: 混合检索得分
+          type: number
+          format: float
+        denseScore:
+          description: 稠密向量检索得分
+          type: number
+          format: float
+        sparseScore:
+          description: 稀疏向量检索得分
+          type: number
+          format: float
+        metricType:
+          type: string
+          enum: [ "L2", "IP", "COSINE", "JACCARD" ]
+        denseMetricType:
+          description: 稠密向量检索指标
+          type: string
+          enum: [ "L2", "IP", "COSINE", "JACCARD" ]
+        sparseMetricType:
+          description: 稀疏向量检索指标
+          type: string
+          enum: [ "BM25" ]
+        embeddingModel:
+          type: string
+        embeddingProvider:
+          type: string
+        dimension:
+          description: 嵌入向量的维度
+          type: integer
+        outline:
+          description: 嵌入文本值
+          type: string
+        textChunk:
+          description: 文本块
+          type: string
+        textChunkId:
+          description: 文本块ID
+          type: string
+        sourceFile:
+          description: 源文件路径
+          type: string
+        isFiltered:
+          type: boolean
+          default: false
+          description: 是否被表达式过滤
+    KnowledgeGetListDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/KnowledgeDto'
+    KnowledgeCollectionListDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: string
+    KnowledgeSyncResult:
+      type: object
+      description: 知识库目录增量同步结果
+      properties:
+        success:
+          type: boolean
+          description: 是否同步成功
+        message:
+          type: string
+          description: 失败原因（成功时可为空）
+    KnowledgeDto:
+      type: object
+      properties:
+        textChunkId:
+          type: string
+          description: 知识ID（文本块的SHA-1）
+        outline:
+          type: array
+          description: 知识概要（用于嵌入后检索的文本）
+          items:
+            type: string
+        textChunk:
+          type: string
+          description: 文本块
+        embeddingModel:
+          type: string
+          description: 嵌入模型名称
+        embeddingProvider:
+          type: string
+          description: 嵌入模型提供商名称
+        dimension:
+          description: 嵌入向量的维度
+          type: integer
+        description:
+          type: string
+          description: 描述
+        fileName:
+          type: string
+          description: 文件名
+        fileId:
+          type: integer
+          description: 文件ID
+        sourceFile:
+          type: string
+          description: 源文件路径
+        createTime:
+          type: integer
+          description: 创建时间
+          format: int64
+        updateTime:
+          type: integer
+          description: 更新时间
+          format: int64
+        createUsername:
+          type: string
+          description: 创建者
+    KnowledgeAddDto:
+      type: object
+      properties:
+        id:
+          type: string
+          description: 知识ID（textChunk的SHA-1）
+        outline:
+          type: array
+          description: 知识概要（用于检索）
+          items:
+            type: string
+        textChunk:
+          type: string
+          description: 文本块
+        description:
+          type: string
+          description: 描述
+        fileId:
+          type: integer
+          description: 文件ID
+        classify:
+          type: string
+          description: 分类（/分隔）
+          example: 数通/配置
+        fileLocation:
+          type: string
+          description: 文件中的位置
+    KnowledgeRetrieveResponseDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/KnowledgeRetrieveItemDto'
+    ContextIdDto:
+      type: object
+      properties:
+        contextId:
+          type: string
+    AgentInfoDto:
+      type: object
+      description: 已注册智能体摘要
+      properties:
+        agentId:
+          type: string
+          description: 智能体唯一标识
+        name:
+          type: string
+          description: 展示名称
+        description:
+          type: string
+          description: 说明
+        showHotQuestions:
+          type: boolean
+          description: 是否在聊天页展示热门问题模板
+    AgentInfoList:
+      type: object
+      properties:
+        agents:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentInfoDto'
+    AgentPluginStatusDto:
+      type: object
+      description: Agent 插件状态
+      properties:
+        jarFiles:
+          type: array
+          items:
+            type: string
+          description: 目录下的 JAR 文件名列表
+        loadedAgentIds:
+          type: array
+          items:
+            type: string
+          description: 当前已由插件 JAR 加载的 agentId 列表
+    AgentReloadResult:
+      type: object
+      description: Agent 插件 JAR 重载结果
+      properties:
+        success:
+          type: boolean
+          description: 是否重载成功
+        message:
+          type: string
+          description: 失败原因（成功时可为空）
+        jarFiles:
+          type: array
+          items:
+            type: string
+          description: 目录下的 JAR 文件名列表
+        loadedAgentIds:
+          type: array
+          items:
+            type: string
+          description: 重载后由插件加载的 agentId 列表
+    TurnStepDto:
+      type: object
+      description: Agent 单轮状态轨迹中的一个步骤
+      properties:
+        state:
+          type: string
+          enum: [ "IDLE", "THINKING", "STREAMING_TEXT", "CALLING_TOOL", "LOAD_SKILL", "COMPLETED", "FAILED", "CANCELLED" ]
+          description: Agent 状态
+        toolName:
+          type: string
+          description: 工具或技能名称（CALLING_TOOL / LOAD_SKILL 时）
+        ts:
+          type: integer
+          format: int64
+          description: 步骤时间戳（毫秒）
+    MessageDto:
+      type: object
+      description: 聊天消息
+      properties:
+        index:
+          type: integer
+          description: 消息序号
+        role:
+          type: string
+          enum: [ "system", "user", "assistant", "tool" ]
+          description: 角色
+        content:
+          type: string
+          description: 面向用户的最终回答正文
+        reasoningContent:
+          type: string
+          description: Provider 深度思考推理正文（Anthropic/Ollama reasoningContent），与 content 并列
+        displayInChat:
+          type: boolean
+          description: 是否在会话主界面渲染气泡；false 表示仅模型上下文或折叠展示（如纯工具调用轮次）
+          default: true
+        messageKind:
+          type: string
+          enum: [ "normal", "tool_round", "tool_result" ]
+          description: 消息子类型，便于前端区分样式
+        turnSteps:
+          type: array
+          description: 该条 assistant 回复对应的 Agent 执行步骤轨迹（历史回放）
+          items:
+            $ref: '#/components/schemas/TurnStepDto'
+        feedback:
+          type: integer
+          description: 反馈
+          enum: [ 0, 1, 2 ]
+          x-enum-varnames: [ "NONE", "GOOD", "BAD" ]
+        srcFile:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileDto'
+    ChatRequestDto:
+      type: object
+      properties:
+        contextId:
+          type: string
+          description: 会话ID
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/MessageDto'
+        retrievalKb:
+          type: boolean
+          description: 是否检索知识库
+          default: true
+        toolGroupName:
+          type: array
+          description: 使用的工具组
+          default: [ "general" ]
+          items:
+            type: string
+        systemPrompt:
+          type: string
+          description: 系统提示词
+          default: GENERAL_ASSISTANT
+          enum: [ GENERAL_ASSISTANT, TOOL_USE ]
+        thinkingMode:
+          type: string
+          description: 本轮深度思考；不传则按 Agent 默认再回退提供商配置。provider_default 不向 API 传 thinking，由提供商/模型默认
+          enum: [ provider_default, on, off ]
+    ChatResponseDto:
+      type: object
+      properties:
+        contextId:
+          type: string
+          description: 聊天上下文ID
+        message:
+          $ref: '#/components/schemas/MessageDto'
+        done:
+          type: boolean
+          default: false
+        error:
+          type: boolean
+          default: false
+        errorCode:
+          type: string
+        errorMessage:
+          type: string
+    HistoryContextList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistoryContextItem'
+    HistoryContextItem:
+      type: object
+      description: 聊天历史
+      properties:
+        contextId:
+          type: string
+          description: 聊天上下文ID
+        agentId:
+          type: string
+          description: 智能体ID（与记忆隔离维度一致；空串表示历史默认）
+        title:
+          type: string
+          description: 标题
+        lastUpdateTime:
+          type: integer
+          format: int64
+          description: 最后访问时间
+    ChatContextDto:
+      type: object
+      description: 聊天对话上下文
+      properties:
+        contextId:
+          type: string
+          description: 聊天上下文ID
+        agentId:
+          type: string
+          description: 智能体ID
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/MessageDto'
+    MessageFeedbackRequest:
+      type: object
+      properties:
+        contextId:
+          type: string
+          description: 上下文ID
+        agentId:
+          type: string
+          description: 智能体ID（空串表示历史默认行）
+        index:
+          type: integer
+          description: 消息序号
+        feedback:
+          type: integer
+          description: 反馈
+          enum: [ 0, 1, 2 ]
+          x-enum-varnames: [ "NONE", "GOOD", "BAD" ]
+    CheckApiResponse:
+      type: object
+      properties:
+        status:
+          type: integer
+          description: 0 - 正常，1 - 连接异常，2 - 认证异常
+          enum: [ 0, 1, 2 ]
+          x-enum-varnames: [ "NORMAL", "CONNECT_ERROR", "AUTH_ERROR" ]
+        description:
+          type: string
+          description: 描述
+    PropertyDto:
+      type: object
+      properties:
+        propertyName:
+          type: string
+          description: 属性名称
+        propertyValue:
+          type: string
+          description: 值
+
+    ProviderConfigDto:
+      type: object
+      description: 模型提供商配置（LLM/Embedding），apiKey 已脱敏
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: 主键
+        apiType:
+          type: string
+          description: API 类型
+          enum: [ llm, embedding ]
+        configName:
+          type: string
+          description: 配置名称
+        providerType:
+          type: string
+          description: 提供商类型
+        config:
+          type: object
+          description: 提供商差异化字段；不同 providerType 字段集合不同
+          additionalProperties: true
+        enabled:
+          type: boolean
+          description: 是否启用
+        isCurrent:
+          type: boolean
+          description: 是否当前生效
+        description:
+          type: string
+          description: 描述
+        createTime:
+          type: integer
+          format: int64
+          description: 创建时间（毫秒）
+        updateTime:
+          type: integer
+          format: int64
+          description: 更新时间（毫秒）
+
+    ProviderConfigUpsertDto:
+      type: object
+      description: 新增/更新模型提供商配置入参
+      required:
+        - configName
+        - providerType
+      properties:
+        apiType:
+          type: string
+          description: API 类型（仅新增时必填；更新时忽略）
+          enum: [ llm, embedding ]
+        configName:
+          type: string
+          description: 配置名称（展示用，可重复）
+        providerType:
+          type: string
+          description: 提供商类型
+        config:
+          type: object
+          description: 提供商差异化字段；apiKey 留空表示沿用原值
+          additionalProperties: true
+        description:
+          type: string
+          description: 描述
+        enabled:
+          type: boolean
+          description: 是否启用，默认 true
+          default: true
+        makeCurrent:
+          type: boolean
+          description: 新增时是否立即设为当前生效（仅 enabled=true 时生效）
+          default: false
+
+    McpToolItem:
+      type: object
+      properties:
+        name:
+          type: string
+          description: 接口名称
+        description:
+          type: string
+          description: 接口描述
+
+    McpStatusItem:
+      type: object
+      properties:
+        name:
+          type: string
+          description: MCP 服务名称
+        type:
+          type: string
+          description: MCP 类型
+        endpoint:
+          type: string
+          description: MCP 接口地址或命令
+        status:
+          type: string
+          description: 在线状态
+        tools:
+          type: array
+          description: 接口列表
+          items:
+            $ref: '#/components/schemas/McpToolItem'
+
+    QaTemplateItem:
+      type: object
+      properties:
+        question:
+          type: string
+          description: 问题
+    QaTemplateList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/QaTemplateItem'

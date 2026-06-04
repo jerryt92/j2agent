@@ -1,0 +1,7 @@
+INSERT INTO j2agent.ai_properties (property_name, property_value, description)
+SELECT 'nms-config-json',
+       '{"datasource":{"jdbcUrl":"jdbc:mysql://host.docker.internal:3306/?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=UTC","username":"","password":"","driverClassName":"com.mysql.cj.jdbc.Driver"},"service":{"baseUrl":""}}',
+       'NMS网管连接配置JSON'
+WHERE NOT EXISTS (
+    SELECT 1 FROM j2agent.ai_properties WHERE property_name = 'nms-config-json'
+);

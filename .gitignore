@@ -78,6 +78,7 @@ tags
 ########### eclipse
 
 .metadata
+bin/
 tmp/
 *.tmp
 *.bak
@@ -174,7 +175,8 @@ __pycache__/
 
 logs/
 /docs/.*
+/j2agent-web/
+/.aiassistant/
 
-# macOS
-.DS_Store
-/jrag-starter/src/main/resources/dist/
+.env
+/docker/images_offline_amd64_dir/
