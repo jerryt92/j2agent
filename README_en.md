@@ -17,11 +17,12 @@ All Docker configurations are located in the `docker/` directory. By default, it
 1. Pull all dependency images (optional)
 
 ```shell
-docker pull maven:3.8.8-amazoncorretto-21-debian
 docker pull eclipse-temurin:21-jre
-docker pull alpine/git
-docker pull milvusdb/milvus:v2.6.9
-docker pull debian:bookworm-slim
+docker pull mysql:8.0.36
+docker pull redis:7.4.2
+docker pull quay.io/coreos/etcd:v3.5.25
+docker pull minio/minio:RELEASE.2024-12-18T13-15-44Z
+docker pull milvusdb/milvus:v2.6.17
 ```
 
 2. Build and deploy frontend
@@ -30,13 +31,13 @@ docker pull debian:bookworm-slim
 git clone https://github.com/j2agent-ai/j2agent-ui.git /tmp/j2agent-ui
 cd /tmp/j2agent-ui && npm install && npm run build
 mv dist ui
-mv ui ${J2AGENT_BASE_PATH}/volumes/j2agent/
+mv ui ${J2AGENT_VOLUMES_PATH}/volumes/j2agent/
 ```
 
 Or pull pre-built artifacts directly:
 
 ```shell
-git clone -b dist https://github.com/j2agent-ai/j2agent-ui.git ${J2AGENT_BASE_PATH}/volumes/j2agent/ui
+git clone -b dist https://github.com/j2agent-ai/j2agent-ui.git ${J2AGENT_VOLUMES_PATH}/volumes/j2agent/ui
 ```
 
 3. Deploy
@@ -47,7 +48,7 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 Configurable options (`docker/.env`, see `docker/.env.example`):
 
-- `J2AGENT_BASE_PATH`: Host configuration/data root directory (default `~/j2agent`)
+- `J2AGENT_VOLUMES_PATH`: Host configuration/data root directory (default `~/j2agent`)
 - `COMPOSE_PROJECT_NAME`: Container prefix (default `j2agent`)
 - `J2AGENT_PORT`: Service port (default `30111`)
 - `TAG`: Image tag

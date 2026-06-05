@@ -15,7 +15,7 @@ public class AICenterStarterMain {
 
     private static void printStartupInfo(ConfigurableApplicationContext context) {
         Environment env = context.getEnvironment();
-        String port = env.getProperty("server.port", "8080");
+        String port = env.getRequiredProperty("server.port");
         String contextPath = env.getProperty("server.servlet.context-path", "");
         String host = "localhost";
         String[] profiles = env.getActiveProfiles();
