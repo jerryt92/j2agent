@@ -1,5 +1,5 @@
 server:
-  port: ${J2AGENT_PORT}
+  port: 30111
   servlet:
     encoding:
       charset: UTF-8 # 需要强制设置编码，否则SSE会出现乱码
@@ -15,14 +15,14 @@ spring:
   web:
     resources:
       # 生产前端由宿主机卷挂载；末尾 / 符合 Spring 6.2+ 资源路径约定
-      static-locations: classpath:/ui/
+      static-locations: file:${user.home}/j2agent/volumes/j2agent/ui/
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     type: com.alibaba.druid.pool.DruidDataSource
-    url: jdbc:mysql://${J2AGENT_MYSQL_HOST}:${J2AGENT_MYSQL_PORT}/${MYSQL_DATABASE}?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&autoReconnect=true&autoReconnectForPools=true&useLocalSessionState=true&allowMultiQueries=true&allowPublicKeyRetrieval=true&serverTimezone=UTC
-    username: ${J2AGENT_DB_USERNAME}
+    url: jdbc:mysql://127.0.0.1:33306/j2agent?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&autoReconnect=true&autoReconnectForPools=true&useLocalSessionState=true&allowMultiQueries=true&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: root
     # 关于明文密码的问题，后期打包时再做处理，包括url也是需要在部署时动态调整。
-    password: ${J2AGENT_DB_PASSWORD}
+    password: j2apassword@2026#
     druid:
       initial-size: 5
       minIdle: 5
@@ -67,8 +67,8 @@ spring:
       max-in-memory-size: 1MB
   data:
     redis:
-      host: ${J2AGENT_REDIS_HOST}
-      port: ${J2AGENT_REDIS_PORT}
+      host: 127.0.0.1
+      port: 36379
 mybatis:
   configLocation: classpath:mapper/mybatis-config.xml
   mapperLocations: classpath*:mapper/ai/base/**/*.xml,classpath*:mapper/ai/mysql/**/*.xml
@@ -85,8 +85,8 @@ j2agent:
   vector-database:
     provider: milvus
     milvus:
-      cluster-endpoint: http://${J2AGENT_MILVUS_HOST}:${J2AGENT_MILVUS_PORT}
-      token: ${J2AGENT_MILVUS_TOKEN}
+      cluster-endpoint: http://127.0.0.1:19530
+      token: root:Milvus
       schema-config-path:
   knowledge:
     repo:
