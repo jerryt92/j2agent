@@ -8,7 +8,7 @@ import org.springframework.web.socket.server.standard.ServletServerContainerFact
 @Configuration
 public class WebsocketConfig {
 
-    @Value("${com.nms.ai.websocket.max_message_buffer_size}")
+    @Value("${j2agent.websocket.max_message_buffer_size}")
     private Integer maxMessageBufferSize;
 
     @Bean

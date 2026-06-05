@@ -10,13 +10,13 @@ import org.springframework.context.annotation.Configuration;
 @Slf4j
 @Configuration
 public class VectorDatabaseConfig {
-    @Value("${com.nms.ai.vector-database.provider}")
+    @Value("${j2agent.vector-database.provider}")
     public String vectorDatabase;
-    @Value("${com.nms.ai.vector-database.milvus.cluster-endpoint}")
+    @Value("${j2agent.vector-database.milvus.cluster-endpoint}")
     private String milvusClusterEndpoint;
-    @Value("${com.nms.ai.vector-database.milvus.token}")
+    @Value("${j2agent.vector-database.milvus.token}")
     private String milvusToken;
-    @Value("${com.nms.ai.vector-database.milvus.schema-config-path:}")
+    @Value("${j2agent.vector-database.milvus.schema-config-path:}")
     private String milvusSchemaConfigPath;
 
     @Bean

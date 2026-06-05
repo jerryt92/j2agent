@@ -43,7 +43,7 @@ public class CaptchaService {
 
     private static final String CAPTCHA_KEY_PREFIX = "security_captcha:";
 
-    @Value("${com.nms.ai.security.captcha.pow-difficulty}")
+    @Value("${j2agent.security.captcha.pow-difficulty}")
     private int powDifficulty;
 
     private static class CaptchaCache {

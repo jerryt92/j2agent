@@ -21,7 +21,7 @@
 | JDK | 21（与平台 `j2agent-server` 一致） |
 | 包名 | 插件类必须在 **`com.nms.prodplugin.ai.center`** 及其子包（`AgentPluginRegistry` 硬编码扫描） |
 | Spring 注解 | Agent 及同 JAR 依赖须 `@Component` / `@Service` 等 |
-| 部署目录 | `com.nms.ai.plugin.path`，默认 `${user.home}/j2agent/plugins/agents` |
+| 部署目录 | `j2agent.plugin.path`，默认 `${user.home}/j2agent/plugins/agents` |
 | 平台依赖 | 插件模块依赖 `j2agent-server`（编译期）；**不可**将平台类打入插件 JAR |
 
 ## 2. 最小工程骨架
