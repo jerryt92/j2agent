@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.config;
 
-import io.github.jerryt92.j2agent.service.llm.agent.AgentThinkingOverride;
+import io.github.jerryt92.j2agent.service.llm.agent.inf.constant.AgentThinkingOverride;
 import io.github.jerryt92.j2agent.service.providerconfig.LlmActiveConfig;
 import io.github.jerryt92.j2agent.service.providerconfig.LlmThinkingSupport;
 import io.github.jerryt92.j2agent.service.providerconfig.ProviderTypes;

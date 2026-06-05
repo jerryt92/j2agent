@@ -1,4 +1,4 @@
-package io.github.jerryt92.j2agent.service.llm.agent;
+package io.github.jerryt92.j2agent.service.llm.agent.inf;
 
 import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
@@ -12,14 +12,14 @@ import com.alibaba.fastjson2.JSONObject;
 import io.github.jerryt92.j2agent.config.PluginProperties;
 import io.github.jerryt92.j2agent.constants.CommonConstants;
 import io.github.jerryt92.j2agent.service.llm.advisor.ReactCompatibleMessageChatMemoryAdvisor;
+import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunContext;
+import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunnableContextKeys;
 import io.github.jerryt92.j2agent.service.llm.skill.AgentClassLoaderSkillRegistry;
 import io.github.jerryt92.j2agent.service.llm.skill.AgentSkillsAgentHook;
 import io.github.jerryt92.j2agent.service.llm.skill.AgentUiSkillLoadToolInterceptor;
 import io.github.jerryt92.j2agent.service.llm.tool.AgentToolErrorReturnInterceptor;
 import io.github.jerryt92.j2agent.service.llm.tool.AgentUiToolEventInterceptor;
-import io.github.jerryt92.j2agent.service.llm.agent.AgentRunContext;
-import io.github.jerryt92.j2agent.service.llm.agent.AgentRunnableContextKeys;
-import io.github.jerryt92.j2agent.service.llm.agent.AgentThinkingOverride;
+import io.github.jerryt92.j2agent.service.llm.agent.inf.constant.AgentThinkingOverride;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import org.springframework.ai.chat.client.ChatClient;

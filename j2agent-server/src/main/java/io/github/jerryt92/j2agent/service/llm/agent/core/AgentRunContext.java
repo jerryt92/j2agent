@@ -1,4 +1,4 @@
-package io.github.jerryt92.j2agent.service.llm.agent;
+package io.github.jerryt92.j2agent.service.llm.agent.core;
 
 import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
 

@@ -1,11 +1,13 @@
-package io.github.jerryt92.j2agent.service.llm.agent.feature;
+package io.github.jerryt92.j2agent.service.llm.agent.inf.feature;
+
+import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
 
 import java.util.Set;
 
 /**
  * Agent 可选特性：从平台外部技能目录加载共享 Skill。
  *
- * <p>需要外部技能的 Agent 应显式 {@code implements ExternalSkills}（{@link io.github.jerryt92.j2agent.service.llm.agent.AiAgent} 本身不实现）。
+ * <p>需要外部技能的 Agent 应显式 {@code implements ExternalSkills}（{@link AiAgent} 本身不实现）。
  * Agent 内部 {@code resources/skills/} 下的技能始终默认全部加载并暴露。
  *
  * <p>{@link #useAllExternalSkills()} 默认为 {@code true}，此时加载 {@code <plugin.path>/skills/}

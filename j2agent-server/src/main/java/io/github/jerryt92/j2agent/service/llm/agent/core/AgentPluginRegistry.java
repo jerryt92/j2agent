@@ -1,9 +1,7 @@
-package io.github.jerryt92.j2agent.service.llm.agent;
+package io.github.jerryt92.j2agent.service.llm.agent.core;
 
 import io.github.jerryt92.j2agent.config.PluginProperties;
-import io.github.jerryt92.j2agent.service.llm.agent.AgentRouter;
-import io.github.jerryt92.j2agent.service.llm.agent.AiAgent;
-import io.github.jerryt92.j2agent.service.llm.agent.PluginAgentClassLoader;
+import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
@@ -115,7 +113,7 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
     public AgentPluginReloadOutcome reload() {
         synchronized (reloadLock) {
             String pluginPath = resolvePluginPath();
-            List<io.github.jerryt92.j2agent.service.llm.agent.AgentPluginBundle> bundles = listPluginBundles(pluginPath);
+            List<AgentPluginBundle> bundles = listPluginBundles(pluginPath);
             DefaultListableBeanFactory beanFactory =
                     (DefaultListableBeanFactory) applicationContext.getAutowireCapableBeanFactory();
             Set<String> builtinAgentIds = collectBuiltinAgentIds(beanFactory);
@@ -127,7 +125,7 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
                         currentLoadedAgentIds(), ex.getMessage());
             }
             unloadDynamicPlugins();
-            for (io.github.jerryt92.j2agent.service.llm.agent.AgentPluginBundle bundle : bundles) {
+            for (AgentPluginBundle bundle : bundles) {
                 try {
                     scanAndRegisterBundle(bundle, beanFactory);
                 } catch (Exception ex) {
@@ -154,12 +152,12 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
             log.info("No plugin path configured, skip dynamic loading.");
             return;
         }
-        List<io.github.jerryt92.j2agent.service.llm.agent.AgentPluginBundle> bundles = listPluginBundles(pluginPath);
+        List<AgentPluginBundle> bundles = listPluginBundles(pluginPath);
         if (bundles.isEmpty()) {
             log.info("No plugin bundles found in plugin path: {}", pluginPath);
             return;
         }
-        for (io.github.jerryt92.j2agent.service.llm.agent.AgentPluginBundle bundle : bundles) {
+        for (AgentPluginBundle bundle : bundles) {
             try {
                 scanAndRegisterBundle(bundle, registry);
             } catch (Exception ex) {
@@ -247,7 +245,7 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
     /**
      * 扫描插件 bundle，将 JAR 内 Spring 组件注册为 BeanDefinition（构造器自动装配）。
      */
-    private List<DynamicRegistration> scanAndRegisterBundle(io.github.jerryt92.j2agent.service.llm.agent.AgentPluginBundle bundle, BeanDefinitionRegistry registry) {
+    private List<DynamicRegistration> scanAndRegisterBundle(AgentPluginBundle bundle, BeanDefinitionRegistry registry) {
         File jarFile = bundle.jarFile();
         log.info("Loading plugin bundle: {} ({})", bundle.label(), jarFile.getAbsolutePath());
         List<DynamicRegistration> added = new ArrayList<>();
@@ -368,11 +366,11 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
         dynamicRegistrations.clear();
     }
 
-    private void validatePluginAgentIds(List<io.github.jerryt92.j2agent.service.llm.agent.AgentPluginBundle> bundles, Set<String> builtinAgentIds,
+    private void validatePluginAgentIds(List<AgentPluginBundle> bundles, Set<String> builtinAgentIds,
                                         DefaultListableBeanFactory beanFactory)
             throws AgentPluginConflictException {
         Set<String> seenPluginIds = new LinkedHashSet<>();
-        for (io.github.jerryt92.j2agent.service.llm.agent.AgentPluginBundle bundle : bundles) {
+        for (AgentPluginBundle bundle : bundles) {
             File jarFile = bundle.jarFile();
             PluginAgentClassLoader scanLoader = null;
             try (JarFile jar = new JarFile(jarFile)) {
@@ -481,13 +479,13 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
                 : null;
     }
 
-    private static List<io.github.jerryt92.j2agent.service.llm.agent.AgentPluginBundle> listPluginBundles(String pluginPath) {
-        return io.github.jerryt92.j2agent.service.llm.agent.AgentPluginBundle.discover(pluginPath);
+    private static List<AgentPluginBundle> listPluginBundles(String pluginPath) {
+        return AgentPluginBundle.discover(pluginPath);
     }
 
     private static List<String> listPluginBundleLabels(String pluginPath) {
         return listPluginBundles(pluginPath).stream()
-                .map(io.github.jerryt92.j2agent.service.llm.agent.AgentPluginBundle::label)
+                .map(AgentPluginBundle::label)
                 .collect(Collectors.toList());
     }
 

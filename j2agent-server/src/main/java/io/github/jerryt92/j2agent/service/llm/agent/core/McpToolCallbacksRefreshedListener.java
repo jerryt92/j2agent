@@ -1,5 +1,6 @@
-package io.github.jerryt92.j2agent.service.llm.agent;
+package io.github.jerryt92.j2agent.service.llm.agent.core;
 
+import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
 import io.github.jerryt92.j2agent.service.llm.mcp.McpToolCallbacksRefreshedEvent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;

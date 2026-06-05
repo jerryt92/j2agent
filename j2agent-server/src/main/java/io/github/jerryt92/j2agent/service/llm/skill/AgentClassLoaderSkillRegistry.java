@@ -5,7 +5,7 @@ import com.alibaba.cloud.ai.graph.skills.registry.AbstractSkillRegistry;
 import com.alibaba.cloud.ai.graph.skills.registry.filesystem.SkillScanner;
 import io.github.jerryt92.j2agent.config.PluginLayout;
 import io.github.jerryt92.j2agent.config.PluginProperties;
-import io.github.jerryt92.j2agent.service.llm.agent.feature.ExternalSkills;
+import io.github.jerryt92.j2agent.service.llm.agent.inf.feature.ExternalSkills;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.prompt.SystemPromptTemplate;

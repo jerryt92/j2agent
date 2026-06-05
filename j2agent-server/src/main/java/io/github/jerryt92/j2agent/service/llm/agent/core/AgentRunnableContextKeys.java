@@ -1,4 +1,4 @@
-package io.github.jerryt92.j2agent.service.llm.agent;
+package io.github.jerryt92.j2agent.service.llm.agent.core;
 
 /**
  * 放入 {@link com.alibaba.cloud.ai.graph.RunnableConfig#context()} 的键名常量，供工具拦截器等读取。

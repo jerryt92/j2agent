@@ -1,4 +1,6 @@
-package io.github.jerryt92.j2agent.service.llm.agent;
+package io.github.jerryt92.j2agent.service.llm.agent.inf.constant;
+
+import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
 
 /**
  * Agent 级深度思考覆盖策略。

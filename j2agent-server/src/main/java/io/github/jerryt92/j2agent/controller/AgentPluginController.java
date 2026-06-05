@@ -4,8 +4,8 @@ import io.github.jerryt92.j2agent.config.annotation.RequiredRole;
 import io.github.jerryt92.j2agent.model.AgentPluginStatusDto;
 import io.github.jerryt92.j2agent.model.AgentReloadResult;
 import io.github.jerryt92.j2agent.server.api.AgentPluginApi;
-import io.github.jerryt92.j2agent.service.llm.agent.AgentPluginRegistry;
-import io.github.jerryt92.j2agent.service.llm.agent.AgentPluginReloadService;
+import io.github.jerryt92.j2agent.service.llm.agent.core.AgentPluginRegistry;
+import io.github.jerryt92.j2agent.service.llm.agent.core.AgentPluginReloadService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
 

@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.service.llm;
 
-import io.github.jerryt92.j2agent.service.llm.agent.AgentThinkingOverride;
+import io.github.jerryt92.j2agent.service.llm.agent.inf.constant.AgentThinkingOverride;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.concurrent.ConcurrentHashMap;
