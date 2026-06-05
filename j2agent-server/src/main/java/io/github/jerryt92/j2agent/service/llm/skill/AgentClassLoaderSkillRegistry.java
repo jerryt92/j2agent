@@ -461,8 +461,14 @@ public class AgentClassLoaderSkillRegistry extends AbstractSkillRegistry {
             if (classLoader == null && agent != null) {
                 classLoader = agent.getClass().getClassLoader();
             }
+            if (!(agent instanceof ExternalSkills externalSkills)) {
+                loadAllExternalSkills = false;
+                externalSkillNames = Set.of();
+                externalSkillsRoot = null;
+                return;
+            }
             externalSkillsRoot = resolveExternalSkillsRoot(pluginProperties, pluginPathOverride);
-            if (agent instanceof ExternalSkills externalSkills && !externalSkills.useAllExternalSkills()) {
+            if (!externalSkills.useAllExternalSkills()) {
                 externalSkillNames = externalSkills.useExternalSkills();
                 loadAllExternalSkills = false;
                 return;
