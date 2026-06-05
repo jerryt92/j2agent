@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
  */
 @Data
 @Component
-@ConfigurationProperties(prefix = "com.nms.ai.chat-input")
+@ConfigurationProperties(prefix = "j2agent.chat-input")
 public class ChatInputProperties {
 
     /**

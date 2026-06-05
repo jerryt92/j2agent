@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 @Getter
 @Setter
 @Component
-@ConfigurationProperties(prefix = "com.nms.ai.knowledge.repo")
+@ConfigurationProperties(prefix = "j2agent.knowledge.repo")
 public class KnowledgeRepoProperties {
     /**
      * 知识库根目录。

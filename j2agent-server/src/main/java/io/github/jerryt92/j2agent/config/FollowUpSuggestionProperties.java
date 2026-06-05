@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
  */
 @Data
 @Component
-@ConfigurationProperties(prefix = "com.nms.ai.follow-up-suggestions")
+@ConfigurationProperties(prefix = "j2agent.follow-up-suggestions")
 public class FollowUpSuggestionProperties {
 
     /**

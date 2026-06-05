@@ -473,7 +473,7 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
             }
         }
         return applicationContext != null
-                ? applicationContext.getEnvironment().getProperty("com.nms.ai.plugin.path")
+                ? applicationContext.getEnvironment().getProperty("j2agent.plugin.path")
                 : null;
     }
 

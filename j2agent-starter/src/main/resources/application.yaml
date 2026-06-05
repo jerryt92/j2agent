@@ -74,39 +74,37 @@ mybatis:
   mapperLocations: classpath*:mapper/ai/base/**/*.xml,classpath*:mapper/ai/mysql/**/*.xml
   file-path:
     export-file: /var/backup/ftp/virtual/exportfiles/logs
-com:
-  nms:
-    ai:
-      security:
-        captcha:
-          expire-seconds: 300
-          pow-difficulty: 4
-      websocket:
-        # websocket最大消息字节数BufferSize (1M)
-        max_message_buffer_size: 1048576
-      vector-database:
-        provider: milvus
-        milvus:
-          cluster-endpoint: http://${J2AGENT_MILVUS_HOST}:${J2AGENT_MILVUS_PORT}
-          token: ${J2AGENT_MILVUS_TOKEN}
-          schema-config-path:
-      knowledge:
-        repo:
-          # 知识库仓库根目录
-          root-path: ${user.home}/j2agent/knowledge-repo
-          watch-enabled: true
-      # 回合结束后是否生成「建议追问」NOTICE（关 WebSocket 前发出）
-      follow-up-suggestions:
-        enabled: false
-        timeout-seconds: 12
-        max-items: 5
-        max-item-length: 120
-      chat-input:
-        max-user-message-length: 32768
-      retrieve:
-        max-embedding-input-chars: 8192
-        query-chunk-overlap-chars: 50
-        max-query-chunks: 5
-      # 智能体插件配置
-      plugin:
-        path: ${user.home}/j2agent/volume/j2agent/plugins/agents
+j2agent:
+  security:
+    captcha:
+      expire-seconds: 300
+      pow-difficulty: 4
+  websocket:
+    # websocket最大消息字节数BufferSize (1M)
+    max_message_buffer_size: 1048576
+  vector-database:
+    provider: milvus
+    milvus:
+      cluster-endpoint: http://${J2AGENT_MILVUS_HOST}:${J2AGENT_MILVUS_PORT}
+      token: ${J2AGENT_MILVUS_TOKEN}
+      schema-config-path:
+  knowledge:
+    repo:
+      # 知识库仓库根目录
+      root-path: ${user.home}/j2agent/knowledge-repo
+      watch-enabled: true
+  # 回合结束后是否生成「建议追问」NOTICE（关 WebSocket 前发出）
+  follow-up-suggestions:
+    enabled: false
+    timeout-seconds: 12
+    max-items: 5
+    max-item-length: 120
+  chat-input:
+    max-user-message-length: 32768
+  retrieve:
+    max-embedding-input-chars: 8192
+    query-chunk-overlap-chars: 50
+    max-query-chunks: 5
+  # 智能体插件配置
+  plugin:
+    path: ${user.home}/j2agent/volume/j2agent/plugins/agents

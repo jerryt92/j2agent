@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
  */
 @Data
 @Component
-@ConfigurationProperties(prefix = "com.nms.ai.plugin")
+@ConfigurationProperties(prefix = "j2agent.plugin")
 public class PluginProperties {
 
     /**

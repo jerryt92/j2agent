@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
  */
 @Data
 @Component
-@ConfigurationProperties(prefix = "com.nms.ai.retrieve")
+@ConfigurationProperties(prefix = "j2agent.retrieve")
 public class RetrieveProperties {
 
     /**
