@@ -81,8 +81,8 @@ flowchart TB
 ```java
 package com.nms.prodplugin.ai.center.demo;
 
-import agent.llm.service.io.github.jerryt92.j2agent.AiAgent;
-import mcp.llm.service.io.github.jerryt92.j2agent.McpService;
+import com.nms.platsvc.ai.center.service.llm.agent.AiAgent;
+import com.nms.platsvc.ai.center.service.llm.mcp.McpService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
@@ -161,6 +161,6 @@ PUT /mcp/config 或 McpService.reload()
 ## 8. 相关文档
 
 - [工具.md](工具.md) — 本地 Tool 与 MCP 合并
-- [Agent开发.md](Agent开发.md) — Agent 生命周期
+- [Agent开发.md](../../../../prodplugin-j2agent-agents/docs/Agent开发.md) — Agent 生命周期
 - [插件智能体接入与界面](../README.md) — MCP 刷新与 Agent 重建（§7）
 - [LLM 提供商配置](../../LLM提供商配置/README.md) — MCP 与 LLM 配置分离说明
