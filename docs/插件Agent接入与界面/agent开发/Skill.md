@@ -31,7 +31,7 @@ protected Set<String> buildSkillNames() {
 
 ## 3. 资源布局
 
-文件放在插件 JAR 的 **`src/main/resources/skills/`** 下（由 Agent 的 ClassLoader 加载）：
+文件放在 **`src/main/resources/skills/`** 下；`mvn package` 后进入 **`target/<artifact>-<version>/resources/skills/`**（由 Agent 的 ClassLoader 加载，见 [Agent开发.md](../../../../j2agent-plugins-agents/docs/Agent开发.md) §5）：
 
 ```
 src/main/resources/skills/
@@ -45,7 +45,7 @@ src/main/resources/skills/
 | `skills/<skillId>/SKILL.md` | 技能根文档；`<skillId>` 须与 `buildSkillNames()` 中的 id 一致 |
 | `skills/<skillId>/*.md` | 附属文档，通过 `read_skill` 的 `relative_path` 加载 |
 
-JAR 内资源由 `AgentClassLoaderSkillRegistry` 解压到临时目录后供扫描器读取。
+资源由 `AgentClassLoaderSkillRegistry` 通过 Agent ClassLoader 读取；来自 JAR 内时会解压到临时目录，来自外部 `resources/` 目录时直接扫描文件系统。
 
 ## 4. SKILL.md 格式
 
@@ -150,6 +150,6 @@ public class DemoAgent extends AiAgent {
 ## 9. 相关文档
 
 - [工具.md](工具.md) — Tool 开发与 UI 事件
-- [Agent开发.md](Agent开发.md) — Agent 基类
+- [Agent开发.md](../../../../j2agent-plugins-agents/docs/Agent开发.md) — Agent 基类
 - [Agent-UI 交互机制](../../agent-ui交互机制/README.md) — `LOAD_SKILL` 状态机
 - [Spring AI Alibaba Skills 教程](https://java2ai.com/docs/frameworks/agent-framework/tutorials/skills) — 上游框架说明

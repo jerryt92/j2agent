@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Modifier;
-import java.net.URL;
+import java.net.MalformedURLException;
 import java.net.URLClassLoader;
 import java.util.ArrayList;
 import java.util.Enumeration;
@@ -37,7 +37,8 @@ import java.util.jar.JarFile;
 import java.util.stream.Collectors;
 
 /**
- * 外部 Agent 插件 JAR 注册表：启动期与运行时从 {@link PluginProperties#getPath()} 加载/卸载。
+ * 外部 Agent 插件注册表：启动期与运行时从 {@link PluginProperties#getPath()} 加载/卸载。
+ * 支持根目录裸 JAR（兼容）与 tar.gz 解压后的子目录（瘦 JAR + {@code resources/}）。
  * 扫描并注册 JAR 内全部 Spring 组件（{@code @Component} 等），不仅限于 {@link AiAgent}；启动时仅预实例化 Agent。
  * 依赖 {@link PluginAgentClassLoader} 保证平台类与 Spring 容器一致，实例化统一走 {@code getBean}。
  * 启动期在 {@link ApplicationReadyEvent} 之后再 {@code getBean}，避免早于 {@code baseTools} 等单例就绪。
@@ -95,7 +96,7 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
      */
     public AgentPluginStatus getStatus() {
         String pluginPath = resolvePluginPath();
-        List<String> jarFiles = listJarFileNames(pluginPath);
+        List<String> jarFiles = listPluginBundleLabels(pluginPath);
         List<String> loadedAgentIds = dynamicRegistrations.stream()
                 .map(DynamicRegistration::agentId)
                 .filter(StringUtils::hasText)
@@ -110,27 +111,27 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
     public AgentPluginReloadOutcome reload() {
         synchronized (reloadLock) {
             String pluginPath = resolvePluginPath();
-            List<File> jarFiles = listJarFiles(pluginPath);
+            List<AgentPluginBundle> bundles = listPluginBundles(pluginPath);
             DefaultListableBeanFactory beanFactory =
                     (DefaultListableBeanFactory) applicationContext.getAutowireCapableBeanFactory();
             Set<String> builtinAgentIds = collectBuiltinAgentIds(beanFactory);
             try {
-                validatePluginAgentIds(jarFiles, builtinAgentIds, beanFactory);
+                validatePluginAgentIds(bundles, builtinAgentIds, beanFactory);
             } catch (AgentPluginConflictException ex) {
                 log.warn("Agent plugin reload rejected: {}", ex.getMessage());
-                return AgentPluginReloadOutcome.failure(listJarFileNames(pluginPath),
+                return AgentPluginReloadOutcome.failure(listPluginBundleLabels(pluginPath),
                         currentLoadedAgentIds(), ex.getMessage());
             }
             unloadDynamicPlugins();
-            for (File jarFile : jarFiles) {
+            for (AgentPluginBundle bundle : bundles) {
                 try {
-                    scanAndRegisterJar(jarFile, beanFactory);
+                    scanAndRegisterBundle(bundle, beanFactory);
                 } catch (Exception ex) {
-                    log.error("Skip failed plugin JAR during reload scan: {}", jarFile.getAbsolutePath(), ex);
+                    log.error("Skip failed plugin bundle during reload scan: {}", bundle.jarFile().getAbsolutePath(), ex);
                 }
             }
             List<String> loadedAgentIds = activateAllPluginBeans(beanFactory);
-            return AgentPluginReloadOutcome.success(listJarFileNames(pluginPath), loadedAgentIds);
+            return AgentPluginReloadOutcome.success(listPluginBundleLabels(pluginPath), loadedAgentIds);
         }
     }
 
@@ -149,16 +150,16 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
             log.info("No plugin path configured, skip dynamic loading.");
             return;
         }
-        List<File> jarFiles = listJarFiles(pluginPath);
-        if (jarFiles.isEmpty()) {
-            log.info("No JAR files found in plugin path: {}", pluginPath);
+        List<AgentPluginBundle> bundles = listPluginBundles(pluginPath);
+        if (bundles.isEmpty()) {
+            log.info("No plugin bundles found in plugin path: {}", pluginPath);
             return;
         }
-        for (File jarFile : jarFiles) {
+        for (AgentPluginBundle bundle : bundles) {
             try {
-                scanAndRegisterJar(jarFile, registry);
+                scanAndRegisterBundle(bundle, registry);
             } catch (Exception ex) {
-                log.error("Skip failed plugin JAR during startup scan: {}", jarFile.getAbsolutePath(), ex);
+                log.error("Skip failed plugin bundle during startup scan: {}", bundle.jarFile().getAbsolutePath(), ex);
             }
         }
     }
@@ -170,7 +171,7 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
         if (!dynamicRegistrations.isEmpty()) {
             try {
                 validatePluginAgentIds(
-                        listJarFiles(resolvePluginPath()),
+                        listPluginBundles(resolvePluginPath()),
                         collectBuiltinAgentIds(beanFactory),
                         beanFactory);
             } catch (AgentPluginConflictException ex) {
@@ -240,15 +241,16 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
     }
 
     /**
-     * 扫描 JAR，将其中 Spring 组件注册为 BeanDefinition（构造器自动装配）。
+     * 扫描插件 bundle，将 JAR 内 Spring 组件注册为 BeanDefinition（构造器自动装配）。
      */
-    private List<DynamicRegistration> scanAndRegisterJar(File jarFile, BeanDefinitionRegistry registry) {
-        log.info("Loading plugin JAR: {}", jarFile.getAbsolutePath());
+    private List<DynamicRegistration> scanAndRegisterBundle(AgentPluginBundle bundle, BeanDefinitionRegistry registry) {
+        File jarFile = bundle.jarFile();
+        log.info("Loading plugin bundle: {} ({})", bundle.label(), jarFile.getAbsolutePath());
         List<DynamicRegistration> added = new ArrayList<>();
         PluginAgentClassLoader classLoader = null;
         try (JarFile jar = new JarFile(jarFile)) {
-            URL[] urls = {jarFile.toURI().toURL()};
-            classLoader = new PluginAgentClassLoader(urls, applicationContext.getClassLoader());
+            classLoader = new PluginAgentClassLoader(
+                    bundle.toClassLoaderUrls(), applicationContext.getClassLoader());
             Enumeration<JarEntry> entries = jar.entries();
             while (entries.hasMoreElements()) {
                 JarEntry entry = entries.nextElement();
@@ -279,7 +281,7 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
                     beanDefinition.setLazyInit(true);
                     registry.registerBeanDefinition(beanName, beanDefinition);
                     boolean aiAgent = isConcreteAiAgent(clazz);
-                    DynamicRegistration registration = new DynamicRegistration(beanName, classLoader, jarFile.getName(), aiAgent);
+                    DynamicRegistration registration = new DynamicRegistration(beanName, classLoader, bundle.label(), aiAgent);
                     dynamicRegistrations.add(registration);
                     added.add(registration);
                     log.info("Registered dynamic plugin bean definition: {} from {} (aiAgent={})",
@@ -362,35 +364,39 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
         dynamicRegistrations.clear();
     }
 
-    private void validatePluginAgentIds(List<File> jarFiles, Set<String> builtinAgentIds,
+    private void validatePluginAgentIds(List<AgentPluginBundle> bundles, Set<String> builtinAgentIds,
                                         DefaultListableBeanFactory beanFactory)
             throws AgentPluginConflictException {
         Set<String> seenPluginIds = new LinkedHashSet<>();
-        for (File jarFile : jarFiles) {
+        for (AgentPluginBundle bundle : bundles) {
+            File jarFile = bundle.jarFile();
             PluginAgentClassLoader scanLoader = null;
             try (JarFile jar = new JarFile(jarFile)) {
                 scanLoader = new PluginAgentClassLoader(
-                        new URL[]{jarFile.toURI().toURL()}, applicationContext.getClassLoader());
+                        bundle.toClassLoaderUrls(), applicationContext.getClassLoader());
                 for (Class<?> agentClass : scanAiAgentClasses(jar, scanLoader)) {
                     String agentId = resolveAgentId(agentClass, beanFactory);
                     if (!StringUtils.hasText(agentId)) {
                         log.warn("Skip plugin agentId validation for {} in {} — cannot resolve agentId",
-                                agentClass.getName(), jarFile.getName());
+                                agentClass.getName(), bundle.label());
                         continue;
                     }
                     if (builtinAgentIds.contains(agentId)) {
                         throw new AgentPluginConflictException(
                                 "Plugin agentId conflicts with built-in agent: " + agentId
-                                        + " (class=" + agentClass.getName() + ", jar=" + jarFile.getName() + ")");
+                                        + " (class=" + agentClass.getName() + ", bundle=" + bundle.label() + ")");
                     }
                     if (!seenPluginIds.add(agentId)) {
                         throw new AgentPluginConflictException(
-                                "Duplicate plugin agentId in JAR directory: " + agentId);
+                                "Duplicate plugin agentId in plugin directory: " + agentId);
                     }
                 }
             } catch (Exception ex) {
                 if (ex instanceof AgentPluginConflictException conflict) {
                     throw conflict;
+                }
+                if (ex instanceof MalformedURLException urlEx) {
+                    throw new IllegalStateException("Failed to validate plugin bundle URLs: " + bundle.label(), urlEx);
                 }
                 throw new IllegalStateException("Failed to validate plugin JAR: " + jarFile.getAbsolutePath(), ex);
             } finally {
@@ -471,25 +477,13 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
                 : null;
     }
 
-    private static List<File> listJarFiles(String pluginPath) {
-        if (!StringUtils.hasText(pluginPath)) {
-            return List.of();
-        }
-        File pathFile = new File(pluginPath);
-        if (!pathFile.exists() || !pathFile.isDirectory()) {
-            return List.of();
-        }
-        File[] jars = pathFile.listFiles((dir, name) -> name.endsWith(".jar"));
-        if (jars == null || jars.length == 0) {
-            return List.of();
-        }
-        return List.of(jars);
+    private static List<AgentPluginBundle> listPluginBundles(String pluginPath) {
+        return AgentPluginBundle.discover(pluginPath);
     }
 
-    private static List<String> listJarFileNames(String pluginPath) {
-        return listJarFiles(pluginPath).stream()
-                .map(File::getName)
-                .sorted()
+    private static List<String> listPluginBundleLabels(String pluginPath) {
+        return listPluginBundles(pluginPath).stream()
+                .map(AgentPluginBundle::label)
                 .collect(Collectors.toList());
     }
 

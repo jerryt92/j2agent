@@ -8,7 +8,7 @@
 
 | 文档 | 说明 |
 |------|------|
-| [Agent开发.md](Agent开发.md) | `AiAgent` 契约、生命周期、插件约束、热重载 |
+| [Agent开发.md](../../../../j2agent-plugins-agents/docs/Agent开发.md) | `AiAgent` 契约、生命周期、插件约束、热重载（插件仓库） |
 | [工具.md](工具.md) | `@Tool` 编写、平台内置工具、`buildTools()` |
 | [Skill.md](Skill.md) | `skills/` 目录、`buildSkillNames()`、`read_skill` |
 | [MCP.md](MCP.md) | MCP 配置、Agent 侧合并、刷新与排错 |
@@ -26,42 +26,44 @@
 
 ## 2. 最小工程骨架
 
+每个 Agent 是**独立 Maven 工程**（一 Agent 一目录、可单独 `mvn package`）。**推荐复制** [`0_example-agent`](../../../../j2agent-plugins-agents/agents/0_example-agent/) 目录作为起点；**不必**继承本仓库 [`agents/pom.xml`](../../../../j2agent-plugins-agents/agents/pom.xml)（该聚合 POM 仅用于本仓库一键编译）。
+
 ```
-my-agent-plugin/
+0_example-agent/                # 复制此目录并重命名
   pom.xml
-  src/main/java/com/nms/prodplugin/ai/center/demo/
-    DemoAgent.java
-    DemoTools.java              # 可选：自定义工具
-  src/main/resources/
-    system-prompt.md            # 可选：系统提示词
-    skills/demo-skill/SKILL.md  # 可选：Skill 正文
-    qa-template.json            # 可选：热门问题
+  src/main/resources/system-prompt.md
+  src/main/assemblies/agent-package.xml
+  src/main/java/.../ExampleAgent.java
+  # 按需扩展：
+  # DemoTools.java
+  # src/main/resources/skills/demo-skill/SKILL.md
+  # src/main/resources/qa-template.json
 ```
 
-**`pom.xml` 片段**（版本号与平台发布版本对齐）：
+**`pom.xml` 片段**（独立工程，自行声明依赖版本与打包插件）：
 
 ```xml
 <project>
   <modelVersion>4.0.0</modelVersion>
-  <groupId>com.example</groupId>
+  <groupId>com.nms.prodplugin.ai.center</groupId>
   <artifactId>my-agent-plugin</artifactId>
-  <version>1.0.0</version>
+  <version>1.0.0-SNAPSHOT</version>
+  <packaging>jar</packaging>
   <properties>
     <maven.compiler.source>21</maven.compiler.source>
     <maven.compiler.target>21</maven.compiler.target>
-    <ai.center.version>1.0.0-SNAPSHOT</ai.center.version>
   </properties>
   <dependencies>
     <dependency>
-      <groupId>io.github.jerryt92.j2agent</groupId>
+      <groupId>com.nms.platsvc.ai.center</groupId>
       <artifactId>j2agent-server</artifactId>
-      <version>${ai.center.version}</version>
+      <version>1.0.2-agent-SNAPSHOT</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.projectlombok</groupId>
       <artifactId>lombok</artifactId>
-      <version>1.18.36</version>
+      <version>1.18.32</version>
       <scope>provided</scope>
     </dependency>
   </dependencies>
@@ -71,16 +73,19 @@ my-agent-plugin/
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
         <configuration>
-          <!-- 插件 JAR 只含业务代码与 resources，不含平台类 -->
-          <excludes>
-            <exclude>com/nms/platsvc/**</exclude>
-          </excludes>
+          <excludes><exclude>com/nms/platsvc/**</exclude></excludes>
         </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-assembly-plugin</artifactId>
       </plugin>
     </plugins>
   </build>
 </project>
 ```
+
+`mvn package` → **`target/<artifactId>-<version>/`** 与 **`target/<artifactId>-<version>.tar.gz`**（内容一致）。详见 [j2agent-plugins-agents/README.md](../../../../j2agent-plugins-agents/README.md)。
 
 ## 3. 五步入门流程
 
@@ -94,11 +99,11 @@ flowchart LR
   S1 --> S2 --> S3 --> S4 --> S5
 ```
 
-1. **实现 Agent**：`DemoAgent extends AiAgent` + `@Component`，实现 `getAgentId()` 等抽象方法 → 见 [Agent开发.md](Agent开发.md)
+1. **实现 Agent**：`DemoAgent extends AiAgent` + `@Component`，实现 `getAgentId()` 等抽象方法 → 见 [Agent开发.md](../../../../j2agent-plugins-agents/docs/Agent开发.md)
 2. **（可选）注册工具**：同 JAR 内 `@Tool` 工具类，在 `buildTools()` 中返回 → 见 [工具.md](工具.md)
 3. **（可选）挂载 Skill**：`resources/skills/<id>/SKILL.md` + override `buildSkillNames()` → 见 [Skill.md](Skill.md)
 4. **（可选）合并 MCP**：override `buildToolCallbacks()` 追加 `McpService` 回调 → 见 [MCP.md](MCP.md)
-5. **部署验证**：`mvn package` → JAR 放入 plugin path → 调用验证接口（见下节）
+5. **部署验证**：`mvn package` → 复制 `target/<artifact>-<version>/` 或解压 tar.gz 到 plugin path 子目录 → 调用验证接口（见下节）
 
 ## 4. 能力选型
 
@@ -115,15 +120,15 @@ Tool 与 Skill 可并存：Tool 负责「执行」，Skill 负责「告知怎么
 
 | 步骤 | 操作 | 期望结果 |
 |------|------|----------|
-| 打包 | `mvn -q package` | 生成仅含 `com.nms.prodplugin.*` 的 JAR |
-| 部署 | 复制 JAR 到 `com.nms.ai.plugin.path` | 目录中存在该 JAR |
+| 打包 | 在 Agent 工程目录 `mvn -q clean package` | `target/<artifact>-<version>/` + `.tar.gz` |
+| 部署 | `mkdir` 后复制 agent-package 或 `tar -xzf -C` 目标子目录 | 每 Agent 占 plugin.path 下一级子目录 |
 | 启动/重载 | 重启服务，或 `POST /v1/rest/j2agent/agents/reload`（ADMIN） | 日志含 `Loaded plugin agent`；reload 返回 `success: true` |
 | 插件状态 | `GET /v1/rest/j2agent/plugins/agents` | `loadedAgentIds` 含你的 `getAgentId()` |
 | 列表 | `GET /v1/rest/j2agent/agents` | 返回体含 `agentId`、`name`、`description` |
 | 对话 | WebSocket `/ws/rest/j2agent/chat?context-id=xxx&agent-id=<你的id>` | 能正常收发消息；工具调用出现 `CALLING_TOOL` 状态 |
 | agentId 唯一 | 两个 JAR 使用相同 `getAgentId()` | 启动或 reload **失败**，提示冲突 |
 
-完整 Agent 契约与约束见 [Agent开发.md](Agent开发.md)；前端对接见 [Agent 对话记录机制](../../agent对话记录/README.md)。
+完整 Agent 契约与约束见 [Agent开发.md](../../../../j2agent-plugins-agents/docs/Agent开发.md)；前端对接见 [Agent 对话记录机制](../../agent对话记录/README.md)。
 
 ## 6. 相关文档
 

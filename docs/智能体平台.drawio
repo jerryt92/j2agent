@@ -1,10 +1,10 @@
 <mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/29.5.2 Chrome/142.0.7444.265 Electron/39.6.1 Safari/537.36" version="29.5.2" pages="3">
   <diagram id="j2agent-overview" name="智能体平台总体框架">
-    <mxGraphModel dx="2782" dy="3292" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1680" pageHeight="2540" math="0" shadow="0">
+    <mxGraphModel dx="6433" dy="5233" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1680" pageHeight="2540" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1" value="智能体平台总体框架" vertex="1">
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1" value="J2Agent 平台总体框架" vertex="1">
           <mxGeometry height="40" width="1200" x="90" y="-420" as="geometry" />
         </mxCell>
         <mxCell id="z1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;fillStyle=auto;strokeWidth=3;strokeColor=#666666;fontColor=#333333;" value="" vertex="1">
@@ -340,7 +340,7 @@
     </mxGraphModel>
   </diagram>
   <diagram id="EIPcyX-I3sCBLZGri60U" name="代码边界">
-    <mxGraphModel dx="1102" dy="752" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+    <mxGraphModel dx="1426" dy="808" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
