@@ -3,9 +3,13 @@ package io.github.jerryt92.j2agent.service.llm.skill;
 import com.alibaba.cloud.ai.graph.skills.SkillMetadata;
 import com.alibaba.cloud.ai.graph.skills.registry.AbstractSkillRegistry;
 import com.alibaba.cloud.ai.graph.skills.registry.filesystem.SkillScanner;
+import io.github.jerryt92.j2agent.config.PluginLayout;
+import io.github.jerryt92.j2agent.config.PluginProperties;
+import io.github.jerryt92.j2agent.service.llm.agent.feature.ExternalSkills;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.prompt.SystemPromptTemplate;
+import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -26,18 +30,28 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import static com.alibaba.cloud.ai.graph.skills.registry.filesystem.FileSystemSkillRegistry.DEFAULT_SYSTEM_PROMPT_TEMPLATE;
 
 /**
- * Skill registry that resolves classpath resources with the owning Agent classloader.
+ * Skill registry：扫描 Agent 内部 classpath {@code resources/skills/}，并按 Agent 实现的 feature 接口追加能力
+ * （如 {@link ExternalSkills}）。新增 skill 相关 feature 时仅改本类 {@link Builder#applyAgentFeatures()}。
  */
 public class AgentClassLoaderSkillRegistry extends AbstractSkillRegistry {
     private static final Logger log = LoggerFactory.getLogger(AgentClassLoaderSkillRegistry.class);
+    private static final String DEFAULT_INTERNAL_SKILLS_CLASSPATH = "skills";
+    private static final String EXTERNAL_SKILLS_ROOT_DIR_NAME = PluginLayout.SKILLS_DIR_NAME;
 
     private final ClassLoader classLoader;
-    private final String classpathPath;
+    /**
+     * Agent 内部 {@code resources/skills/} 的 classpath 路径段。
+     */
+    private final String internalSkillsClasspath;
+    private final Path externalSkillsRoot;
+    private final Set<String> externalSkillNames;
+    private final boolean loadAllExternalSkills;
     private final Path basePath;
     private final SkillScanner scanner = new SkillScanner();
     private final SystemPromptTemplate systemPromptTemplate;
@@ -47,9 +61,14 @@ public class AgentClassLoaderSkillRegistry extends AbstractSkillRegistry {
         this.classLoader = builder.classLoader != null
                 ? builder.classLoader
                 : Thread.currentThread().getContextClassLoader();
-        this.classpathPath = builder.classpathPath == null || builder.classpathPath.isBlank()
-                ? "skills"
-                : builder.classpathPath;
+        this.internalSkillsClasspath = builder.internalSkillsClasspath == null || builder.internalSkillsClasspath.isBlank()
+                ? DEFAULT_INTERNAL_SKILLS_CLASSPATH
+                : builder.internalSkillsClasspath;
+        this.externalSkillsRoot = builder.externalSkillsRoot;
+        this.externalSkillNames = builder.externalSkillNames == null
+                ? Set.of()
+                : Set.copyOf(builder.externalSkillNames);
+        this.loadAllExternalSkills = builder.loadAllExternalSkills;
         this.basePath = builder.basePath == null || builder.basePath.isBlank()
                 ? Path.of(System.getProperty("java.io.tmpdir"))
                 : Path.of(builder.basePath);
@@ -77,11 +96,19 @@ public class AgentClassLoaderSkillRegistry extends AbstractSkillRegistry {
         Map<String, SkillMetadata> loadedSkills = new HashMap<>();
         jarSkillContentCache.clear();
 
+        loadInternalSkills(loadedSkills);
+        loadExternalSkills(loadedSkills);
+
+        this.skills = loadedSkills;
+        log.info("Loaded {} skills from internal classpath '{}' and external root '{}' (loadAllExternal={})",
+                loadedSkills.size(), internalSkillsClasspath, externalSkillsRoot, loadAllExternalSkills);
+    }
+
+    private void loadInternalSkills(Map<String, SkillMetadata> loadedSkills) {
         try {
-            Enumeration<URL> resources = classLoader.getResources(classpathPath);
+            Enumeration<URL> resources = classLoader.getResources(internalSkillsClasspath);
             if (!resources.hasMoreElements()) {
-                log.debug("No '{}' resource found in agent classloader {}", classpathPath, classLoader);
-                this.skills = loadedSkills;
+                log.debug("No '{}' resource found in agent classloader {}", internalSkillsClasspath, classLoader);
                 return;
             }
 
@@ -90,18 +117,45 @@ public class AgentClassLoaderSkillRegistry extends AbstractSkillRegistry {
                 loadSkillsFromResource(resource, loadedSkills);
             }
         } catch (IOException e) {
-            log.debug("Failed to load skills from agent classloader: {}", e.getMessage());
+            log.debug("Failed to load internal skills from agent classloader: {}", e.getMessage());
         }
+    }
 
-        this.skills = loadedSkills;
-        log.info("Loaded {} skills from agent classloader path '{}'", loadedSkills.size(), classpathPath);
+    private void loadExternalSkills(Map<String, SkillMetadata> loadedSkills) {
+        if (externalSkillsRoot == null) {
+            log.debug("Platform external skills root is not configured");
+            return;
+        }
+        if (!Files.isDirectory(externalSkillsRoot)) {
+            log.warn("Platform external skills directory not found: {}", externalSkillsRoot);
+            return;
+        }
+        if (loadAllExternalSkills) {
+            scanSkillDirectory(externalSkillsRoot, false, loadedSkills, "filesystem");
+            return;
+        }
+        if (externalSkillNames.isEmpty()) {
+            log.debug("Skip platform external skills: loadAllExternal=false and no skill names configured");
+            return;
+        }
+        for (String dirName : externalSkillNames) {
+            if (dirName == null || dirName.isBlank()) {
+                continue;
+            }
+            Path skillDir = externalSkillsRoot.resolve(dirName.trim());
+            if (!Files.isDirectory(skillDir)) {
+                log.warn("External skill directory not found: {}", skillDir);
+                continue;
+            }
+            loadSkill(skillDir, false, loadedSkills, "filesystem");
+        }
     }
 
     private void loadSkillsFromResource(URL resource, Map<String, SkillMetadata> loadedSkills) {
         try {
             URI uri = resource.toURI();
             if ("file".equals(uri.getScheme())) {
-                scanSkillDirectory(Path.of(uri), false, loadedSkills);
+                scanSkillDirectory(Path.of(uri), false, loadedSkills, "classpath");
                 return;
             }
             if ("jar".equals(uri.getScheme())) {
@@ -126,7 +180,7 @@ public class AgentClassLoaderSkillRegistry extends AbstractSkillRegistry {
             }
 
             String pathInJar = resolvePathInJar(uri);
-            scanSkillDirectory(jarFileSystem.getPath(pathInJar), true, loadedSkills);
+            scanSkillDirectory(jarFileSystem.getPath(pathInJar), true, loadedSkills, "classpath");
         } catch (IOException e) {
             log.debug("Failed to open skill JAR filesystem: {}", e.getMessage());
         } finally {
@@ -147,25 +201,25 @@ public class AgentClassLoaderSkillRegistry extends AbstractSkillRegistry {
             String path = jarPath.substring(separatorIndex + 1);
             return path.startsWith("/") ? path : "/" + path;
         }
-        return "/" + classpathPath;
+        return "/" + internalSkillsClasspath;
     }
 
-    private void scanSkillDirectory(Path skillsPath, boolean jarPath, Map<String, SkillMetadata> loadedSkills) {
+    private void scanSkillDirectory(Path skillsPath, boolean jarPath, Map<String, SkillMetadata> loadedSkills, String source) {
         if (!Files.isDirectory(skillsPath)) {
             log.debug("Skill classpath path is not a directory: {}", skillsPath);
             return;
         }
 
         try (Stream<Path> stream = Files.list(skillsPath)) {
-            stream.filter(Files::isDirectory).forEach(skillDir -> loadSkill(skillDir, jarPath, loadedSkills));
+            stream.filter(Files::isDirectory).forEach(skillDir -> loadSkill(skillDir, jarPath, loadedSkills, source));
         } catch (IOException e) {
             log.warn("Failed to scan skill classpath directory {}: {}", skillsPath, e.getMessage());
         }
     }
 
-    private void loadSkill(Path skillDir, boolean jarPath, Map<String, SkillMetadata> loadedSkills) {
+    private void loadSkill(Path skillDir, boolean jarPath, Map<String, SkillMetadata> loadedSkills, String source) {
         try {
-            SkillMetadata metadata = scanner.loadSkill(skillDir, "classpath");
+            SkillMetadata metadata = scanner.loadSkill(skillDir, source);
             if (metadata == null) {
                 return;
             }
@@ -187,7 +241,7 @@ public class AgentClassLoaderSkillRegistry extends AbstractSkillRegistry {
             String skillDirName = skillName.contains("/")
                     ? skillName.substring(0, skillName.indexOf('/'))
                     : skillName;
-            Path targetSkillPath = basePath.resolve(classpathPath).resolve(skillDirName);
+            Path targetSkillPath = basePath.resolve(internalSkillsClasspath).resolve(skillDirName);
             Files.createDirectories(targetSkillPath);
 
             try (Stream<Path> entries = Files.list(skillDir)) {
@@ -301,8 +355,13 @@ public class AgentClassLoaderSkillRegistry extends AbstractSkillRegistry {
 
     @Override
     public String getSkillLoadInstructions() {
-        return "**Skill Location:**\n"
-                + String.format("- **Agent Classpath Skills**: `classpath:%s`\n", classpathPath)
+        StringBuilder instructions = new StringBuilder("**Skill Location:**\n")
+                .append(String.format("- **Agent Internal Skills**: `classpath:%s`\n", internalSkillsClasspath));
+        if (externalSkillsRoot != null && (loadAllExternalSkills || !externalSkillNames.isEmpty()
+                || Files.isDirectory(externalSkillsRoot))) {
+            instructions.append(String.format("- **Platform External Skills**: `%s`\n", externalSkillsRoot));
+        }
+        return instructions
                 + "\n"
                 + "**Skill Path Format:**\n"
                 + "Each skill has a unique id shown in the skill list above. "
@@ -323,19 +382,55 @@ public class AgentClassLoaderSkillRegistry extends AbstractSkillRegistry {
     }
 
     public static class Builder {
+        private Object agent;
+        private PluginProperties pluginProperties;
+        private String pluginPathOverride;
         private ClassLoader classLoader;
-        private String classpathPath;
+        private String internalSkillsClasspath;
+        private Path externalSkillsRoot;
+        private Set<String> externalSkillNames;
+        private boolean loadAllExternalSkills = false;
         private String basePath;
         private boolean autoLoad = true;
         private SystemPromptTemplate systemPromptTemplate;
+
+        public Builder agent(Object agent) {
+            this.agent = agent;
+            return this;
+        }
+
+        public Builder pluginProperties(PluginProperties pluginProperties) {
+            this.pluginProperties = pluginProperties;
+            return this;
+        }
+
+        public Builder pluginPathOverride(String pluginPathOverride) {
+            this.pluginPathOverride = pluginPathOverride;
+            return this;
+        }
 
         public Builder classLoader(ClassLoader classLoader) {
             this.classLoader = classLoader;
             return this;
         }
 
-        public Builder classpathPath(String classpathPath) {
-            this.classpathPath = classpathPath;
+        public Builder internalSkillsClasspath(String internalSkillsClasspath) {
+            this.internalSkillsClasspath = internalSkillsClasspath;
+            return this;
+        }
+
+        public Builder externalSkillsRoot(Path externalSkillsRoot) {
+            this.externalSkillsRoot = externalSkillsRoot;
+            return this;
+        }
+
+        public Builder externalSkillNames(Set<String> externalSkillNames) {
+            this.externalSkillNames = externalSkillNames;
+            return this;
+        }
+
+        public Builder loadAllExternalSkills(boolean loadAllExternalSkills) {
+            this.loadAllExternalSkills = loadAllExternalSkills;
             return this;
         }
 
@@ -355,7 +450,54 @@ public class AgentClassLoaderSkillRegistry extends AbstractSkillRegistry {
         }
 
         public AgentClassLoaderSkillRegistry build() {
+            applyAgentFeatures();
             return new AgentClassLoaderSkillRegistry(this);
+        }
+
+        /**
+         * 根据 Agent 实例已实现的 feature 接口补全 builder 配置；新增 feature 时只改此处。
+         */
+        private void applyAgentFeatures() {
+            if (classLoader == null && agent != null) {
+                classLoader = agent.getClass().getClassLoader();
+            }
+            externalSkillsRoot = resolveExternalSkillsRoot(pluginProperties, pluginPathOverride);
+            if (agent instanceof ExternalSkills externalSkills && !externalSkills.useAllExternalSkills()) {
+                externalSkillNames = externalSkills.useExternalSkills();
+                loadAllExternalSkills = false;
+                return;
+            }
+            loadAllExternalSkills = true;
+            externalSkillNames = Set.of();
+        }
+
+        private static Path resolveExternalSkillsRoot(PluginProperties pluginProperties, String pluginPathOverride) {
+            String pluginPath = resolvePluginPath(pluginProperties, pluginPathOverride);
+            if (!StringUtils.hasText(pluginPath)) {
+                return null;
+            }
+            Path root = Path.of(pluginPath.trim());
+            Path direct = root.resolve(EXTERNAL_SKILLS_ROOT_DIR_NAME);
+            if (Files.isDirectory(direct)) {
+                return direct;
+            }
+            if (PluginLayout.AGENTS_DIR_NAME.equals(root.getFileName().toString())) {
+                Path parent = root.getParent();
+                if (parent != null) {
+                    Path sibling = parent.resolve(EXTERNAL_SKILLS_ROOT_DIR_NAME);
+                    if (Files.isDirectory(sibling)) {
+                        return sibling;
+                    }
+                }
+            }
+            return direct;
+        }
+
+        private static String resolvePluginPath(PluginProperties pluginProperties, String pluginPathOverride) {
+            if (pluginProperties != null && StringUtils.hasText(pluginProperties.getPath())) {
+                return pluginProperties.getPath();
+            }
+            return pluginPathOverride;
         }
     }
 }

@@ -1,5 +1,6 @@
 package io.github.jerryt92.j2agent.service.llm.agent;
 
+import io.github.jerryt92.j2agent.config.PluginLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
@@ -10,6 +11,7 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 插件部署单元：瘦 JAR + 可选外部 {@code resources/} 目录（tar.gz 解压布局）。
@@ -18,14 +20,21 @@ public record AgentPluginBundle(File jarFile, File resourcesDir, String label) {
 
     private static final Logger log = LoggerFactory.getLogger(AgentPluginBundle.class);
 
+    private static final Set<String> RESERVED_SUBDIRS = Set.of(
+            PluginLayout.SKILLS_DIR_NAME,
+            PluginLayout.AGENTS_DIR_NAME
+    );
+
     /**
-     * 发现插件目录下的全部 bundle：根目录裸 JAR（兼容旧部署）+ 一级子目录（JAR + resources/）。
+     * 发现 Agent 插件 bundle。{@code j2agent.plugin.path} 指向 {@code .../plugins} 根目录时，
+     * 扫描 {@code agents/<agentDir>/}；若已指向 {@code .../plugins/agents}，则直接扫描其子目录。
      */
     public static List<AgentPluginBundle> discover(String pluginPath) {
         if (!StringUtils.hasText(pluginPath)) {
             return List.of();
         }
-        File root = new File(pluginPath);
+        AgentScanRoot scanRoot = resolveAgentScanRoot(new File(pluginPath));
+        File root = scanRoot.root();
         if (!root.exists() || !root.isDirectory()) {
             return List.of();
         }
@@ -33,23 +42,48 @@ public record AgentPluginBundle(File jarFile, File resourcesDir, String label) {
         File[] rootJars = root.listFiles((dir, name) -> name.endsWith(".jar"));
         if (rootJars != null) {
             for (File jar : rootJars) {
-                bundles.add(new AgentPluginBundle(jar, null, jar.getName()));
+                bundles.add(new AgentPluginBundle(jar, null, scanRoot.labelPrefix() + jar.getName()));
             }
         }
         File[] subdirs = root.listFiles(File::isDirectory);
         if (subdirs != null) {
             for (File dir : subdirs) {
-                AgentPluginBundle bundle = discoverSubdirectory(dir);
-                if (bundle != null) {
-                    bundles.add(bundle);
+                if (RESERVED_SUBDIRS.contains(dir.getName())) {
+                    log.debug("Skip reserved plugin subdirectory: {}", dir.getName());
+                    continue;
                 }
+                addAgentBundleIfPresent(bundles, dir, scanRoot.labelPrefix());
             }
         }
         bundles.sort(Comparator.comparing(AgentPluginBundle::label));
         return bundles;
     }
 
-    private static AgentPluginBundle discoverSubdirectory(File dir) {
+    private record AgentScanRoot(File root, String labelPrefix) {
+    }
+
+    private static AgentScanRoot resolveAgentScanRoot(File configuredRoot) {
+        if (!configuredRoot.isDirectory()) {
+            return new AgentScanRoot(configuredRoot, "");
+        }
+        if (PluginLayout.AGENTS_DIR_NAME.equals(configuredRoot.getName())) {
+            return new AgentScanRoot(configuredRoot, PluginLayout.AGENTS_DIR_NAME + "/");
+        }
+        File agentsDir = new File(configuredRoot, PluginLayout.AGENTS_DIR_NAME);
+        if (agentsDir.isDirectory()) {
+            return new AgentScanRoot(agentsDir, PluginLayout.AGENTS_DIR_NAME + "/");
+        }
+        return new AgentScanRoot(configuredRoot, "");
+    }
+
+    private static void addAgentBundleIfPresent(List<AgentPluginBundle> bundles, File dir, String labelPrefix) {
+        AgentPluginBundle bundle = discoverSubdirectory(dir, labelPrefix);
+        if (bundle != null) {
+            bundles.add(bundle);
+        }
+    }
+
+    private static AgentPluginBundle discoverSubdirectory(File dir, String labelPrefix) {
         File resources = new File(dir, "resources");
         File[] jars = dir.listFiles((d, name) -> name.endsWith(".jar"));
         if (jars == null || jars.length == 0) {
@@ -64,7 +98,7 @@ public record AgentPluginBundle(File jarFile, File resourcesDir, String label) {
             return null;
         }
         File jar = jars[0];
-        return new AgentPluginBundle(jar, resources, dir.getName() + "/" + jar.getName());
+        return new AgentPluginBundle(jar, resources, labelPrefix + dir.getName() + "/" + jar.getName());
     }
 
     /**

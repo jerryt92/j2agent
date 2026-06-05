@@ -164,6 +164,7 @@ services:
     volumes:
       - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}j2agent:/opt/j2agent/volume
       - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}j2agent${DIR_PATH_SEPARATOR}plugins${DIR_PATH_SEPARATOR}agents:/opt/j2agent/volume/plugins/agents
+      - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}j2agent${DIR_PATH_SEPARATOR}plugins${DIR_PATH_SEPARATOR}skills:/opt/j2agent/volume/plugins/skills
     depends_on:
       mysql:
         condition: service_healthy

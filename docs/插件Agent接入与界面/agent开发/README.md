@@ -55,7 +55,7 @@
   </properties>
   <dependencies>
     <dependency>
-      <groupId>com.nms.platsvc.ai.center</groupId>
+      <groupId>io.github.jerryt92.j2agent</groupId>
       <artifactId>j2agent-server</artifactId>
       <version>1.0.2-agent-SNAPSHOT</version>
       <scope>provided</scope>

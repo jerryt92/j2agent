@@ -7,7 +7,9 @@ import com.alibaba.cloud.ai.graph.agent.Builder;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import com.alibaba.cloud.ai.graph.agent.interceptor.Interceptor;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
+import com.alibaba.cloud.ai.graph.skills.SkillMetadata;
 import com.alibaba.fastjson2.JSONObject;
+import io.github.jerryt92.j2agent.config.PluginProperties;
 import io.github.jerryt92.j2agent.constants.CommonConstants;
 import io.github.jerryt92.j2agent.service.llm.advisor.ReactCompatibleMessageChatMemoryAdvisor;
 import io.github.jerryt92.j2agent.service.llm.skill.AgentClassLoaderSkillRegistry;
@@ -15,6 +17,9 @@ import io.github.jerryt92.j2agent.service.llm.skill.AgentSkillsAgentHook;
 import io.github.jerryt92.j2agent.service.llm.skill.AgentUiSkillLoadToolInterceptor;
 import io.github.jerryt92.j2agent.service.llm.tool.AgentToolErrorReturnInterceptor;
 import io.github.jerryt92.j2agent.service.llm.tool.AgentUiToolEventInterceptor;
+import io.github.jerryt92.j2agent.service.llm.agent.AgentRunContext;
+import io.github.jerryt92.j2agent.service.llm.agent.AgentRunnableContextKeys;
+import io.github.jerryt92.j2agent.service.llm.agent.AgentThinkingOverride;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import org.springframework.ai.chat.client.ChatClient;
@@ -30,8 +35,11 @@ import org.springframework.ai.rag.retrieval.join.DocumentJoiner;
 import org.springframework.ai.rag.retrieval.search.DocumentRetriever;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.env.Environment;
+import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
 
 import java.io.InputStream;
@@ -43,13 +51,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 /**
  * AI Agent 统一入口，屏蔽不同 Agent 的构建和执行细节。
  */
 public abstract class AiAgent {
-    private static final String SKILLS_CLASSPATH = "skills";
+    /**
+     * Agent 内部 {@code resources/skills/} 在 classpath 上的路径段。
+     */
+    private static final String INTERNAL_SKILLS_CLASSPATH = "skills";
     private static final String QA_TEMPLATE_RESOURCE = "qa-template.json";
 
     public abstract String getAgentId();
@@ -164,6 +174,15 @@ public abstract class AiAgent {
     @Autowired
     protected AgentToolErrorReturnInterceptor agentToolErrorReturnInterceptor;
 
+    @Autowired
+    protected PluginProperties pluginProperties;
+
+    @Autowired
+    private ObjectProvider<PluginProperties> pluginPropertiesProvider;
+
+    @Autowired
+    private Environment environment;
+
     /**
      * Spring 完成字段注入后再构建底层 {@link Agent}，保证 {@link #chatModel}、{@link #chatMemory} 等已就绪。
      */
@@ -256,15 +275,6 @@ public abstract class AiAgent {
     }
 
     /**
-     * 如需赋予 Agent 加载 Skill 能力，请覆盖此方法。
-     *
-     * @return
-     */
-    protected Set<String> buildSkillNames() {
-        return Set.of();
-    }
-
-    /**
      * 将 {@link #buildTools()} 转为 {@link ToolCallback}；子类若需自定义 MCP 合并等逻辑可覆盖。
      *
      * @return 工具回调数组
@@ -289,21 +299,38 @@ public abstract class AiAgent {
     }
 
     private AgentSkillsAgentHook buildSkillsAgentHook() {
-        Set<String> skillNames = buildSkillNames();
-        if (skillNames == null || skillNames.isEmpty()) {
+        PluginProperties effectivePluginProperties = resolvePluginProperties();
+        AgentClassLoaderSkillRegistry agentSkillRegistry = AgentClassLoaderSkillRegistry.builder()
+                .agent(this)
+                .pluginProperties(effectivePluginProperties)
+                .pluginPathOverride(resolvePluginPath())
+                .internalSkillsClasspath(INTERNAL_SKILLS_CLASSPATH)
+                .build();
+        List<SkillMetadata> loadedSkillMetadata = agentSkillRegistry.listAll();
+        if (loadedSkillMetadata == null || loadedSkillMetadata.isEmpty()) {
             return null;
         }
-        AgentClassLoaderSkillRegistry skillRegistry = AgentClassLoaderSkillRegistry.builder()
-                .classLoader(getClass().getClassLoader())
-                .classpathPath(SKILLS_CLASSPATH)
-                .build();
+        Map<String, List<ToolCallback>> groupedTools = new LinkedHashMap<>();
+        loadedSkillMetadata.forEach(metadata -> groupedTools.put(metadata.getName(), List.of()));
         return AgentSkillsAgentHook.builder()
-                .skillRegistry(skillRegistry)
-                .groupedTools(skillNames.stream().collect(
-                        LinkedHashMap::new,
-                        (map, name) -> map.put(name, List.of()),
-                        Map::putAll))
+                .skillRegistry(agentSkillRegistry)
+                .groupedTools(groupedTools)
                 .build();
+    }
+
+    private PluginProperties resolvePluginProperties() {
+        if (pluginProperties != null) {
+            return pluginProperties;
+        }
+        return pluginPropertiesProvider.getIfAvailable();
+    }
+
+    private String resolvePluginPath() {
+        PluginProperties effective = resolvePluginProperties();
+        if (effective != null && StringUtils.hasText(effective.getPath())) {
+            return effective.getPath();
+        }
+        return environment != null ? environment.getProperty("j2agent.plugin.path") : null;
     }
 
     /**
