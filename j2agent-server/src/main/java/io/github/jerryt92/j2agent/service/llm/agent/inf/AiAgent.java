@@ -14,12 +14,14 @@ import io.github.jerryt92.j2agent.constants.CommonConstants;
 import io.github.jerryt92.j2agent.service.llm.advisor.ReactCompatibleMessageChatMemoryAdvisor;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunContext;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunnableContextKeys;
+import io.github.jerryt92.j2agent.service.llm.agent.inf.constant.AgentThinkingOverride;
+import io.github.jerryt92.j2agent.service.llm.agent.inf.feature.McpFeature;
+import io.github.jerryt92.j2agent.service.llm.mcp.McpService;
 import io.github.jerryt92.j2agent.service.llm.skill.AgentClassLoaderSkillRegistry;
 import io.github.jerryt92.j2agent.service.llm.skill.AgentSkillsAgentHook;
 import io.github.jerryt92.j2agent.service.llm.skill.AgentUiSkillLoadToolInterceptor;
 import io.github.jerryt92.j2agent.service.llm.tool.AgentToolErrorReturnInterceptor;
 import io.github.jerryt92.j2agent.service.llm.tool.AgentUiToolEventInterceptor;
-import io.github.jerryt92.j2agent.service.llm.agent.inf.constant.AgentThinkingOverride;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import org.springframework.ai.chat.client.ChatClient;
@@ -178,6 +180,9 @@ public abstract class AiAgent {
     protected PluginProperties pluginProperties;
 
     @Autowired
+    protected McpService mcpService;
+
+    @Autowired
     private ObjectProvider<PluginProperties> pluginPropertiesProvider;
 
     @Autowired
@@ -275,7 +280,8 @@ public abstract class AiAgent {
     }
 
     /**
-     * 将 {@link #buildTools()} 转为 {@link ToolCallback}；子类若需自定义 MCP 合并等逻辑可覆盖。
+     * 将 {@link #buildTools()} 转为 {@link ToolCallback}；子类可覆盖以自定义本地工具合并。
+     * MCP 由 {@link #buildEffectiveToolCallbacks()} 在 {@link #buildAgent()} 中统一追加，不受本方法覆盖影响。
      *
      * @return 工具回调数组
      */
@@ -286,6 +292,28 @@ public abstract class AiAgent {
         }
         List<ToolCallback> toolCallbackList = new ArrayList<>(Arrays.asList(ToolCallbacks.from(tools)));
         return toolCallbackList.stream().filter(Objects::nonNull).toArray(ToolCallback[]::new);
+    }
+
+    /**
+     * 最终注入 ReactAgent 的工具链：子类 {@link #buildToolCallbacks()} 结果 + {@link McpFeature} MCP 工具。
+     * 即使子类覆盖 {@code buildToolCallbacks()}，只要 {@link #buildAgent()} 走基类逻辑（含 {@code super.buildAgent()}），
+     * 已实现 {@link McpFeature} 的 Agent 仍会合并 MCP。
+     */
+    private ToolCallback[] buildEffectiveToolCallbacks() {
+        List<ToolCallback> effectiveToolCallbacks = new ArrayList<>(Arrays.asList(buildToolCallbacks()));
+        appendMcpToolCallbacksIfNeeded(effectiveToolCallbacks);
+        return effectiveToolCallbacks.stream().filter(Objects::nonNull).toArray(ToolCallback[]::new);
+    }
+
+    private void appendMcpToolCallbacksIfNeeded(List<ToolCallback> toolCallbackList) {
+        if (!(this instanceof McpFeature mcpFeature) || mcpService == null) {
+            return;
+        }
+        ToolCallback[] mcpCallbacks = mcpService.getToolCallbacksForAgent(mcpFeature);
+        if (mcpCallbacks == null) {
+            return;
+        }
+        Collections.addAll(toolCallbackList, mcpCallbacks);
     }
 
     /**
@@ -391,7 +419,7 @@ public abstract class AiAgent {
         Builder builder = ReactAgent.builder()
                 .name(getAgentId())
                 .chatClient(chatClient)
-                .tools(withoutNullToolCallbacks(buildToolCallbacks()))
+                .tools(withoutNullToolCallbacks(buildEffectiveToolCallbacks()))
                 .systemPrompt(loadSystemPrompt())
                 .interceptors(buildEffectiveInterceptors());
         AgentSkillsAgentHook skillsHook = buildSkillsAgentHook();

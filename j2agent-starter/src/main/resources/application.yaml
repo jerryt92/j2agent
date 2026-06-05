@@ -107,4 +107,4 @@ j2agent:
     max-query-chunks: 5
   # 智能体插件配置
   plugin:
-    path: ${user.home}/j2agent/volume/j2agent/plugins
+    path: ${user.home}/j2agent/volumes/j2agent/plugins

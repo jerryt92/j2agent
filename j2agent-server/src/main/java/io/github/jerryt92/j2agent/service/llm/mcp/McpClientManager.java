@@ -13,10 +13,13 @@ import org.springframework.util.CollectionUtils;
 
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
@@ -73,6 +76,32 @@ public class McpClientManager {
      */
     public List<McpSyncClient> getClients() {
         return new ArrayList<>(clients.values());
+    }
+
+    /**
+     * 按 server 名称获取当前已连接的 MCP 客户端；未连接或不存在时记录 warn 并跳过。
+     */
+    public List<McpSyncClient> getClients(Collection<String> serverNames) {
+        if (CollectionUtils.isEmpty(serverNames)) {
+            return Collections.emptyList();
+        }
+        List<McpSyncClient> result = new ArrayList<>();
+        for (String serverName : serverNames) {
+            McpSyncClient client = clients.get(serverName);
+            if (client == null) {
+                log.warn("MCP server not found or offline, skipped: {}", serverName);
+                continue;
+            }
+            result.add(client);
+        }
+        return result;
+    }
+
+    /**
+     * 返回配置中解析出的 MCP server 名称集合（含尚未成功连接的项）。
+     */
+    public Set<String> getConfiguredServerNames() {
+        return Collections.unmodifiableSet(new LinkedHashSet<>(resolvedConnections.keySet()));
     }
 
     /**
