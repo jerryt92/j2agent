@@ -1,6 +1,7 @@
-package io.github.jerryt92.j2agent.service.llm.agent;
+package io.github.jerryt92.j2agent.service.llm.agent.core;
 
 import io.github.jerryt92.j2agent.config.PluginProperties;
+import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
@@ -38,7 +39,8 @@ import java.util.stream.Collectors;
 
 /**
  * 外部 Agent 插件注册表：启动期与运行时从 {@link PluginProperties#getPath()} 加载/卸载。
- * 支持根目录裸 JAR（兼容）与 tar.gz 解压后的子目录（瘦 JAR + {@code resources/}）。
+ * 支持 {@code <plugin.path>/agents/<agentDir>/} 标准布局（{@code plugin.path} 为 {@code .../plugins} 根目录），
+ * 以及根目录裸 JAR（兼容）。
  * 扫描并注册 JAR 内全部 Spring 组件（{@code @Component} 等），不仅限于 {@link AiAgent}；启动时仅预实例化 Agent。
  * 依赖 {@link PluginAgentClassLoader} 保证平台类与 Spring 容器一致，实例化统一走 {@code getBean}。
  * 启动期在 {@link ApplicationReadyEvent} 之后再 {@code getBean}，避免早于 {@code baseTools} 等单例就绪。

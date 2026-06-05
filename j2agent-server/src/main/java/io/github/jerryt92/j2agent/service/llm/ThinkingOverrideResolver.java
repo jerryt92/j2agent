@@ -1,8 +1,8 @@
 package io.github.jerryt92.j2agent.service.llm;
 
 import io.github.jerryt92.j2agent.model.ChatRequestDto;
-import io.github.jerryt92.j2agent.service.llm.agent.AgentThinkingOverride;
-import io.github.jerryt92.j2agent.service.llm.agent.AiAgent;
+import io.github.jerryt92.j2agent.service.llm.agent.inf.constant.AgentThinkingOverride;
+import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
 import org.apache.commons.lang3.StringUtils;
 
 /**

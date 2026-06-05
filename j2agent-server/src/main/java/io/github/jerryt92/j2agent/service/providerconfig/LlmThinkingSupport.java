@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.service.providerconfig;
 
-import io.github.jerryt92.j2agent.service.llm.agent.AgentThinkingOverride;
+import io.github.jerryt92.j2agent.service.llm.agent.inf.constant.AgentThinkingOverride;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.anthropic.api.AnthropicApi;

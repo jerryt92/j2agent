@@ -81,8 +81,8 @@ flowchart TB
 ```java
 package com.nms.prodplugin.ai.center.demo;
 
-import com.nms.platsvc.ai.center.service.llm.agent.AiAgent;
-import com.nms.platsvc.ai.center.service.llm.mcp.McpService;
+import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
+import io.github.jerryt92.j2agent.service.llm.mcp.McpService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;

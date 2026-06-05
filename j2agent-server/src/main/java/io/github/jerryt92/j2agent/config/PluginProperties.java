@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 public class PluginProperties {
 
     /**
-     * 外部 JAR 插件存放路径。
+     * 插件根目录（{@code .../plugins}）。Agent 在 {@code agents/} 下，平台 Skill 在 {@code skills/} 下。
      */
     private String path;
 }

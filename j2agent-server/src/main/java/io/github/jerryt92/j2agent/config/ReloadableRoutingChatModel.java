@@ -2,7 +2,7 @@ package io.github.jerryt92.j2agent.config;
 
 import io.github.jerryt92.j2agent.service.llm.PromptConversationIdExtractor;
 import io.github.jerryt92.j2agent.service.llm.ThinkingOverrideRegistry;
-import io.github.jerryt92.j2agent.service.llm.agent.AgentThinkingOverride;
+import io.github.jerryt92.j2agent.service.llm.agent.inf.constant.AgentThinkingOverride;
 import io.github.jerryt92.j2agent.service.llm.reasoning.AssistantMessageReasoningExtractor;
 import io.github.jerryt92.j2agent.service.providerconfig.ActiveProviderHolder;
 import io.github.jerryt92.j2agent.service.providerconfig.LlmActiveConfig;

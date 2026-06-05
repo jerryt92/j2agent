@@ -23,7 +23,7 @@ import io.github.jerryt92.j2agent.service.llm.AgentTurnStateMachine;
 import io.github.jerryt92.j2agent.service.llm.ChatContextBo;
 import io.github.jerryt92.j2agent.service.llm.ChatContextService;
 import io.github.jerryt92.j2agent.service.llm.ChatService;
-import io.github.jerryt92.j2agent.service.llm.agent.AgentRouter;
+import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRouter;
 import io.github.jerryt92.j2agent.service.security.LoginService;
 import io.github.jerryt92.j2agent.utils.UUIDv7Utils;
 import lombok.extern.log4j.Log4j2;
