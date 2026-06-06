@@ -72,8 +72,6 @@ public class ApiProviderConfigService {
         validateApiType(apiType);
         validateProvider(apiType, providerType);
         validateConfigName(configName);
-        validateLlmProviderModel(apiType, providerType, config);
-        validateLlmAnthropicMaxTokens(apiType, providerType, config);
 
         long now = System.currentTimeMillis();
         ApiProviderConfigPo po = new ApiProviderConfigPo();
@@ -115,8 +113,6 @@ public class ApiProviderConfigService {
         validateConfigName(configName);
 
         Map<String, Object> merged = mergeConfigPreservingApiKey(old, config);
-        validateLlmProviderModel(apiType, providerType, merged);
-        validateLlmAnthropicMaxTokens(apiType, providerType, merged);
         merged = sanitizeConfig(merged, providerType);
 
         long now = System.currentTimeMillis();
@@ -159,9 +155,6 @@ public class ApiProviderConfigService {
         if (!byteEquals(po.getEnabled(), 1)) {
             throw new IllegalStateException("仅启用中的配置可被设置为当前");
         }
-        Map<String, Object> activeConfig = readJson(po.getConfigJson());
-        validateLlmProviderModel(po.getApiType(), po.getProviderType(), activeConfig);
-        validateLlmAnthropicMaxTokens(po.getApiType(), po.getProviderType(), activeConfig);
         long now = System.currentTimeMillis();
         mapper.clearCurrentByApiType(po.getApiType());
         mapper.markCurrent(id, now);
@@ -262,31 +255,6 @@ public class ApiProviderConfigService {
         }
         if (configName.length() > 128) {
             throw new IllegalArgumentException("configName 长度超过 128");
-        }
-    }
-
-    /** LLM 配置：提供商与模型名组合不合理时拒绝保存/启用。 */
-    private void validateLlmProviderModel(String apiType, String providerType, Map<String, Object> config) {
-        if (!ProviderTypes.API_TYPE_LLM.equals(apiType)) {
-            return;
-        }
-        LlmProviderModelCompatibility.validate(
-                        providerType,
-                        LlmProviderModelCompatibility.readModelName(config),
-                        LlmProviderModelCompatibility.readBaseUrl(config))
-                .ifPresent(msg -> {
-                    throw new IllegalArgumentException(msg);
-                });
-    }
-
-    /** Anthropic LLM 须配置有效的 maxTokens（对应 Messages API max_tokens）。 */
-    private void validateLlmAnthropicMaxTokens(String apiType, String providerType, Map<String, Object> config) {
-        if (!ProviderTypes.API_TYPE_LLM.equals(apiType) || !ProviderTypes.LLM_ANTHROPIC.equals(providerType)) {
-            return;
-        }
-        if (readPositiveInteger(config, "maxTokens") == null) {
-            throw new IllegalArgumentException(
-                    "Anthropic兼容 提供商须配置 maxTokens（单次回复最大输出 token，须为正整数）");
         }
     }
 

@@ -6,7 +6,6 @@ import io.github.jerryt92.j2agent.service.llm.agent.inf.constant.AgentThinkingOv
 import io.github.jerryt92.j2agent.service.llm.reasoning.AssistantMessageReasoningExtractor;
 import io.github.jerryt92.j2agent.service.providerconfig.ActiveProviderHolder;
 import io.github.jerryt92.j2agent.service.providerconfig.LlmActiveConfig;
-import io.github.jerryt92.j2agent.service.providerconfig.LlmProviderModelCompatibility;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
@@ -79,11 +78,9 @@ public class ReloadableRoutingChatModel implements ChatModel {
                     String provider = cfg == null ? "none" : cfg.getProviderType();
                     String model = cfg == null ? "none" : cfg.getModelName();
                     log.error("LLM stream returned no usable chunks, provider={}, model={}", provider, model);
-                    String baseUrl = cfg == null ? "" : cfg.getBaseUrl();
-                    String hint = LlmProviderModelCompatibility.emptyStreamHint(provider, model, baseUrl);
                     return Flux.error(new IllegalStateException(
-                            "LLM 流式响应为空（无有效 token），当前 provider=" + provider + ", model=" + model + "。"
-                                    + hint));
+                            "LLM 流式响应为空（无有效 token），当前 provider=" + provider + ", model=" + model
+                                    + "。请核对 baseUrl、API Key、模型名是否在对应平台可用。"));
                 }));
     }
 
