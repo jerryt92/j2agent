@@ -240,3 +240,7 @@ j2agent@2025
 ## 前端
 
 [j2agent-ui](https://github.com/j2agent-ai/j2agent-ui)
+
+## 文档
+
+详细设计与开发文档见工作区 [j2agent-docs](../j2agent-docs/README.md)。
