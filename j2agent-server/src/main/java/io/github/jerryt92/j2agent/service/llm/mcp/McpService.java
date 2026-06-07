@@ -3,7 +3,11 @@ package io.github.jerryt92.j2agent.service.llm.mcp;
 import com.alibaba.fastjson2.JSONObject;
 import io.github.jerryt92.j2agent.model.McpStatusItem;
 import io.github.jerryt92.j2agent.model.McpToolItem;
+import io.github.jerryt92.j2agent.service.llm.agent.inf.feature.McpFeature;
+import io.modelcontextprotocol.client.McpSyncClient;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.stereotype.Service;
 
@@ -15,10 +19,10 @@ import java.util.Map;
 @Slf4j
 public class McpService {
 
-    private final McpClientManager mcpClientManager;
+    private final io.github.jerryt92.j2agent.service.llm.mcp.McpClientManager mcpClientManager;
     private final McpToolRegistry mcpToolRegistry;
 
-    public McpService(McpClientManager mcpClientManager, McpToolRegistry mcpToolRegistry) {
+    public McpService(io.github.jerryt92.j2agent.service.llm.mcp.McpClientManager mcpClientManager, McpToolRegistry mcpToolRegistry) {
         this.mcpClientManager = mcpClientManager;
         this.mcpToolRegistry = mcpToolRegistry;
     }
@@ -36,6 +40,23 @@ public class McpService {
      */
     public ToolCallbackProvider getToolCallbackProvider() {
         return mcpToolRegistry.getToolCallbackProvider();
+    }
+
+    /**
+     * 按 Agent {@link McpFeature} 声明合并 MCP 工具回调；不污染全局 {@link #getToolCallbackProvider()}。
+     */
+    public ToolCallback[] getToolCallbacksForAgent(McpFeature mcpFeature) {
+        List<McpSyncClient> clients = mcpFeature.useAllMcpServers()
+                ? mcpClientManager.getClients()
+                : mcpClientManager.getClients(mcpFeature.useMcpServers());
+        if (clients.isEmpty()) {
+            return new ToolCallback[0];
+        }
+        ToolCallbackProvider provider = SyncMcpToolCallbackProvider.builder()
+                .mcpClients(clients)
+                .build();
+        ToolCallback[] callbacks = provider.getToolCallbacks();
+        return callbacks == null ? new ToolCallback[0] : callbacks;
     }
 
     /**
@@ -76,11 +97,11 @@ public class McpService {
     public List<McpStatusItem> getMcpServerStatus() {
         Map<String, String> statusMap = mcpClientManager.getHealthStatus();
         Map<String, String> errors = mcpClientManager.getLastErrors();
-        Map<String, McpClientManager.ConnectionMeta> connectionMeta = mcpClientManager.getConnectionMeta();
+        Map<String, io.github.jerryt92.j2agent.service.llm.mcp.McpClientManager.ConnectionMeta> connectionMeta = mcpClientManager.getConnectionMeta();
         List<McpStatusItem> result = new ArrayList<>();
-        for (Map.Entry<String, McpClientManager.ConnectionMeta> entry : connectionMeta.entrySet()) {
+        for (Map.Entry<String, io.github.jerryt92.j2agent.service.llm.mcp.McpClientManager.ConnectionMeta> entry : connectionMeta.entrySet()) {
             String serverName = entry.getKey();
-            McpClientManager.ConnectionMeta meta = entry.getValue();
+            io.github.jerryt92.j2agent.service.llm.mcp.McpClientManager.ConnectionMeta meta = entry.getValue();
             McpStatusItem item = new McpStatusItem();
             item.setName(serverName);
             item.setType(meta.type());

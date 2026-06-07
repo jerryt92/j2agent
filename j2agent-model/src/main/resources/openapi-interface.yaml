@@ -20,6 +20,7 @@ tags:
   - name: User
   - name: Register
   - name: ResetPassword
+  - name: FileManagement
 paths:
   # HealthCheck API
   /v1/api/j2agent/health-check:
@@ -925,6 +926,289 @@ paths:
       responses:
         '200':
           description: OK
+
+  /v1/rest/j2agent/files:
+    get:
+      tags: [ FileManagement ]
+      operationId: getObjectFiles
+      summary: 分页查询文件台账
+      parameters:
+        - name: prefix
+          in: query
+          schema: { type: string }
+        - name: keyword
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/ObjectFileListDto'
+    post:
+      tags: [ FileManagement ]
+      operationId: uploadObjectFile
+      summary: 上传文件
+      parameters:
+        - name: prefix
+          in: query
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [ file ]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/ObjectFileItemDto'
+    delete:
+      tags: [ FileManagement ]
+      operationId: deleteObjectFile
+      summary: 删除文件
+      parameters:
+        - name: object-key
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+
+  /v1/rest/j2agent/files/delete-batch:
+    post:
+      tags: [ FileManagement ]
+      operationId: deleteObjectFiles
+      summary: 批量删除文件
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/ObjectFileBatchDeleteRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/ObjectBatchResultDto'
+
+  /v1/rest/j2agent/files/preview:
+    get:
+      tags: [ FileManagement ]
+      operationId: getObjectFilePreviewUrl
+      summary: 获取文件临时访问地址
+      parameters:
+        - name: object-key
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/ObjectFileUrlDto'
+
+  /v1/rest/j2agent/files/upload/init:
+    post:
+      tags: [ FileManagement ]
+      operationId: initObjectFileDirectUpload
+      summary: 初始化直传上传
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/ObjectFileUploadInitRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/ObjectFileUploadInitDto'
+
+  /v1/rest/j2agent/files/upload/complete:
+    post:
+      tags: [ FileManagement ]
+      operationId: completeObjectFileDirectUpload
+      summary: 完成直传上传
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/ObjectFileUploadCompleteRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/ObjectFileItemDto'
+
+  /v1/rest/j2agent/files/upload/abort:
+    post:
+      tags: [ FileManagement ]
+      operationId: abortObjectFileDirectUpload
+      summary: 取消直传上传
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/ObjectFileUploadAbortRequest'
+      responses:
+        '200':
+          description: OK
+
+  /v1/rest/j2agent/files/upload/heartbeat:
+    post:
+      tags: [ FileManagement ]
+      operationId: touchObjectFileUploadHeartbeat
+      summary: 直传上传进行中心跳
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/ObjectFileUploadHeartbeatRequest'
+      responses:
+        '204':
+          description: No Content
+
+  /v1/rest/j2agent/files/sync/tasks:
+    post:
+      tags: [ FileManagement ]
+      operationId: createObjectStorageScanTask
+      summary: 创建异步差异检查任务
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/ObjectStorageSyncTaskDto'
+
+  /v1/rest/j2agent/files/sync/tasks/latest:
+    get:
+      tags: [ FileManagement ]
+      operationId: getLatestObjectStorageDifferenceCheck
+      summary: 查询最近一次成功的差异检查
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/ObjectStorageSyncTaskDto'
+
+  /v1/rest/j2agent/files/sync/tasks/{task-id}:
+    get:
+      tags: [ FileManagement ]
+      operationId: getObjectStorageScanTask
+      summary: 查询差异检查任务
+      parameters:
+        - name: task-id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/ObjectStorageSyncTaskDto'
+
+  /v1/rest/j2agent/files/sync/tasks/{task-id}/cancel:
+    post:
+      tags: [ FileManagement ]
+      operationId: cancelObjectStorageDifferenceCheck
+      summary: 终止差异检查任务
+      parameters:
+        - name: task-id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/ObjectStorageSyncTaskDto'
+
+  /v1/rest/j2agent/files/sync/tasks/{task-id}/diffs:
+    get:
+      tags: [ FileManagement ]
+      operationId: getObjectStorageScanDiffs
+      summary: 查询当前异常差异快照
+      parameters:
+        - name: task-id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: diff-type
+          in: query
+          schema: { type: string }
+        - name: resolution-status
+          in: query
+          schema: { type: string }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/ObjectStorageSyncDiffListDto'
+
+  /v1/rest/j2agent/files/sync/resolve:
+    post:
+      tags: [ FileManagement ]
+      operationId: resolveObjectStorageDiffs
+      summary: 人工处置对象存储差异
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './openapi-model.yaml#/components/schemas/ObjectStorageResolveRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/ObjectBatchResultDto'
 
 components:
   schemas:

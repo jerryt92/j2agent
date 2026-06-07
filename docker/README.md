@@ -4,7 +4,7 @@
 
 完整部署说明、数据卷说明、前端更新 SOP 见：
 
-**[docs/docker部署/README.md](../docs/docker部署/README.md)**
+**[j2agent-docs/基础设施/docker部署/README.md](../../j2agent-docs/基础设施/docker部署/README.md)**
 
 首次使用：
 

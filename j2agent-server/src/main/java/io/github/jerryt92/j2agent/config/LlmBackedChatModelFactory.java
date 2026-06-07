@@ -96,11 +96,7 @@ public final class LlmBackedChatModelFactory {
         if (StringUtils.isNotBlank(cfg.getBaseUrl())) {
             apiBuilder.baseUrl(cfg.getBaseUrl());
         }
-        Integer maxTokens = cfg.getMaxTokens();
-        if (maxTokens == null || maxTokens <= 0) {
-            throw new IllegalStateException(
-                    "Anthropic LLM 配置缺少有效的 maxTokens，请在「设置 → LLM 接口」中编辑并保存。");
-        }
+        int maxTokens = cfg.getMaxTokens() != null && cfg.getMaxTokens() > 0 ? cfg.getMaxTokens() : 16384;
         AnthropicChatOptions.Builder optionsBuilder = AnthropicChatOptions.builder()
                 .model(cfg.getModelName())
                 .maxTokens(maxTokens);
