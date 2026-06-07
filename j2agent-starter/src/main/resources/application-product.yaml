@@ -104,8 +104,8 @@ j2agent:
       expire-seconds: 300
       pow-difficulty: 4
   websocket:
-    # websocket最大消息字节数BufferSize (1M)
-    max_message_buffer_size: 1048576
+    # websocket最大消息字节数BufferSize (2M)
+    max_message_buffer_size: 2097152
   vector-database:
     provider: milvus
     milvus:
