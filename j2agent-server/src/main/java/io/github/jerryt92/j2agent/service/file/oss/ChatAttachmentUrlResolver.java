@@ -1,5 +1,7 @@
 package io.github.jerryt92.j2agent.service.file.oss;
 
+import io.github.jerryt92.j2agent.config.ObjectStorageProperties;
+import io.github.jerryt92.j2agent.controller.ChatFileController;
 import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
 import io.github.jerryt92.j2agent.model.ChatContextDto;
 import io.github.jerryt92.j2agent.model.MessageDto;
@@ -12,22 +14,34 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 为聊天附件生成 OSS 预签名直链，供前端 {@code <img>} 直连对象存储，避免图片字节经应用服务器转发。
+ * 按 {@link ObjectStorageProperties#getChatAttachmentDisplay()} 为聊天附件生成展示 URL。
  */
 @Service
 @ConditionalOnBean(ObjectFileManagementService.class)
 public class ChatAttachmentUrlResolver {
 
-    /** 聊天气泡展示用预签名 URL 有效期（过期后前端可调用 preview API 刷新）。 */
+    /** 聊天气泡展示用预签名 URL 有效期（DIRECT 模式；过期后前端可调用 preview API 刷新）。 */
     public static final Duration DISPLAY_URL_TTL = Duration.ofHours(24);
 
     private final ObjectFileManagementService fileService;
+    private final ObjectStorageProperties storageProperties;
 
-    public ChatAttachmentUrlResolver(ObjectFileManagementService fileService) {
+    public ChatAttachmentUrlResolver(ObjectFileManagementService fileService,
+                                     ObjectStorageProperties storageProperties) {
         this.fileService = fileService;
+        this.storageProperties = storageProperties;
+    }
+
+    public boolean isDirectDisplay() {
+        return storageProperties.getChatAttachmentDisplay()
+                == ObjectStorageProperties.ChatAttachmentDisplayMode.DIRECT;
     }
 
     public String displayUrl(String objectKey) {
+        if (storageProperties.getChatAttachmentDisplay()
+                != ObjectStorageProperties.ChatAttachmentDisplayMode.DIRECT) {
+            return ChatFileController.stableContentUrl(objectKey);
+        }
         return fileService.previewUrl(objectKey, DISPLAY_URL_TTL).toString();
     }
 

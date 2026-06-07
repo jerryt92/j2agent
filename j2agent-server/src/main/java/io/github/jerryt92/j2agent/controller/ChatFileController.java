@@ -39,13 +39,16 @@ public class ChatFileController {
     private final ObjectFileManagementService fileService;
     private final LoginService loginService;
     private final ChatContextService chatContextService;
+    private final ChatAttachmentUrlResolver attachmentUrlResolver;
 
     public ChatFileController(ObjectFileManagementService fileService,
                                 LoginService loginService,
-                                ChatContextService chatContextService) {
+                                ChatContextService chatContextService,
+                                ChatAttachmentUrlResolver attachmentUrlResolver) {
         this.fileService = fileService;
         this.loginService = loginService;
         this.chatContextService = chatContextService;
+        this.attachmentUrlResolver = attachmentUrlResolver;
     }
 
     @PostMapping
@@ -73,7 +76,7 @@ public class ChatFileController {
         dto.setObjectKey(objectKey);
         dto.setName(ChatFileKeys.displayName(objectKey));
         dto.setContentType("image/*");
-        dto.setUrl(fileService.previewUrl(objectKey).toString());
+        dto.setUrl(attachmentUrlResolver.displayUrl(objectKey));
         return ResponseEntity.ok(dto);
     }
 
@@ -99,7 +102,7 @@ public class ChatFileController {
         dto.setName(ChatFileKeys.displayName(po.getObjectKey()));
         dto.setContentType(po.getContentType());
         dto.setSize(po.getSizeBytes());
-        dto.setUrl(fileService.previewUrl(po.getObjectKey(), ChatAttachmentUrlResolver.DISPLAY_URL_TTL).toString());
+        dto.setUrl(attachmentUrlResolver.displayUrl(po.getObjectKey()));
         return dto;
     }
 

@@ -80,6 +80,8 @@ j2agent:
     enabled: true
     type: minio
     bucket: j2agent-files
+    # 聊天图片展示：proxy=同源 content 代理；direct=OSS 预签名直链
+    chat-attachment-display: ${J2AGENT_CHAT_ATTACHMENT_DISPLAY:proxy}
     upload:
       reconcile:
         enabled: true
