@@ -1,6 +1,7 @@
 package io.github.jerryt92.j2agent.controller;
 
 import io.github.jerryt92.j2agent.service.file.oss.ObjectFileManagementService;
+import io.github.jerryt92.j2agent.service.file.oss.ObjectFilePreviewUrlResolver;
 import io.github.jerryt92.j2agent.service.file.oss.ObjectStorageService;
 import io.github.jerryt92.j2agent.service.file.oss.ObjectStorageSyncService;
 import io.github.jerryt92.j2agent.service.file.oss.model.DirectUploadInitResult;
@@ -28,11 +29,23 @@ import io.github.jerryt92.j2agent.model.po.ObjectStorageSyncDiffPo;
 import io.github.jerryt92.j2agent.model.po.ObjectStorageSyncTaskPo;
 import io.github.jerryt92.j2agent.server.api.FileManagementApi;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.io.InputStream;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @RestController
 @RequiredRole(RequiredRole.ADMIN)
@@ -40,13 +53,16 @@ import java.util.List;
 public class FileManagementController implements FileManagementApi {
     private final ObjectFileManagementService fileService;
     private final ObjectStorageSyncService syncService;
+    private final ObjectFilePreviewUrlResolver previewUrlResolver;
 
     public FileManagementController(
             ObjectFileManagementService fileService,
-            ObjectStorageSyncService syncService
+            ObjectStorageSyncService syncService,
+            ObjectFilePreviewUrlResolver previewUrlResolver
     ) {
         this.fileService = fileService;
         this.syncService = syncService;
+        this.previewUrlResolver = previewUrlResolver;
     }
 
     @Override
@@ -83,8 +99,30 @@ public class FileManagementController implements FileManagementApi {
     @Override
     public ResponseEntity<ObjectFileUrlDto> getObjectFilePreviewUrl(String objectKey) {
         ObjectFileUrlDto result = new ObjectFileUrlDto();
-        result.setUrl(fileService.previewUrl(objectKey).toString());
+        result.setUrl(previewUrlResolver.displayUrl(objectKey));
         return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/v1/rest/j2agent/files/content")
+    public ResponseEntity<InputStreamResource> content(@RequestParam("object-key") String objectKey) {
+        if (!StringUtils.hasText(objectKey)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "object-key is required");
+        }
+        ObjectFilePo file = fileService.requireReadyObjectFile(objectKey);
+        InputStream stream = fileService.openObjectStream(objectKey);
+        MediaType mediaType = MediaType.APPLICATION_OCTET_STREAM;
+        if (StringUtils.hasText(file.getContentType())) {
+            mediaType = MediaType.parseMediaType(file.getContentType());
+        }
+        return ResponseEntity.ok()
+                .contentType(mediaType)
+                .cacheControl(CacheControl.maxAge(15, TimeUnit.MINUTES).cachePrivate())
+                .body(new InputStreamResource(stream));
+    }
+
+    public static String stableContentUrl(String objectKey) {
+        return "/v1/rest/j2agent/files/content?object-key="
+                + URLEncoder.encode(objectKey, StandardCharsets.UTF_8);
     }
 
     @Override

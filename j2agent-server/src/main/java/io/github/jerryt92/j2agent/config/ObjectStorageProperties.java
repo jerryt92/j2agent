@@ -23,6 +23,18 @@ public class ObjectStorageProperties {
     private Sync sync = new Sync();
     private Upload upload = new Upload();
     private Delete delete = new Delete();
+    /**
+     * 聊天图片展示方式：{@link ChatAttachmentDisplayMode#DIRECT} OSS 预签名直链；
+     * {@link ChatAttachmentDisplayMode#PROXY} 同源 content 代理。
+     */
+    private ChatAttachmentDisplayMode chatAttachmentDisplay = ChatAttachmentDisplayMode.PROXY;
+
+    public enum ChatAttachmentDisplayMode {
+        /** OSS 预签名直链 */
+        DIRECT,
+        /** 经应用服务器 {@code /chat/files/content} 转发，不依赖预签名 host */
+        PROXY
+    }
 
     public enum StorageType {
         MINIO,
