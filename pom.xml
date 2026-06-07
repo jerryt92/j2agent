@@ -21,6 +21,9 @@
         <springframework.ai.version>1.1.5</springframework.ai.version>
         <spring.ai.alibaba.version>1.1.2.2</spring.ai.alibaba.version>
         <jackson.version>2.18.3</jackson.version>
+        <minio.version>8.6.0</minio.version>
+        <aliyun-oss.version>3.18.4</aliyun-oss.version>
+        <qiniu.version>7.19.0</qiniu.version>
     </properties>
     <dependencyManagement>
         <dependencies>
@@ -179,6 +182,21 @@
                 <groupId>org.redisson</groupId>
                 <artifactId>redisson</artifactId>
                 <version>3.29.0</version>
+            </dependency>
+            <dependency>
+                <groupId>io.minio</groupId>
+                <artifactId>minio</artifactId>
+                <version>${minio.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.aliyun.oss</groupId>
+                <artifactId>aliyun-sdk-oss</artifactId>
+                <version>${aliyun-oss.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.qiniu</groupId>
+                <artifactId>qiniu-java-sdk</artifactId>
+                <version>${qiniu.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

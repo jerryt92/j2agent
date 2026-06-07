@@ -75,6 +75,52 @@ mybatis:
   file-path:
     export-file: /var/backup/ftp/virtual/exportfiles/logs
 j2agent:
+  storage:
+    # type 可选 minio、oss（阿里云）、qiniu（七牛云）或 r2（Cloudflare）
+    enabled: true
+    type: minio
+    bucket: j2agent-files
+    upload:
+      reconcile:
+        enabled: true
+        # 最多对账 10 次；与 retry-delay-seconds 相乘约为 abandoned 上传等待窗口（10×30=300s）
+        max-attempts: 10
+        # 每次对账失败后的固定重试间隔（秒），上传对账不使用指数退避
+        retry-delay-seconds: 30
+        # 对账总窗口上限（秒），建议保持 max-attempts × retry-delay-seconds
+        max-total-seconds: 300
+        # 浏览器直传期间向后端发送上传心跳的间隔（秒）
+        heartbeat-interval-seconds: 10
+        # 上传心跳在 Redis 中的有效期（秒），超过该时间未续期则认为上传已停止
+        heartbeat-ttl-seconds: 30
+        # 检测到上传心跳仍有效时，延后再次检查该任务的时间（秒），且不增加重试次数
+        in-progress-delay-seconds: 10
+    delete:
+      reconcile:
+        enabled: true
+        max-attempts: 20
+        initial-delay-seconds: 10
+        max-delay-seconds: 300
+    minio:
+      endpoint: http://127.0.0.1:19000
+      access-key: minioadmin
+      secret-key: j2apassword@2026#
+    oss:
+      endpoint: ${OSS_ENDPOINT:}
+      access-key-id: ${OSS_ACCESS_KEY_ID:}
+      access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
+    qiniu:
+      access-key: ${QINIU_ACCESS_KEY:}
+      secret-key: ${QINIU_SECRET_KEY:}
+      domain: ${QINIU_DOMAIN:}
+      use-https: true
+    r2:
+      endpoint: ${R2_ENDPOINT:}
+      access-key-id: ${R2_ACCESS_KEY_ID:}
+      secret-access-key: ${R2_SECRET_ACCESS_KEY:}
+    sync:
+      retention-days: 7
+      cleanup-cron: "0 30 2 * * *"
   security:
     captcha:
       expire-seconds: 300
@@ -91,7 +137,7 @@ j2agent:
   knowledge:
     repo:
       # 知识库仓库根目录
-      root-path: ${user.home}/j2agent/knowledge-repo
+      root-path: ${user.home}/j2agent/volumes/j2agent/knowledge-repo
       watch-enabled: true
   # 回合结束后是否生成「建议追问」NOTICE（关 WebSocket 前发出）
   follow-up-suggestions:

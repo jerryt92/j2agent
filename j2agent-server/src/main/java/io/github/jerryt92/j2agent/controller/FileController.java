@@ -1,7 +1,7 @@
 package io.github.jerryt92.j2agent.controller;
 
 import io.github.jerryt92.j2agent.constants.CommonConstants;
-import io.github.jerryt92.j2agent.service.file.FileService;
+import io.github.jerryt92.j2agent.service.file.StaticFileService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
@@ -18,10 +18,10 @@ import java.nio.charset.StandardCharsets;
 @Slf4j
 @RestController
 public class FileController {
-    private final FileService fileService;
+    private final StaticFileService staticFileService;
 
-    public FileController(FileService fileService) {
-        this.fileService = fileService;
+    public FileController(StaticFileService staticFileService) {
+        this.staticFileService = staticFileService;
     }
 
     /**
@@ -33,12 +33,12 @@ public class FileController {
         if (relativePath == null || relativePath.isBlank()) {
             return ResponseEntity.notFound().build();
         }
-        Resource resource = fileService.getStaticFile(relativePath);
+        Resource resource = staticFileService.getStaticFile(relativePath);
         if (resource == null || !resource.exists()) {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok()
-                .contentType(FileService.parseMediaType(resource.getFilename()))
+                .contentType(StaticFileService.parseMediaType(resource.getFilename()))
                 .body(resource);
     }
 
@@ -51,12 +51,12 @@ public class FileController {
         if (relativePath == null || relativePath.isBlank()) {
             return ResponseEntity.notFound().build();
         }
-        Resource resource = fileService.getKnowledgeRepoFile(relativePath);
+        Resource resource = staticFileService.getKnowledgeRepoFile(relativePath);
         if (resource == null || !resource.exists()) {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok()
-                .contentType(FileService.parseMediaType(resource.getFilename()))
+                .contentType(StaticFileService.parseMediaType(resource.getFilename()))
                 .body(resource);
     }
 

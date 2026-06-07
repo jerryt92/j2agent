@@ -75,6 +75,30 @@ mybatis:
   file-path:
     export-file: /var/backup/ftp/virtual/exportfiles/logs
 j2agent:
+  storage:
+    enabled: ${J2AGENT_STORAGE_ENABLED}
+    type: ${J2AGENT_STORAGE_TYPE}
+    bucket: ${J2AGENT_STORAGE_BUCKET}
+    minio:
+      endpoint: ${J2AGENT_MINIO_ENDPOINT}
+      access-key: ${MINIO_ROOT_USER:}
+      secret-key: ${MINIO_ROOT_PASSWORD:}
+    oss:
+      endpoint: ${OSS_ENDPOINT:}
+      access-key-id: ${OSS_ACCESS_KEY_ID:}
+      access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
+    qiniu:
+      access-key: ${QINIU_ACCESS_KEY:}
+      secret-key: ${QINIU_SECRET_KEY:}
+      domain: ${QINIU_DOMAIN:}
+      use-https: ${QINIU_USE_HTTPS:true}
+    r2:
+      endpoint: ${R2_ENDPOINT:}
+      access-key-id: ${R2_ACCESS_KEY_ID:}
+      secret-access-key: ${R2_SECRET_ACCESS_KEY:}
+    sync:
+      retention-days: ${J2AGENT_STORAGE_SYNC_RETENTION_DAYS:7}
+      cleanup-cron: "${J2AGENT_STORAGE_SYNC_CLEANUP_CRON:0 30 2 * * *}"
   security:
     captcha:
       expire-seconds: 300

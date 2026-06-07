@@ -18,10 +18,10 @@ import java.util.stream.Stream;
  */
 @Slf4j
 @Service
-public class FileService {
+public class StaticFileService {
     private final KnowledgeRepoMetadataService knowledgeRepoMetadataService;
 
-    public FileService(KnowledgeRepoMetadataService knowledgeRepoMetadataService) {
+    public StaticFileService(KnowledgeRepoMetadataService knowledgeRepoMetadataService) {
         this.knowledgeRepoMetadataService = knowledgeRepoMetadataService;
     }
 

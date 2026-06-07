@@ -6,6 +6,147 @@ info:
   version: 1.0.0
 components:
   schemas:
+    ObjectFileItemDto:
+      type: object
+      properties:
+        objectKey: { type: string }
+        name: { type: string }
+        directory: { type: boolean }
+        etag: { type: string }
+        size: { type: integer, format: int64 }
+        contentType: { type: string }
+        lastModified: { type: integer, format: int64 }
+        operationStatus: { type: string }
+        lastError: { type: string }
+
+    ObjectFileListDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ObjectFileItemDto'
+        total:
+          type: integer
+          format: int64
+
+    ObjectFileUrlDto:
+      type: object
+      properties:
+        url: { type: string }
+
+    ObjectFileUploadInitRequest:
+      type: object
+      required: [ filename, sizeBytes ]
+      properties:
+        prefix: { type: string }
+        filename: { type: string }
+        contentType: { type: string }
+        sizeBytes: { type: integer, format: int64 }
+
+    ObjectFileUploadInitDto:
+      type: object
+      properties:
+        objectKey: { type: string }
+        provider: { type: string }
+        uploadUrl: { type: string }
+        method: { type: string }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+        expiresAt: { type: integer, format: int64 }
+        providerExtras:
+          type: object
+          additionalProperties: { type: string }
+
+    ObjectFileUploadCompleteRequest:
+      type: object
+      required: [ objectKey ]
+      properties:
+        objectKey: { type: string }
+
+    ObjectFileUploadAbortRequest:
+      type: object
+      required: [ objectKey ]
+      properties:
+        objectKey: { type: string }
+
+    ObjectFileUploadHeartbeatRequest:
+      type: object
+      required: [ objectKey ]
+      properties:
+        objectKey: { type: string }
+
+    ObjectFileBatchDeleteRequest:
+      type: object
+      required: [ objectKeys ]
+      properties:
+        objectKeys:
+          type: array
+          items: { type: string }
+
+    ObjectBatchResultDto:
+      type: object
+      properties:
+        success: { type: boolean }
+        failedIds:
+          type: array
+          items: { type: string }
+
+    ObjectStorageSyncTaskDto:
+      type: object
+      properties:
+        id: { type: string }
+        bucket: { type: string }
+        provider: { type: string }
+        status: { type: string }
+        scannedCount: { type: integer, format: int64 }
+        inSyncCount: { type: integer, format: int64 }
+        ossOnlyCount: { type: integer, format: int64 }
+        dbOnlyCount: { type: integer, format: int64 }
+        mismatchCount: { type: integer, format: int64 }
+        inProgressCount: { type: integer, format: int64 }
+        errorMessage: { type: string }
+        createdAt: { type: integer, format: int64 }
+        startedAt: { type: integer, format: int64 }
+        completedAt: { type: integer, format: int64 }
+
+    ObjectStorageSyncDiffDto:
+      type: object
+      properties:
+        id: { type: string }
+        objectKey: { type: string }
+        diffType: { type: string }
+        resolutionStatus: { type: string }
+        ossEtag: { type: string }
+        ossSize: { type: integer, format: int64 }
+        ossModifiedAt: { type: integer, format: int64 }
+        dbEtag: { type: string }
+        dbSize: { type: integer, format: int64 }
+        dbModifiedAt: { type: integer, format: int64 }
+        resolutionAction: { type: string }
+        resolutionError: { type: string }
+
+    ObjectStorageSyncDiffListDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ObjectStorageSyncDiffDto'
+        total:
+          type: integer
+          format: int64
+
+    ObjectStorageResolveRequest:
+      type: object
+      required: [ diffIds, action ]
+      properties:
+        diffIds:
+          type: array
+          items: { type: string }
+        action: { type: string }
+
     FileDto:
       type: object
       properties:

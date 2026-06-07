@@ -1,8 +1,10 @@
 package io.github.jerryt92.j2agent.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.lang3.StringUtils;
 import org.redisson.Redisson;
 import org.redisson.api.RedissonClient;
+import org.redisson.codec.JsonJacksonCodec;
 import org.redisson.config.ClusterServersConfig;
 import org.redisson.config.Config;
 import org.redisson.config.SingleServerConfig;
@@ -21,26 +23,27 @@ public class RedisConfig {
     private int database;
 
     @Bean(destroyMethod = "shutdown") // 销毁容器时关闭 Redisson 客户端
-    public RedissonClient redissonClient(RedisProperties redisProperties) {
+    public RedissonClient redissonClient(RedisProperties redisProperties, ObjectMapper objectMapper) {
         Config config = new Config();
+        config.setCodec(new JsonJacksonCodec(objectMapper));
         if (null != redisProperties.getCluster() && !CollectionUtils.isEmpty(redisProperties.getCluster().getNodes())) {
             ClusterServersConfig config0 = config.useClusterServers();
             config0.setNodeAddresses(redisProperties.getCluster().getNodes().stream().map(i -> "redis://" + i).collect(
-                Collectors.toList()));
+                    Collectors.toList()));
             config0
-                .setMasterConnectionPoolSize(32)
-                .setSlaveConnectionPoolSize(32)
-                .setMasterConnectionMinimumIdleSize(5)
-                .setSlaveConnectionMinimumIdleSize(5);
+                    .setMasterConnectionPoolSize(32)
+                    .setSlaveConnectionPoolSize(32)
+                    .setMasterConnectionMinimumIdleSize(5)
+                    .setSlaveConnectionMinimumIdleSize(5);
             if (StringUtils.isNotBlank(redisProperties.getPassword())) {
                 config0.setPassword(redisProperties.getPassword());
             }
         } else {
             SingleServerConfig config0 = config.useSingleServer();
             config0.setAddress("redis://" + redisProperties.getHost() + ":" + redisProperties.getPort())
-                .setDatabase(database)
-                .setConnectionPoolSize(64)
-                .setConnectionMinimumIdleSize(10);
+                    .setDatabase(database)
+                    .setConnectionPoolSize(64)
+                    .setConnectionMinimumIdleSize(10);
             if (StringUtils.isNotBlank(redisProperties.getPassword())) {
                 config0.setPassword(redisProperties.getPassword());
             }
