@@ -12,6 +12,8 @@ import io.github.jerryt92.j2agent.model.AgentStateTransition;
 import io.github.jerryt92.j2agent.model.AgentUiEventEnvelope;
 import io.github.jerryt92.j2agent.model.ChatCallback;
 import io.github.jerryt92.j2agent.model.ChatRequestDto;
+import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
+import org.springframework.beans.factory.ObjectProvider;
 import io.github.jerryt92.j2agent.model.ChatResponseDto;
 import io.github.jerryt92.j2agent.model.MessageDto;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRouter;
@@ -61,17 +63,22 @@ public class ChatService {
      */
     private final FollowUpSuggestionService followUpSuggestionService;
     private final ChatMemoryMessageCodec chatMemoryMessageCodec;
+    private final ObjectProvider<io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentService>
+            chatAttachmentServiceProvider;
 
     public ChatService(ChatContextService chatContextService,
                        AgentRouter agentRouter,
                        FollowUpSuggestionService followUpSuggestionService,
                        ChatInputProperties chatInputProperties,
-                       ChatMemoryMessageCodec chatMemoryMessageCodec) {
+                       ChatMemoryMessageCodec chatMemoryMessageCodec,
+                       ObjectProvider<io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentService>
+                               chatAttachmentServiceProvider) {
         this.chatContextService = chatContextService;
         this.agentRouter = agentRouter;
         this.followUpSuggestionService = followUpSuggestionService;
         this.chatInputProperties = chatInputProperties;
         this.chatMemoryMessageCodec = chatMemoryMessageCodec;
+        this.chatAttachmentServiceProvider = chatAttachmentServiceProvider;
     }
 
     public void handleChat(ChatCallback<AgentUiEventEnvelope> chatChatCallback, ChatRequestDto request, String userId, String agentId) {
@@ -136,12 +143,31 @@ public class ChatService {
                     recordingResponseCall);
             String latestUserMessage = extractLatestUserMessage(request.getMessages());
             String limitedUserMessage = limitMessageLength(latestUserMessage);
+            MessageDto latestUser = extractLatestUser(request.getMessages());
+            List<ChatAttachmentDto> attachments = List.of();
+            if (!CollectionUtils.isEmpty(latestUser.getAttachments())) {
+                var attachmentService = chatAttachmentServiceProvider.getIfAvailable();
+                if (attachmentService == null) {
+                    throw new IllegalStateException("Object storage is required for image input.");
+                }
+                attachments = attachmentService.validateAndReference(
+                        latestUser.getAttachments(),
+                        finalContextId,
+                        aiAgentForConversation.getAgentId(),
+                        latestUser.getIndex() == null ? index : latestUser.getIndex(),
+                        userId);
+            }
+            if (StringUtils.isBlank(limitedUserMessage) && attachments.isEmpty()) {
+                throw new IllegalArgumentException("User message and attachments must not both be empty.");
+            }
+            final List<ChatAttachmentDto> finalAttachments = attachments;
             AgentRunContext agentRunContext = new AgentRunContext(
                     limitedUserMessage,
                     finalContextId,
                     userId,
                     turnId,
                     turnConversationId,
+                    finalAttachments,
                     toolEventEmitter);
             // 会话记忆主要由 ChatClient Advisor 写入；关闭/异常时补偿未写完的流式 assistant
             AiAgent aiAgent = aiAgentForConversation;
@@ -586,10 +612,14 @@ public class ChatService {
      * 从请求消息列表中逆序提取最新一条用户消息，作为本轮输入。
      */
     private String extractLatestUserMessage(List<MessageDto> messages) {
+        return extractLatestUser(messages).getContent();
+    }
+
+    private MessageDto extractLatestUser(List<MessageDto> messages) {
         for (int i = messages.size() - 1; i >= 0; i--) {
             MessageDto message = messages.get(i);
             if (message.getRole() == MessageDto.RoleEnum.USER) {
-                return message.getContent();
+                return message;
             }
         }
         throw new IllegalArgumentException("No user message found in request.");

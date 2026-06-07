@@ -702,6 +702,34 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FileDto'
+        attachments:
+          type: array
+          description: 用户消息携带的对象存储附件
+          items:
+            $ref: '#/components/schemas/ChatAttachmentDto'
+    ChatAttachmentDto:
+      type: object
+      required: [ name, contentType ]
+      properties:
+        objectKey:
+          type: string
+          description: 对象存储键；历史消息与预览使用。新发图片可省略，由服务端上传后回填
+        name:
+          type: string
+          description: 原始文件名
+        contentType:
+          type: string
+          description: MIME 类型
+        size:
+          type: integer
+          format: int64
+          description: 文件大小
+        url:
+          type: string
+          description: 历史展示使用的稳定内容地址
+        data:
+          type: string
+          description: Base64 编码的图片字节，仅 WebSocket 发送消息时使用，服务端上传 OSS 后不持久化
     ChatRequestDto:
       type: object
       properties:

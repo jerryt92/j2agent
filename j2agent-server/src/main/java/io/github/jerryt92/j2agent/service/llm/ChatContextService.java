@@ -12,8 +12,10 @@ import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemWithBLOBs;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecord;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecordExample;
 import io.github.jerryt92.j2agent.service.llm.memory.ConversationIdCodec;
+import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentCleanupService;
 import io.github.jerryt92.j2agent.service.security.LoginService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -38,15 +40,18 @@ public class ChatContextService {
     private final ChatContextItemMapper chatContextItemMapper;
     private final ChatMemoryRepository chatMemoryRepository;
     private final LoginService loginService;
+    private final ChatAttachmentCleanupService attachmentCleanupService;
 
     public ChatContextService(ChatContextRecordMapper chatContextRecordMapper,
                               ChatContextItemMapper chatContextItemMapper,
                               ChatMemoryRepository chatMemoryRepository,
-                              LoginService loginService) {
+                              LoginService loginService,
+                              @Autowired(required = false) ChatAttachmentCleanupService attachmentCleanupService) {
         this.chatContextRecordMapper = chatContextRecordMapper;
         this.chatContextItemMapper = chatContextItemMapper;
         this.chatMemoryRepository = chatMemoryRepository;
         this.loginService = loginService;
+        this.attachmentCleanupService = attachmentCleanupService;
     }
 
     /**
@@ -137,8 +142,19 @@ public class ChatContextService {
                     String aid = r.getAgentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : r.getAgentId();
                     chatMemoryRepository.deleteByConversationId(ConversationIdCodec.format(uid, contextId, aid));
                 }
+                if (rows.isEmpty() || !hasContextRecords(contextId)) {
+                    if (attachmentCleanupService != null) {
+                        attachmentCleanupService.deleteByChatContextPrefix(uid, contextId);
+                    }
+                }
             }
         }
+    }
+
+    private boolean hasContextRecords(String contextId) {
+        ChatContextRecordExample example = new ChatContextRecordExample();
+        example.createCriteria().andContextIdEqualTo(contextId);
+        return chatContextRecordMapper.countByExample(example) > 0;
     }
 
     /**

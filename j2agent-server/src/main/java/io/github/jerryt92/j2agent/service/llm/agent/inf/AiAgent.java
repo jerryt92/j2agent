@@ -11,6 +11,7 @@ import com.alibaba.cloud.ai.graph.skills.SkillMetadata;
 import com.alibaba.fastjson2.JSONObject;
 import io.github.jerryt92.j2agent.config.PluginProperties;
 import io.github.jerryt92.j2agent.constants.CommonConstants;
+import io.github.jerryt92.j2agent.service.llm.advisor.EmptyQuerySkippingRetrievalAugmentationAdvisor;
 import io.github.jerryt92.j2agent.service.llm.advisor.ReactCompatibleMessageChatMemoryAdvisor;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunContext;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunnableContextKeys;
@@ -188,6 +189,10 @@ public abstract class AiAgent {
     @Autowired
     private Environment environment;
 
+    @Autowired
+    private org.springframework.beans.factory.ObjectProvider<
+            io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentService> chatAttachmentServiceProvider;
+
     /**
      * Spring 完成字段注入后再构建底层 {@link Agent}，保证 {@link #chatModel}、{@link #chatMemory} 等已就绪。
      */
@@ -213,10 +218,19 @@ public abstract class AiAgent {
                 .build();
         runnableConfig.context().put(AgentUiToolEventInterceptor.CONTEXT_KEY_TOOL_EVENT_EMITTER, context.toolEventEmitter());
         runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_CHAT_CONVERSATION_ID, context.conversationId());
-        UserMessage userMessage = UserMessage.builder()
+        var userMessageBuilder = UserMessage.builder()
                 .text(context.text())
-                .metadata(Map.of(ChatMemory.CONVERSATION_ID, context.conversationId()))
-                .build();
+                .metadata(Map.of(
+                        ChatMemory.CONVERSATION_ID, context.conversationId(),
+                        "attachments", context.attachments()));
+        if (!context.attachments().isEmpty()) {
+            var attachmentService = chatAttachmentServiceProvider.getIfAvailable();
+            if (attachmentService == null) {
+                throw new IllegalStateException("Object storage is required for image input.");
+            }
+            userMessageBuilder.media(attachmentService.toMedia(context.attachments()));
+        }
+        UserMessage userMessage = userMessageBuilder.build();
         ReactCompatibleMessageChatMemoryAdvisor.setConversationId(context.conversationId());
         return agent.stream(List.of(userMessage), runnableConfig)
                 .doFinally(signalType -> ReactCompatibleMessageChatMemoryAdvisor.clear());
@@ -413,7 +427,7 @@ public abstract class AiAgent {
                     .queryAugmenter(buildQueryAugmenter())
                     .build();
             chatClient = ChatClient.builder(chatModel)
-                    .defaultAdvisors(memoryAdvisor, ragAdvisor)
+                    .defaultAdvisors(memoryAdvisor, EmptyQuerySkippingRetrievalAugmentationAdvisor.wrap(ragAdvisor))
                     .build();
         }
         Builder builder = ReactAgent.builder()

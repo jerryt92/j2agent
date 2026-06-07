@@ -64,4 +64,16 @@ public interface ChatMemoryExtMapper {
                            @Param("lastMessageIndex") int lastMessageIndex,
                            @Param("updateTime") long updateTime);
 
+    @Update("""
+            update chat_context_record
+            set title = #{title},
+                update_time = #{updateTime}
+            where context_id = #{contextId}
+              and agent_id = #{agentId}
+            """)
+    int updateTitle(@Param("contextId") String contextId,
+                    @Param("agentId") String agentId,
+                    @Param("title") String title,
+                    @Param("updateTime") long updateTime);
+
 }

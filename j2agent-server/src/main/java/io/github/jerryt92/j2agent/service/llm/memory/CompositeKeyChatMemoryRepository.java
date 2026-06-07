@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import io.github.jerryt92.j2agent.mapper.ext.ChatMemoryExtMapper;
 import io.github.jerryt92.j2agent.mapper.mgb.ChatContextItemMapper;
 import io.github.jerryt92.j2agent.mapper.mgb.ChatContextRecordMapper;
+import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemExample;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemWithBLOBs;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecord;
@@ -14,12 +15,15 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import io.github.jerryt92.j2agent.service.llm.reasoning.SpringAiReasoningMetadataAdapter;
+import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentCleanupService;
+import io.github.jerryt92.j2agent.service.file.oss.ObjectFileReferenceService;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,19 +38,29 @@ import java.util.stream.Collectors;
 @Qualifier("jdbcChatMemoryRepository")
 public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
 
+    public static final String PLACEHOLDER_TITLE = "New Chat";
+    public static final String IMAGE_ONLY_TITLE = "__image_only__";
+    private static final int TITLE_MAX_LENGTH = 64;
+
     private final ChatContextRecordMapper chatContextRecordMapper;
     private final ChatContextItemMapper chatContextItemMapper;
     private final ChatMemoryExtMapper chatMemoryExtMapper;
     private final ChatMemoryMessageCodec messageCodec;
+    private final ObjectFileReferenceService fileReferenceService;
+    private final ChatAttachmentCleanupService attachmentCleanupService;
 
     public CompositeKeyChatMemoryRepository(ChatContextRecordMapper chatContextRecordMapper,
                                             ChatContextItemMapper chatContextItemMapper,
                                             ChatMemoryExtMapper chatMemoryExtMapper,
-                                            ChatMemoryMessageCodec messageCodec) {
+                                            ChatMemoryMessageCodec messageCodec,
+                                            ObjectFileReferenceService fileReferenceService,
+                                            @Autowired(required = false) ChatAttachmentCleanupService attachmentCleanupService) {
         this.chatContextRecordMapper = chatContextRecordMapper;
         this.chatContextItemMapper = chatContextItemMapper;
         this.chatMemoryExtMapper = chatMemoryExtMapper;
         this.messageCodec = messageCodec;
+        this.fileReferenceService = fileReferenceService;
+        this.attachmentCleanupService = attachmentCleanupService;
     }
 
     /**
@@ -100,6 +114,7 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
         }
         ConversationIdCodec.Parts parts = ConversationIdCodec.parse(conversationId);
         ensureContextRecord(parts, messages);
+        maybeEnsureTitle(parts, messages);
         String agentId = parts.agentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : parts.agentId();
         Integer lastMessageIndex = chatMemoryExtMapper.selectLastMessageIndexForUpdate(parts.contextId(), agentId);
         int nextIndex = lastMessageIndex == null ? 0 : lastMessageIndex + 1;
@@ -163,6 +178,11 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
         itemExample.createCriteria()
                 .andContextIdEqualTo(parts.contextId())
                 .andAgentIdEqualTo(agentId);
+        List<String> fileIds = fileReferenceService.findChatFileIds(parts.contextId(), agentId);
+        fileReferenceService.removeChatReferences(parts.contextId(), agentId);
+        if (attachmentCleanupService != null) {
+            attachmentCleanupService.cleanupOrphanFiles(fileIds);
+        }
         chatContextItemMapper.deleteByExample(itemExample);
         chatContextRecordMapper.deleteByPrimaryKey(parts.contextId(), agentId);
     }
@@ -189,19 +209,50 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
     }
 
     /**
-     * 取首条用户消息作为会话标题，最长 64 字符。
+     * 记录已存在但标题仍为空时，按首条用户消息补写标题（纯图片为 {@link #IMAGE_ONLY_TITLE}，有文字则截断首句）。
+     */
+    private void maybeEnsureTitle(ConversationIdCodec.Parts parts, List<Message> messages) {
+        String agentId = parts.agentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : parts.agentId();
+        for (Message message : messages) {
+            if (!(message instanceof UserMessage um)) {
+                continue;
+            }
+            ChatContextRecord record = chatContextRecordMapper.selectByPrimaryKey(parts.contextId(), agentId);
+            if (record == null || StringUtils.hasText(record.getTitle())) {
+                return;
+            }
+            List<ChatAttachmentDto> attachments = ChatMemoryMessageCodec.attachmentsFromUserMessage(um);
+            chatMemoryExtMapper.updateTitle(
+                    parts.contextId(),
+                    agentId,
+                    autoTitle(um.getText(), attachments),
+                    System.currentTimeMillis());
+            return;
+        }
+    }
+
+    /**
+     * 首次落库时根据首条用户消息生成标题。
      */
     private String extractTitle(List<Message> messages) {
         for (Message message : messages) {
-            if (message instanceof UserMessage) {
-                String text = message.getText();
-                if (text == null) {
-                    return "New Chat";
-                }
-                return text.length() > 64 ? text.substring(0, 64) : text;
+            if (message instanceof UserMessage um) {
+                return autoTitle(um.getText(), ChatMemoryMessageCodec.attachmentsFromUserMessage(um));
             }
         }
-        return "New Chat";
+        return PLACEHOLDER_TITLE;
+    }
+
+    public static String autoTitle(String firstUserText, List<ChatAttachmentDto> attachments) {
+        if (StringUtils.hasText(firstUserText)) {
+            return firstUserText.length() > TITLE_MAX_LENGTH
+                    ? firstUserText.substring(0, TITLE_MAX_LENGTH)
+                    : firstUserText;
+        }
+        if (!CollectionUtils.isEmpty(attachments)) {
+            return IMAGE_ONLY_TITLE;
+        }
+        return PLACEHOLDER_TITLE;
     }
 
     private static boolean hasReasoningMetadata(AssistantMessage am) {

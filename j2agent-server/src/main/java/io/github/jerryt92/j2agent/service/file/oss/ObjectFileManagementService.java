@@ -25,6 +25,8 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URL;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -49,19 +51,22 @@ public class ObjectFileManagementService {
     private final ObjectUploadReconcileQueueService reconcileQueueService;
     private final ObjectDeleteReconcileQueueService deleteReconcileQueueService;
     private final ObjectFileLockService lockService;
+    private final ObjectFileReferenceService referenceService;
 
     public ObjectFileManagementService(
             ObjectStorageService storageService,
             ObjectFileMapper fileMapper,
             ObjectUploadReconcileQueueService reconcileQueueService,
             ObjectDeleteReconcileQueueService deleteReconcileQueueService,
-            ObjectFileLockService lockService
+            ObjectFileLockService lockService,
+            ObjectFileReferenceService referenceService
     ) {
         this.storageService = storageService;
         this.fileMapper = fileMapper;
         this.reconcileQueueService = reconcileQueueService;
         this.deleteReconcileQueueService = deleteReconcileQueueService;
         this.lockService = lockService;
+        this.referenceService = referenceService;
     }
 
     public ObjectFilePage list(String prefix, String keyword, String status, int offset, int limit) {
@@ -99,10 +104,29 @@ public class ObjectFileManagementService {
     }
 
     public ObjectFilePo upload(String prefix, MultipartFile file) {
+        return upload(prefix, file.getOriginalFilename(), file);
+    }
+
+    public ObjectFilePo upload(String prefix, String storedFileName, MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "file must not be empty");
         }
-        String objectKey = ObjectKeyUtils.objectKey(prefix, file.getOriginalFilename());
+        try {
+            return uploadBytes(prefix, storedFileName, file.getInputStream().readAllBytes(), file.getContentType(), file.getSize());
+        } catch (IOException e) {
+            throw new ObjectStorageException("Failed to read upload stream", e);
+        }
+    }
+
+    public ObjectFilePo uploadBytes(String prefix, String storedFileName, byte[] content, String contentType) {
+        return uploadBytes(prefix, storedFileName, content, contentType, content == null ? 0L : content.length);
+    }
+
+    public ObjectFilePo uploadBytes(String prefix, String storedFileName, byte[] content, String contentType, long sizeBytes) {
+        if (content == null || content.length == 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "file must not be empty");
+        }
+        String objectKey = ObjectKeyUtils.objectKey(prefix, storedFileName);
         String bucket = storageService.getDefaultBucket();
         String hash = ObjectKeyUtils.hash(objectKey);
         if (fileMapper.selectByKey(bucket, hash) != null || storageService.objectExists(bucket, objectKey)) {
@@ -110,8 +134,8 @@ public class ObjectFileManagementService {
         }
         long now = System.currentTimeMillis();
         ObjectFilePo po = basePo(objectKey, hash, now);
-        po.setSizeBytes(file.getSize());
-        po.setContentType(file.getContentType());
+        po.setSizeBytes(sizeBytes);
+        po.setContentType(contentType);
         po.setOperationStatus(UPLOADING);
         try {
             fileMapper.insert(po);
@@ -119,7 +143,7 @@ public class ObjectFileManagementService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "object already exists", e);
         }
         try {
-            storageService.putObject(bucket, objectKey, file.getInputStream(), file.getSize(), file.getContentType());
+            storageService.putObject(bucket, objectKey, new java.io.ByteArrayInputStream(content), sizeBytes, contentType);
             ObjectStorageObject metadata = storageService.getObjectMetadata(bucket, objectKey);
             ObjectFilePo ready = fromMetadata(po.getId(), metadata, now);
             fileMapper.upsert(ready);
@@ -374,6 +398,9 @@ public class ObjectFileManagementService {
         if (po == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "file record not found");
         }
+        if (referenceService.isReferenced(po.getId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "file is referenced by business data");
+        }
         fileMapper.updateStatus(bucket, hash, DELETING, null, System.currentTimeMillis());
         try {
             if (storageService.objectExists(bucket, objectKey)) {
@@ -407,6 +434,23 @@ public class ObjectFileManagementService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "file record not found");
         }
         return storageService.generatePresignedUrl(objectKey, Duration.ofMinutes(15));
+    }
+
+    public ObjectFilePo requireReadyObjectFile(String objectKey) {
+        String bucket = storageService.getDefaultBucket();
+        ObjectFilePo po = fileMapper.selectByKey(bucket, ObjectKeyUtils.hash(objectKey));
+        if (po == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "file record not found");
+        }
+        if (!READY.equals(po.getOperationStatus())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "file is not ready");
+        }
+        return po;
+    }
+
+    public InputStream openObjectStream(String objectKey) {
+        requireReadyObjectFile(objectKey);
+        return storageService.getObject(objectKey);
     }
 
     ObjectFilePo fromMetadata(String existingId, ObjectStorageObject metadata, long createdAt) {

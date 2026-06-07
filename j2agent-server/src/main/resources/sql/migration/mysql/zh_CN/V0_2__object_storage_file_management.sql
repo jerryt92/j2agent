@@ -65,3 +65,18 @@ CREATE TABLE object_storage_sync_diff
     KEY idx_storage_sync_diff_task_type (task_id, diff_type),
     KEY idx_storage_sync_diff_resolution (task_id, resolution_status)
 );
+
+CREATE TABLE object_file_reference
+(
+    id            char(32)     NOT NULL COMMENT 'UUIDv7',
+    file_id       char(32)     NOT NULL COMMENT 'object_file.id',
+    business_type varchar(64)  NOT NULL COMMENT '业务类型',
+    business_id   varchar(512) NOT NULL COMMENT '业务唯一标识',
+    owner_id      varchar(64)  DEFAULT NULL COMMENT '引用所属用户',
+    created_at    bigint       NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_object_file_reference (file_id, business_type, business_id),
+    KEY idx_object_file_reference_file (file_id),
+    KEY idx_object_file_reference_business (business_type, business_id),
+    CONSTRAINT fk_object_file_reference_file FOREIGN KEY (file_id) REFERENCES object_file (id)
+);
