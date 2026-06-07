@@ -1,0 +1,70 @@
+package io.github.jerryt92.j2agent.service.file.oss;
+
+import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
+import io.github.jerryt92.j2agent.model.ChatContextDto;
+import io.github.jerryt92.j2agent.model.MessageDto;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * 为聊天附件生成 OSS 预签名直链，供前端 {@code <img>} 直连对象存储，避免图片字节经应用服务器转发。
+ */
+@Service
+@ConditionalOnBean(ObjectFileManagementService.class)
+public class ChatAttachmentUrlResolver {
+
+    /** 聊天气泡展示用预签名 URL 有效期（过期后前端可调用 preview API 刷新）。 */
+    public static final Duration DISPLAY_URL_TTL = Duration.ofHours(24);
+
+    private final ObjectFileManagementService fileService;
+
+    public ChatAttachmentUrlResolver(ObjectFileManagementService fileService) {
+        this.fileService = fileService;
+    }
+
+    public String displayUrl(String objectKey) {
+        return fileService.previewUrl(objectKey, DISPLAY_URL_TTL).toString();
+    }
+
+    public List<ChatAttachmentDto> withDisplayUrls(List<ChatAttachmentDto> attachments) {
+        if (attachments == null || attachments.isEmpty()) {
+            return List.of();
+        }
+        List<ChatAttachmentDto> resolved = new ArrayList<>(attachments.size());
+        for (ChatAttachmentDto attachment : attachments) {
+            if (attachment == null || !StringUtils.hasText(attachment.getObjectKey())) {
+                continue;
+            }
+            ChatAttachmentDto copy = copyMetadata(attachment);
+            copy.setUrl(displayUrl(attachment.getObjectKey()));
+            resolved.add(copy);
+        }
+        return List.copyOf(resolved);
+    }
+
+    public void applyToChatContext(ChatContextDto dto) {
+        if (dto == null || dto.getMessages() == null) {
+            return;
+        }
+        for (MessageDto message : dto.getMessages()) {
+            if (message.getAttachments() == null || message.getAttachments().isEmpty()) {
+                continue;
+            }
+            message.setAttachments(withDisplayUrls(message.getAttachments()));
+        }
+    }
+
+    public static ChatAttachmentDto copyMetadata(ChatAttachmentDto attachment) {
+        ChatAttachmentDto copy = new ChatAttachmentDto();
+        copy.setObjectKey(attachment.getObjectKey());
+        copy.setName(attachment.getName());
+        copy.setContentType(attachment.getContentType());
+        copy.setSize(attachment.getSize());
+        return copy;
+    }
+}

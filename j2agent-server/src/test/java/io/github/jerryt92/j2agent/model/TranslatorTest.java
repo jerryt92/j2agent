@@ -9,6 +9,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class TranslatorTest {
 
@@ -41,9 +42,6 @@ class TranslatorTest {
         assertNotNull(messageDto.getAttachments());
         assertEquals(1, messageDto.getAttachments().size());
         assertEquals("chat/user/ctx-1/uuid_image.png", messageDto.getAttachments().getFirst().getObjectKey());
-        assertEquals(
-                "/v1/rest/j2agent/chat/files/content?objectKey=chat%2Fuser%2Fctx-1%2Fuuid_image.png",
-                messageDto.getAttachments().getFirst().getUrl()
-        );
+        assertNull(messageDto.getAttachments().getFirst().getUrl());
     }
 }

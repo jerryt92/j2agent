@@ -6,9 +6,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.jerryt92.j2agent.model.AgentState;
-import io.github.jerryt92.j2agent.controller.ChatFileController;
 import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
 import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentService;
+import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentUrlResolver;
 import io.github.jerryt92.j2agent.service.llm.TurnStepItem;
 import io.github.jerryt92.j2agent.service.llm.reasoning.SpringAiReasoningMetadataAdapter;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -72,8 +72,9 @@ public class ChatMemoryMessageCodec {
         if (message instanceof UserMessage um) {
             String t = um.getText() != null ? um.getText() : "";
             Object attachments = um.getMetadata().get(META_ATTACHMENTS);
-            String meta = attachments == null ? null
-                    : objectMapper.writeValueAsString(Map.of(META_ATTACHMENTS, attachments));
+            List<ChatAttachmentDto> persistedAttachments = sanitizeAttachmentsForPersist(attachments);
+            String meta = persistedAttachments == null ? null
+                    : objectMapper.writeValueAsString(Map.of(META_ATTACHMENTS, persistedAttachments));
             return new PersistedRow(1, t, meta);
         }
         if (message instanceof AssistantMessage am) {
@@ -223,19 +224,22 @@ public class ChatMemoryMessageCodec {
             if (attachment == null || !StringUtils.hasText(attachment.getObjectKey())) {
                 continue;
             }
-            if (StringUtils.hasText(attachment.getUrl())) {
-                normalized.add(attachment);
-                continue;
-            }
-            ChatAttachmentDto copy = new ChatAttachmentDto();
-            copy.setObjectKey(attachment.getObjectKey());
-            copy.setName(attachment.getName());
-            copy.setContentType(attachment.getContentType());
-            copy.setSize(attachment.getSize());
-            copy.setUrl(ChatFileController.stableContentUrl(attachment.getObjectKey()));
-            normalized.add(copy);
+            normalized.add(ChatAttachmentUrlResolver.copyMetadata(attachment));
         }
         return List.copyOf(normalized);
+    }
+
+    private static List<ChatAttachmentDto> sanitizeAttachmentsForPersist(Object attachments) {
+        if (!(attachments instanceof List<?> list) || list.isEmpty()) {
+            return null;
+        }
+        List<ChatAttachmentDto> sanitized = new ArrayList<>(list.size());
+        for (Object item : list) {
+            if (item instanceof ChatAttachmentDto dto && StringUtils.hasText(dto.getObjectKey())) {
+                sanitized.add(ChatAttachmentUrlResolver.copyMetadata(dto));
+            }
+        }
+        return sanitized.isEmpty() ? null : sanitized;
     }
 
     /**

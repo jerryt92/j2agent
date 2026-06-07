@@ -11,6 +11,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -26,6 +27,7 @@ class ChatAttachmentServiceTest {
     private ObjectFileManagementService fileService;
     private ObjectFileMapper fileMapper;
     private ObjectFileReferenceService referenceService;
+    private ChatAttachmentUrlResolver urlResolver;
     private ChatAttachmentService attachmentService;
 
     @BeforeEach
@@ -34,8 +36,9 @@ class ChatAttachmentServiceTest {
         fileService = mock(ObjectFileManagementService.class);
         fileMapper = mock(ObjectFileMapper.class);
         referenceService = mock(ObjectFileReferenceService.class);
+        urlResolver = mock(ChatAttachmentUrlResolver.class);
         attachmentService = new ChatAttachmentService(
-                storageService, fileService, fileMapper, referenceService);
+                storageService, fileService, fileMapper, referenceService, urlResolver);
         when(storageService.getDefaultBucket()).thenReturn("bucket");
     }
 
@@ -60,6 +63,8 @@ class ChatAttachmentServiceTest {
                 eq("image/png"),
                 eq((long) PNG_BYTES.length)))
                 .thenReturn(stored);
+        when(urlResolver.displayUrl("chat/user-1/ctx-1/uuid_photo.png"))
+                .thenReturn("https://oss.example.com/chat/user-1/ctx-1/uuid_photo.png");
 
         List<ChatAttachmentDto> validated = attachmentService.validateAndReference(
                 List.of(inbound), "ctx-1", "agent-1", 0, "user-1");
@@ -70,7 +75,9 @@ class ChatAttachmentServiceTest {
         assertEquals("photo.png", normalized.getName());
         assertEquals("image/png", normalized.getContentType());
         assertEquals((long) PNG_BYTES.length, normalized.getSize());
-        assertNotNull(normalized.getUrl());
+        assertEquals(
+                "https://oss.example.com/chat/user-1/ctx-1/uuid_photo.png",
+                normalized.getUrl());
 
         verify(fileService).uploadBytes(
                 eq("chat/user-1/ctx-1/"),
