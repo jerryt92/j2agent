@@ -32,15 +32,18 @@ public class ChatAttachmentService {
     private final ObjectFileManagementService fileService;
     private final ObjectFileMapper fileMapper;
     private final ObjectFileReferenceService referenceService;
+    private final ChatAttachmentUrlResolver urlResolver;
 
     public ChatAttachmentService(ObjectStorageService storageService,
                                  ObjectFileManagementService fileService,
                                  ObjectFileMapper fileMapper,
-                                 ObjectFileReferenceService referenceService) {
+                                 ObjectFileReferenceService referenceService,
+                                 ChatAttachmentUrlResolver urlResolver) {
         this.storageService = storageService;
         this.fileService = fileService;
         this.fileMapper = fileMapper;
         this.referenceService = referenceService;
+        this.urlResolver = urlResolver;
     }
 
     public List<ChatAttachmentDto> validateAndReference(List<ChatAttachmentDto> attachments,
@@ -115,13 +118,13 @@ public class ChatAttachmentService {
         return file;
     }
 
-    private static ChatAttachmentDto toDto(ObjectFilePo file) {
+    private ChatAttachmentDto toDto(ObjectFilePo file) {
         ChatAttachmentDto normalized = new ChatAttachmentDto();
         normalized.setObjectKey(file.getObjectKey());
         normalized.setName(ChatFileKeys.displayName(file.getObjectKey()));
         normalized.setContentType(file.getContentType());
         normalized.setSize(file.getSizeBytes());
-        normalized.setUrl(ChatFileController.stableContentUrl(file.getObjectKey()));
+        normalized.setUrl(urlResolver.displayUrl(file.getObjectKey()));
         return normalized;
     }
 

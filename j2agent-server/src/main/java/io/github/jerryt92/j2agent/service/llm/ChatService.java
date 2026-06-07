@@ -161,6 +161,7 @@ public class ChatService {
                 throw new IllegalArgumentException("User message and attachments must not both be empty.");
             }
             final List<ChatAttachmentDto> finalAttachments = attachments;
+            final int userMessageIndex = latestUser.getIndex() == null ? index : latestUser.getIndex();
             AgentRunContext agentRunContext = new AgentRunContext(
                     limitedUserMessage,
                     finalContextId,
@@ -289,6 +290,22 @@ public class ChatService {
                         AgentEventType.SYSTEM,
                         Map.of("notice", "turn-started")
                 ));
+                if (!finalAttachments.isEmpty()) {
+                    Map<String, Object> attachmentNotice = new HashMap<>();
+                    attachmentNotice.put("notice", "user-attachments-ready");
+                    attachmentNotice.put("messageIndex", userMessageIndex);
+                    attachmentNotice.put("attachments", finalAttachments);
+                    chatChatCallback.responseCall.accept(AgentEventBuilder.build(
+                            finalContextId,
+                            turnId,
+                            seq.getAndIncrement(),
+                            stateMachine.getState(),
+                            null,
+                            AgentEventPhase.START,
+                            AgentEventType.NOTICE,
+                            attachmentNotice
+                    ));
+                }
             }
             AtomicInteger retryNo = new AtomicInteger(0);
             Disposable disposable = Flux.defer(() -> {

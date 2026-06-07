@@ -23,11 +23,13 @@ import io.github.jerryt92.j2agent.service.llm.AgentTurnStateMachine;
 import io.github.jerryt92.j2agent.service.llm.ChatContextBo;
 import io.github.jerryt92.j2agent.service.llm.ChatContextService;
 import io.github.jerryt92.j2agent.service.llm.ChatService;
+import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentUrlResolver;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRouter;
 import io.github.jerryt92.j2agent.service.security.LoginService;
 import io.github.jerryt92.j2agent.utils.UUIDv7Utils;
 import lombok.extern.log4j.Log4j2;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
@@ -53,6 +55,8 @@ public class ChatController extends AbstractWebSocketHandler implements ChatApi 
     private final ChatService chatService;
     private final LoginService loginService;
     private final AgentRouter agentRouter;
+    @Autowired(required = false)
+    private ChatAttachmentUrlResolver chatAttachmentUrlResolver;
 
     public ChatController(ChatContextService chatContextService, ChatService chatService, LoginService loginService,
                           AgentRouter agentRouter) {
@@ -74,7 +78,11 @@ public class ChatController extends AbstractWebSocketHandler implements ChatApi 
     public ResponseEntity<ChatContextDto> getHistoryContext(String contextId, String agentId) {
         SessionBo session = loginService.getSession();
         ChatContextBo chatContextBo = chatContextService.getChatContext(contextId, session == null ? null : session.getUserId(), agentId);
-        return ResponseEntity.ok(chatContextBo == null ? null : Translator.translateToChatContextDto(chatContextBo));
+        ChatContextDto dto = chatContextBo == null ? null : Translator.translateToChatContextDto(chatContextBo);
+        if (dto != null && chatAttachmentUrlResolver != null) {
+            chatAttachmentUrlResolver.applyToChatContext(dto);
+        }
+        return ResponseEntity.ok(dto);
     }
 
     @Override

@@ -10,6 +10,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class ChatMemoryMessageCodecTest {
 
@@ -32,8 +33,11 @@ class ChatMemoryMessageCodecTest {
 
         assertNotNull(row.metaJson());
         assertEquals("describe this", restored.getText());
+        assertEquals(false, row.metaJson().contains("/chat/files/content"));
         List<?> attachments = (List<?>) restored.getMetadata().get("attachments");
         assertEquals(1, attachments.size());
-        assertEquals("chat/user/ctx-1/uuid_image.png", ((ChatAttachmentDto) attachments.get(0)).getObjectKey());
+        ChatAttachmentDto restoredAttachment = (ChatAttachmentDto) attachments.get(0);
+        assertEquals("chat/user/ctx-1/uuid_image.png", restoredAttachment.getObjectKey());
+        assertNull(restoredAttachment.getUrl());
     }
 }

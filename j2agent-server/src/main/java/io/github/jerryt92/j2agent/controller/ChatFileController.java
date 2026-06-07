@@ -4,6 +4,7 @@ import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
 import io.github.jerryt92.j2agent.model.po.ObjectFilePo;
 import io.github.jerryt92.j2agent.model.security.SessionBo;
 import io.github.jerryt92.j2agent.service.file.oss.ChatFileKeys;
+import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentUrlResolver;
 import io.github.jerryt92.j2agent.service.file.oss.ObjectFileManagementService;
 import io.github.jerryt92.j2agent.service.llm.ChatContextService;
 import io.github.jerryt92.j2agent.service.security.LoginService;
@@ -98,7 +99,7 @@ public class ChatFileController {
         dto.setName(ChatFileKeys.displayName(po.getObjectKey()));
         dto.setContentType(po.getContentType());
         dto.setSize(po.getSizeBytes());
-        dto.setUrl(stableContentUrl(po.getObjectKey()));
+        dto.setUrl(fileService.previewUrl(po.getObjectKey(), ChatAttachmentUrlResolver.DISPLAY_URL_TTL).toString());
         return dto;
     }
 

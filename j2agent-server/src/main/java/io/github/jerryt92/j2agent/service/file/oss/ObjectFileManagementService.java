@@ -430,10 +430,14 @@ public class ObjectFileManagementService {
     }
 
     public URL previewUrl(String objectKey) {
+        return previewUrl(objectKey, Duration.ofMinutes(15));
+    }
+
+    public URL previewUrl(String objectKey, Duration ttl) {
         if (fileMapper.selectByKey(storageService.getDefaultBucket(), ObjectKeyUtils.hash(objectKey)) == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "file record not found");
         }
-        return storageService.generatePresignedUrl(objectKey, Duration.ofMinutes(15));
+        return storageService.generatePresignedUrl(objectKey, ttl);
     }
 
     public ObjectFilePo requireReadyObjectFile(String objectKey) {
