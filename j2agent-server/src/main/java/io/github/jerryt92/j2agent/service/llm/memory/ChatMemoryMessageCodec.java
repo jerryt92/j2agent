@@ -6,6 +6,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.jerryt92.j2agent.model.AgentState;
+import io.github.jerryt92.j2agent.controller.ChatFileController;
+import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
+import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentService;
 import io.github.jerryt92.j2agent.service.llm.TurnStepItem;
 import io.github.jerryt92.j2agent.service.llm.reasoning.SpringAiReasoningMetadataAdapter;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -13,6 +16,7 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -50,6 +54,10 @@ public class ChatMemoryMessageCodec {
     static final String META_KIND_SKILL_LOAD_AUDIT = "skill_load_audit";
     static final String META_KIND_TURN_TRACE = "turn_trace";
     static final String META_REASONING_CONTENT = "reasoningContent";
+    static final String META_ATTACHMENTS = "attachments";
+
+    @Autowired(required = false)
+    private ChatAttachmentService chatAttachmentService;
 
     private final ObjectMapper objectMapper;
 
@@ -63,7 +71,10 @@ public class ChatMemoryMessageCodec {
     public PersistedRow encode(Message message) throws JsonProcessingException {
         if (message instanceof UserMessage um) {
             String t = um.getText() != null ? um.getText() : "";
-            return new PersistedRow(1, t, null);
+            Object attachments = um.getMetadata().get(META_ATTACHMENTS);
+            String meta = attachments == null ? null
+                    : objectMapper.writeValueAsString(Map.of(META_ATTACHMENTS, attachments));
+            return new PersistedRow(1, t, meta);
         }
         if (message instanceof AssistantMessage am) {
             if (am.hasToolCalls()) {
@@ -129,7 +140,15 @@ public class ChatMemoryMessageCodec {
     public Message decode(int chatRole, String content, String metaJson) {
         String c = content != null ? content : "";
         if (chatRole == 1) {
-            return new UserMessage(c);
+            List<ChatAttachmentDto> attachments = parseAttachments(metaJson);
+            UserMessage.Builder builder = UserMessage.builder().text(c);
+            if (!attachments.isEmpty()) {
+                builder.metadata(Map.of(META_ATTACHMENTS, attachments));
+                if (chatAttachmentService != null) {
+                    builder.media(chatAttachmentService.toMedia(attachments));
+                }
+            }
+            return builder.build();
         }
         if (chatRole == CHAT_ROLE_TOOL) {
             return parseToolResponseMessage(c);
@@ -157,6 +176,66 @@ public class ChatMemoryMessageCodec {
             return new AssistantMessage(c);
         }
         return null;
+    }
+
+    public List<ChatAttachmentDto> parseAttachments(String metaJson) {
+        if (!StringUtils.hasText(metaJson)) {
+            return List.of();
+        }
+        try {
+            JsonNode attachments = objectMapper.readTree(metaJson).get(META_ATTACHMENTS);
+            if (attachments == null || !attachments.isArray()) {
+                return List.of();
+            }
+            return normalizeAttachmentUrls(
+                    objectMapper.readerForListOf(ChatAttachmentDto.class).readValue(attachments));
+        } catch (java.io.IOException e) {
+            return List.of();
+        }
+    }
+
+    public static List<ChatAttachmentDto> attachmentsFromUserMessage(UserMessage userMessage) {
+        if (userMessage == null || userMessage.getMetadata() == null) {
+            return List.of();
+        }
+        return normalizeAttachments(userMessage.getMetadata().get(META_ATTACHMENTS));
+    }
+
+    public static List<ChatAttachmentDto> normalizeAttachments(Object raw) {
+        if (!(raw instanceof List<?> list) || list.isEmpty()) {
+            return List.of();
+        }
+        List<ChatAttachmentDto> attachments = new ArrayList<>();
+        for (Object item : list) {
+            if (item instanceof ChatAttachmentDto dto) {
+                attachments.add(dto);
+            }
+        }
+        return normalizeAttachmentUrls(attachments);
+    }
+
+    public static List<ChatAttachmentDto> normalizeAttachmentUrls(List<ChatAttachmentDto> attachments) {
+        if (attachments == null || attachments.isEmpty()) {
+            return List.of();
+        }
+        List<ChatAttachmentDto> normalized = new ArrayList<>(attachments.size());
+        for (ChatAttachmentDto attachment : attachments) {
+            if (attachment == null || !StringUtils.hasText(attachment.getObjectKey())) {
+                continue;
+            }
+            if (StringUtils.hasText(attachment.getUrl())) {
+                normalized.add(attachment);
+                continue;
+            }
+            ChatAttachmentDto copy = new ChatAttachmentDto();
+            copy.setObjectKey(attachment.getObjectKey());
+            copy.setName(attachment.getName());
+            copy.setContentType(attachment.getContentType());
+            copy.setSize(attachment.getSize());
+            copy.setUrl(ChatFileController.stableContentUrl(attachment.getObjectKey()));
+            normalized.add(copy);
+        }
+        return List.copyOf(normalized);
     }
 
     /**

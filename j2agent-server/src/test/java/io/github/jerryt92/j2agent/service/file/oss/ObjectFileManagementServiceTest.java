@@ -40,6 +40,7 @@ class ObjectFileManagementServiceTest {
     private final ObjectDeleteReconcileQueueService deleteReconcileQueue =
             mock(ObjectDeleteReconcileQueueService.class);
     private final ObjectFileLockService lockService = mock(ObjectFileLockService.class);
+    private final ObjectFileReferenceService referenceService = mock(ObjectFileReferenceService.class);
     private ObjectFileManagementService service;
 
     @BeforeEach
@@ -47,7 +48,7 @@ class ObjectFileManagementServiceTest {
         RLock lock = mock(RLock.class);
         when(lockService.lock(any())).thenReturn(lock);
         service = new ObjectFileManagementService(
-                storage, mapper, reconcileQueue, deleteReconcileQueue, lockService
+                storage, mapper, reconcileQueue, deleteReconcileQueue, lockService, referenceService
         );
     }
 
@@ -106,6 +107,19 @@ class ObjectFileManagementServiceTest {
                 eq("bucket"), eq(ObjectKeyUtils.hash("a.txt")), eq("ERROR"), any(), any(Long.class)
         );
         verify(deleteReconcileQueue).scheduleFirst("bucket", "a.txt");
+    }
+
+    @Test
+    void shouldRejectDeleteWhenFileIsReferenced() {
+        ObjectFilePo file = file("a.txt");
+        when(storage.getDefaultBucket()).thenReturn("bucket");
+        when(mapper.selectByKey("bucket", ObjectKeyUtils.hash("a.txt"))).thenReturn(file);
+        when(referenceService.isReferenced(file.getId())).thenReturn(true);
+
+        assertThrows(ResponseStatusException.class, () -> service.delete("a.txt"));
+
+        verify(storage, never()).removeObject(any(), any());
+        verify(mapper, never()).deleteByKey(any(), any());
     }
 
     @Test

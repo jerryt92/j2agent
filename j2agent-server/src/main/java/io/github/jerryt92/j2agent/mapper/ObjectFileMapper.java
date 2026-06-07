@@ -42,6 +42,25 @@ public interface ObjectFileMapper {
             """)
     ObjectFilePo selectByKey(@Param("bucket") String bucket, @Param("objectKeyHash") String objectKeyHash);
 
+    @Select("""
+            SELECT id, provider, bucket_name, object_key, object_key_hash, etag, size_bytes,
+                   content_type, object_modified_at, operation_status, last_error, created_at, updated_at
+            FROM object_file
+            WHERE id = #{id}
+            LIMIT 1
+            """)
+    ObjectFilePo selectById(String id);
+
+    @Select("""
+            SELECT id, provider, bucket_name, object_key, object_key_hash, etag, size_bytes,
+                   content_type, object_modified_at, operation_status, last_error, created_at, updated_at
+            FROM object_file
+            WHERE bucket_name = #{bucket}
+              AND object_key LIKE CONCAT(#{prefix}, '%')
+            ORDER BY object_key
+            """)
+    List<ObjectFilePo> selectByObjectKeyPrefix(@Param("bucket") String bucket, @Param("prefix") String prefix);
+
     @Insert("""
             INSERT INTO object_file
             (id, provider, bucket_name, object_key, object_key_hash, etag, size_bytes, content_type,

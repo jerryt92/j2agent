@@ -291,6 +291,12 @@ public final class Translator {
                         messageDto.setReasoningContent(rc);
                     }
                 }
+                if (meta.containsKey("attachments")) {
+                    List<ChatAttachmentDto> attachments =
+                            ChatMemoryMessageCodec.normalizeAttachmentUrls(
+                                    meta.getList("attachments", ChatAttachmentDto.class));
+                    messageDto.setAttachments(attachments);
+                }
             }
         }
         if (chatContextItem.getChatRole() != null && chatContextItem.getChatRole() == 2) {
@@ -355,9 +361,13 @@ public final class Translator {
             messageDto.setDisplayInChat(Boolean.TRUE);
             messageDto.setMessageKind(MessageDto.MessageKindEnum.NORMAL);
             messageDto.setFeedback(MessageDto.FeedbackEnum.NONE);
-            if (message instanceof UserMessage) {
+            if (message instanceof UserMessage um) {
                 messageDto.setRole(MessageDto.RoleEnum.USER);
                 messageDto.setContent(message.getText());
+                List<ChatAttachmentDto> attachments = ChatMemoryMessageCodec.attachmentsFromUserMessage(um);
+                if (!CollectionUtils.isEmpty(attachments)) {
+                    messageDto.setAttachments(attachments);
+                }
             } else if (message instanceof AssistantMessage am) {
                 messageDto.setRole(MessageDto.RoleEnum.ASSISTANT);
                 String assistantText = am.getText() != null ? am.getText() : "";
