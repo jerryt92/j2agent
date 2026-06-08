@@ -9,21 +9,22 @@ import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemExample;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemWithBLOBs;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecord;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecordExample;
+import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentCleanupService;
+import io.github.jerryt92.j2agent.service.file.oss.ObjectFileReferenceService;
+import io.github.jerryt92.j2agent.service.llm.reasoning.SpringAiReasoningMetadataAdapter;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
-
-import io.github.jerryt92.j2agent.service.llm.reasoning.SpringAiReasoningMetadataAdapter;
-import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentCleanupService;
-import io.github.jerryt92.j2agent.service.file.oss.ObjectFileReferenceService;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +35,7 @@ import java.util.stream.Collectors;
 /**
  * 复合会话键（userId:contextId:agentId）下的对话记忆 JDBC 持久化实现。
  */
+@Slf4j
 @Component("jdbcChatMemoryRepository")
 @Qualifier("jdbcChatMemoryRepository")
 public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
@@ -143,6 +145,7 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
                 nextIndex++;
                 continue;
             }
+            logOversizedPersistAttempt(message, row, parts.contextId(), agentId, nextIndex);
             String messageId = UUID.randomUUID().toString();
             long now = System.currentTimeMillis();
             chatMemoryExtMapper.insertChatContextItem(
@@ -263,6 +266,41 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
             return false;
         }
         Map<String, Object> metadata = am.getMetadata();
-        return metadata != null && metadata.containsKey(SpringAiReasoningMetadataAdapter.UNIFIED_REASONING_KEY);
+        return metadata.containsKey(SpringAiReasoningMetadataAdapter.UNIFIED_REASONING_KEY);
+    }
+
+    private static void logOversizedPersistAttempt(Message message,
+                                                   ChatMemoryMessageCodec.PersistedRow row,
+                                                   String contextId,
+                                                   String agentId,
+                                                   int messageIndex) {
+        int contentLen = row.content() != null ? row.content().length() : 0;
+        if (contentLen <= ChatMemoryMessageCodec.MYSQL_TEXT_CHAR_SAFE_LIMIT) {
+            return;
+        }
+        log.warn(
+                "Persisting chat_context_item with content length {} exceeding TEXT limit (type={}, chatRole={}, contextId={}, agentId={}, messageIndex={})",
+                contentLen,
+                describePersistMessageType(message, row.chatRole()),
+                row.chatRole(),
+                contextId,
+                agentId,
+                messageIndex);
+    }
+
+    private static String describePersistMessageType(Message message, int chatRole) {
+        if (message instanceof UserMessage) {
+            return "user";
+        }
+        if (message instanceof ToolResponseMessage) {
+            return "tool_response";
+        }
+        if (message instanceof AssistantMessage am) {
+            if (am.hasToolCalls()) {
+                return "assistant_tool";
+            }
+            return "assistant";
+        }
+        return "unknown(chatRole=" + chatRole + ")";
     }
 }
