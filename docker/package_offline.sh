@@ -219,29 +219,17 @@ for img in $TARGET_IMAGES; do
 done
 
 # ===========================
-# 6. 选择导出方式
+# 6. 打包镜像与导入提示
 # ===========================
-echo "----------------------------------------"
 if [ -z "$FINAL_TARGET_IMAGES" ]; then
-    echo -e "${RED}❌ 错误：经过筛选后，没有可用于打包的有效镜像，操作取消。${NC}"
+    echo -e "${RED}❌ 错误:经过筛选后,没有可用于打包的有效镜像,操作取消。${NC}"
     exit 1
 fi
 
-echo -e "${CYAN}💾 请选择镜像导出方式:${NC}"
-echo "1) 导出为单个综合文件 (默认, 适合小项目)"
-echo "2) 按镜像分别导出到新建目录 (适合镜像多或体积大的项目)"
-read -p "请输入选项 [1-2, 默认 1]: " EXPORT_CHOICE
-EXPORT_CHOICE=${EXPORT_CHOICE:-1}
-echo "----------------------------------------"
-
-# ===========================
-# 7. 打包镜像与导入提示
-# ===========================
-if [ "$EXPORT_CHOICE" == "2" ]; then
-    # 方式 2：分别导出到新建目录
-    OUTPUT_DIR="images_offline_${ARCH_NAME}_dir"
-    mkdir -p "$OUTPUT_DIR"
-    echo -e "📦 [正在分别打包] 将把以下镜像分别导出到目录 ${YELLOW}${OUTPUT_DIR}${NC} 中 ..."
+# 方式:分别导出到新建目录
+OUTPUT_DIR="images_offline_${ARCH_NAME}_dir"
+mkdir -p "$OUTPUT_DIR"
+echo -e "📦 [正在分别打包] 将把以下镜像分别导出到目录 ${YELLOW}${OUTPUT_DIR}${NC} 中 ..."
 
     for img in $FINAL_TARGET_IMAGES; do
         # 替换镜像名中的 / 和 : 为 _，确保它是合法的文件名
@@ -253,43 +241,15 @@ if [ "$EXPORT_CHOICE" == "2" ]; then
         fi
     done
 
-    echo -e "\n${GREEN}✅ 所有所选镜像已完成打包！${NC}"
-    ls -lh "$OUTPUT_DIR"
+echo -e "\n${GREEN}✅ 所有所选镜像已完成打包!${NC}"
+ls -lh "$OUTPUT_DIR"
 
-    # 针对分目录导出方式的导入提示
-    echo -e "\n${CYAN}========================================${NC}"
-    echo -e "${CYAN}🚀 离线服务器导入指南:${NC}"
-    echo -e "1. 将目录 ${YELLOW}${OUTPUT_DIR}${NC} 整个上传至目标服务器"
-    echo -e "2. 在目标服务器上进入该目录并执行批量导入:"
-    echo -e "   ${GREEN}cd ${OUTPUT_DIR} && for f in *.tar; do docker load -i \"\$f\"; done${NC}"
-    echo -e "3. 镜像导入完成后，进入项目目录启动容器:"
-    echo -e "   ${GREEN}docker compose -f ${COMPOSE_FILE} up -d${NC}"
-    echo -e "${CYAN}========================================${NC}\n"
-
-else
-    # 方式 1：默认的单一文件导出
-    OUTPUT_FILENAME="images_offline_${ARCH_NAME}.tar"
-    echo -e "📦 [正在打包] 最终将合并打包以下镜像保存为 ${OUTPUT_FILENAME} ..."
-    for img in $FINAL_TARGET_IMAGES; do
-        echo -e "   - ${GREEN}$img${NC}"
-    done
-
-    docker save -o "$OUTPUT_FILENAME" $FINAL_TARGET_IMAGES
-
-    if [ $? -eq 0 ]; then
-        echo -e "\n${GREEN}✅ 打包成功！${NC}"
-        ls -lh "$OUTPUT_FILENAME"
-
-        # 针对单文件导出方式的导入提示
-        echo -e "\n${CYAN}========================================${NC}"
-        echo -e "${CYAN}🚀 离线服务器导入指南:${NC}"
-        echo -e "1. 将生成的文件上传至目标服务器: ${YELLOW}${OUTPUT_FILENAME}${NC}"
-        echo -e "2. 在目标服务器上执行导入命令:"
-        echo -e "   ${GREEN}docker load -i ${OUTPUT_FILENAME}${NC}"
-        echo -e "3. 镜像导入完成后，进入项目目录启动容器:"
-        echo -e "   ${GREEN}docker compose -f ${COMPOSE_FILE} up -d${NC}"
-        echo -e "${CYAN}========================================${NC}\n"
-    else
-        echo -e "\n${RED}❌ 打包失败，请检查 Docker 服务或磁盘空间。${NC}"
-    fi
-fi
+# 针对分目录导出方式的导入提示
+echo -e "\n${CYAN}========================================${NC}"
+echo -e "${CYAN}🚀 离线服务器导入指南:${NC}"
+echo -e "1. 将目录 ${YELLOW}${OUTPUT_DIR}${NC} 整个上传至目标服务器"
+echo -e "2. 在目标服务器上进入该目录并执行批量导入:"
+echo -e "   ${GREEN}cd ${OUTPUT_DIR} && for f in *.tar; do docker load -i \"\$f\"; done${NC}"
+echo -e "3. 镜像导入完成后,进入项目目录启动容器:"
+echo -e "   ${GREEN}docker compose -f ${COMPOSE_FILE} up -d${NC}"
+echo -e "${CYAN}========================================${NC}\n"

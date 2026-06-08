@@ -136,6 +136,10 @@ services:
   j2agent:
     image: j2agent:${TAG}
     platform: linux/amd64
+    pull_policy: build
+    build:
+      context: ..
+      dockerfile: docker/j2agent/Dockerfile
     ports:
       - "${J2AGENT_PORT}:${J2AGENT_PORT}"
     environment:
