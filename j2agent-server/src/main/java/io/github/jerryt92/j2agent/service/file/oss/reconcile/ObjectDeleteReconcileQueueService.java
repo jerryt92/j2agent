@@ -2,6 +2,7 @@ package io.github.jerryt92.j2agent.service.file.oss.reconcile;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.jerryt92.j2agent.config.ObjectStorageProperties;
+import io.github.jerryt92.j2agent.config.RedisKeyNamespaces;
 import io.github.jerryt92.j2agent.service.file.oss.ObjectStorageService;
 import io.github.jerryt92.j2agent.service.file.oss.model.ObjectDeleteReconcileTask;
 import org.redisson.api.RBlockingQueue;
@@ -16,7 +17,6 @@ import java.util.concurrent.TimeUnit;
 @Service
 @ConditionalOnBean(ObjectStorageService.class)
 public class ObjectDeleteReconcileQueueService {
-    static final String READY_QUEUE = "j2agent:delete:reconcile:ready";
 
     private final ObjectStorageProperties properties;
     private final RBlockingQueue<ObjectDeleteReconcileTask> readyQueue;
@@ -25,11 +25,13 @@ public class ObjectDeleteReconcileQueueService {
     public ObjectDeleteReconcileQueueService(
             RedissonClient redissonClient,
             ObjectStorageProperties properties,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            RedisKeyNamespaces redisKeyNamespaces
     ) {
         this.properties = properties;
         TypedJsonJacksonCodec taskCodec = new TypedJsonJacksonCodec(ObjectDeleteReconcileTask.class, objectMapper);
-        this.readyQueue = redissonClient.getBlockingQueue(READY_QUEUE, taskCodec);
+        this.readyQueue = redissonClient.getBlockingQueue(
+                redisKeyNamespaces.key("delete:reconcile:ready"), taskCodec);
         this.delayedQueue = redissonClient.getDelayedQueue(readyQueue);
     }
 

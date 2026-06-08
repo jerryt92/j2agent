@@ -565,12 +565,15 @@ public final class Translator {
     public static ChatContextRecord translateToChatContextRecord(ChatContextBo chatContextBo) {
         ChatContextRecord chatContextRecord = new ChatContextRecord();
         chatContextRecord.setContextId(chatContextBo.getContextId());
+        UserMessage lastUserMessage = null;
         for (Message message : chatContextBo.getMessages()) {
-            if (message instanceof UserMessage) {
-                String text = message.getText();
-                chatContextRecord.setTitle(text.length() > 64 ? text.substring(0, 64) : text);
-                break;
+            if (message instanceof UserMessage um) {
+                lastUserMessage = um;
             }
+        }
+        if (lastUserMessage != null) {
+            String text = lastUserMessage.getText();
+            chatContextRecord.setTitle(text.length() > 64 ? text.substring(0, 64) : text);
         }
         if (chatContextRecord.getTitle() == null) {
             chatContextRecord.setTitle(chatContextBo.getTitle());

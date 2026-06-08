@@ -20,8 +20,14 @@ public final class LlmProviderErrorFormatter {
     public static boolean isProviderCallFailure(Throwable throwable) {
         return findInChain(throwable, WebClientResponseException.class) != null
                 || findInChain(throwable, WebClientRequestException.class) != null
-                || isEmptyLlmStreamFailure(throwable)
-                || isLlmEmptyStreamMessage(throwable);
+                || isEmptyStreamFailure(throwable);
+    }
+
+    /**
+     * 是否为 LLM 流式响应无有效 token 的空流失败（含 ReloadableRoutingChatModel 与 Graph 嵌入流两种签名）。
+     */
+    public static boolean isEmptyStreamFailure(Throwable throwable) {
+        return isEmptyLlmStreamFailure(throwable) || isLlmEmptyStreamMessage(throwable);
     }
 
     /**
@@ -103,7 +109,7 @@ public final class LlmProviderErrorFormatter {
         if (throwable == null) {
             return "模型服务调用失败";
         }
-        if (isEmptyLlmStreamFailure(throwable) || isLlmEmptyStreamMessage(throwable)) {
+        if (isEmptyStreamFailure(throwable)) {
             Throwable root = rootCause(throwable);
             String detail = root != null ? nullToEmpty(root.getMessage()) : "";
             if (StringUtils.isNotBlank(detail)) {

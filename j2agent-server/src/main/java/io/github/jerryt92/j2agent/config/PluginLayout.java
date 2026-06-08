@@ -6,7 +6,7 @@ package io.github.jerryt92.j2agent.config;
 public final class PluginLayout {
 
     /**
-     * 插件根目录名，对应 {@code j2agent.plugin.path}（如 {@code /opt/ai-center/volume/plugins}）。
+     * 插件根目录名，对应 {@code j2agent.plugin.path}
      */
     public static final String PLUGINS_DIR_NAME = "plugins";
 

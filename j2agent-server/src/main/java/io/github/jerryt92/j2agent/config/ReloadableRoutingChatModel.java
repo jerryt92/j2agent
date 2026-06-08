@@ -1,5 +1,6 @@
 package io.github.jerryt92.j2agent.config;
 
+import io.github.jerryt92.j2agent.service.llm.LlmProviderErrorFormatter;
 import io.github.jerryt92.j2agent.service.llm.PromptConversationIdExtractor;
 import io.github.jerryt92.j2agent.service.llm.ThinkingOverrideRegistry;
 import io.github.jerryt92.j2agent.service.llm.agent.inf.constant.AgentThinkingOverride;
@@ -14,7 +15,10 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
+import reactor.util.retry.Retry;
 
+import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -23,6 +27,8 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 @Slf4j
 public class ReloadableRoutingChatModel implements ChatModel {
+
+    private static final int EMPTY_STREAM_MAX_RETRIES = 3;
 
     private final ActiveProviderHolder activeProviderHolder;
     private final AtomicReference<ChatModel> delegate = new AtomicReference<>();
@@ -69,19 +75,38 @@ public class ReloadableRoutingChatModel implements ChatModel {
 
     /**
      * 显式指定覆盖策略的流式调用（无 Prompt 会话键时使用）。
+     * 空流重试在单次 LLM HTTP 调用粒度进行，避免 Agent 轮次内已有输出时无法由 ChatService 整流重试。
      */
     public Flux<ChatResponse> stream(Prompt prompt, AgentThinkingOverride thinkingOverride) {
+        AtomicInteger emptyStreamRetryNo = new AtomicInteger(0);
+        return streamOnce(prompt, thinkingOverride)
+                .retryWhen(Retry.backoff(EMPTY_STREAM_MAX_RETRIES, Duration.ofSeconds(1))
+                        .maxBackoff(Duration.ofSeconds(3))
+                        .filter(LlmProviderErrorFormatter::isEmptyStreamFailure)
+                        .doBeforeRetry(rs -> {
+                            LlmActiveConfig cfg = activeProviderHolder.getActiveLlm();
+                            int nextRetryNo = emptyStreamRetryNo.incrementAndGet();
+                            log.warn("LLM stream empty, willRetry single call. nextRetryNo={}, provider={}, model={}",
+                                    nextRetryNo,
+                                    cfg == null ? "none" : cfg.getProviderType(),
+                                    cfg == null ? "none" : cfg.getModelName());
+                        }));
+    }
+
+    private Flux<ChatResponse> streamOnce(Prompt prompt, AgentThinkingOverride thinkingOverride) {
         return Flux.defer(() -> resolveDelegate(prompt, thinkingOverride).stream(prompt))
                 .filter(ReloadableRoutingChatModel::hasUsableGeneration)
-                .switchIfEmpty(Flux.defer(() -> {
-                    LlmActiveConfig cfg = activeProviderHolder.getActiveLlm();
-                    String provider = cfg == null ? "none" : cfg.getProviderType();
-                    String model = cfg == null ? "none" : cfg.getModelName();
-                    log.error("LLM stream returned no usable chunks, provider={}, model={}", provider, model);
-                    return Flux.error(new IllegalStateException(
-                            "LLM 流式响应为空（无有效 token），当前 provider=" + provider + ", model=" + model
-                                    + "。请核对 baseUrl、API Key、模型名是否在对应平台可用。"));
-                }));
+                .switchIfEmpty(Flux.defer(() -> Flux.error(createEmptyStreamException())));
+    }
+
+    private IllegalStateException createEmptyStreamException() {
+        LlmActiveConfig cfg = activeProviderHolder.getActiveLlm();
+        String provider = cfg == null ? "none" : cfg.getProviderType();
+        String model = cfg == null ? "none" : cfg.getModelName();
+        log.error("LLM stream returned no usable chunks, provider={}, model={}", provider, model);
+        return new IllegalStateException(
+                "LLM 流式响应为空（无有效 token），当前 provider=" + provider + ", model=" + model
+                        + "。请核对 baseUrl、API Key、模型名是否在对应平台可用。");
     }
 
     /**

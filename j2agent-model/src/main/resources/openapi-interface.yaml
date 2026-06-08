@@ -633,18 +633,24 @@ paths:
     delete:
       tags: [ Chat ]
       summary: 删除历史对话
-      description: 删除历史对话
+      description: 按 context-id 删除指定记录，或 clear-all=true 清空当前用户历史（跳过运行中会话）
       operationId: deleteHistoryContext
       parameters:
         - name: context-id
           in: query
-          description: context-id
-          required: true
+          description: 待删除的 context-id 列表；clear-all=true 时可省略
+          required: false
           schema:
             type: array
             items:
               type:
                 string
+        - name: clear-all
+          in: query
+          description: 为 true 时清空当前用户历史（可选 agent-id 过滤），跳过运行中会话，无需传 context-id
+          required: false
+          schema:
+            type: boolean
         - name: agent-id
           in: query
           description: 仅删除该智能体下记忆；不传则删除各 context-id 下当前用户全部智能体行

@@ -11,12 +11,15 @@ import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemExample;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemWithBLOBs;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecord;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecordExample;
+import io.github.jerryt92.j2agent.constants.ErrorConstants;
 import io.github.jerryt92.j2agent.service.llm.memory.ConversationIdCodec;
 import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentCleanupService;
 import io.github.jerryt92.j2agent.service.security.LoginService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -41,16 +44,19 @@ public class ChatContextService {
     private final ChatMemoryRepository chatMemoryRepository;
     private final LoginService loginService;
     private final ChatAttachmentCleanupService attachmentCleanupService;
+    private final ActiveChatTurnRegistry activeChatTurnRegistry;
 
     public ChatContextService(ChatContextRecordMapper chatContextRecordMapper,
                               ChatContextItemMapper chatContextItemMapper,
                               ChatMemoryRepository chatMemoryRepository,
                               LoginService loginService,
+                              ActiveChatTurnRegistry activeChatTurnRegistry,
                               @Autowired(required = false) ChatAttachmentCleanupService attachmentCleanupService) {
         this.chatContextRecordMapper = chatContextRecordMapper;
         this.chatContextItemMapper = chatContextItemMapper;
         this.chatMemoryRepository = chatMemoryRepository;
         this.loginService = loginService;
+        this.activeChatTurnRegistry = activeChatTurnRegistry;
         this.attachmentCleanupService = attachmentCleanupService;
     }
 
@@ -126,26 +132,78 @@ public class ChatContextService {
         if (session == null) {
             return;
         }
-        String uid = session.getUserId();
         for (String contextId : contextIds) {
             if (StringUtils.hasText(agentId)) {
-                String aid = normalizeAgentId(agentId);
-                ChatContextRecord record = chatContextRecordMapper.selectByPrimaryKey(contextId, aid);
-                if (record != null && uid.equals(record.getUserId())) {
-                    chatMemoryRepository.deleteByConversationId(ConversationIdCodec.format(uid, contextId, aid));
+                if (activeChatTurnRegistry.isActive(contextId, normalizeAgentId(agentId))) {
+                    throw new ResponseStatusException(
+                            HttpStatus.CONFLICT,
+                            ErrorConstants.CHAT_CONTEXT_IN_PROGRESS);
                 }
+            } else if (activeChatTurnRegistry.isAnyActive(contextId)) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        ErrorConstants.CHAT_CONTEXT_IN_PROGRESS);
+            }
+        }
+        String uid = session.getUserId();
+        for (String contextId : contextIds) {
+            deleteOneContextRecord(uid, contextId, agentId);
+        }
+    }
+
+    /**
+     * 清空当前用户历史；可选按 agentId 过滤。运行中的会话跳过，不抛错。
+     */
+    @Transactional(rollbackFor = Throwable.class)
+    public void clearAllHistoryContext(String agentId) {
+        SessionBo session = loginService.getSession();
+        if (session == null) {
+            return;
+        }
+        String uid = session.getUserId();
+        ChatContextRecordExample example = new ChatContextRecordExample();
+        var criteria = example.createCriteria().andUserIdEqualTo(uid);
+        if (StringUtils.hasText(agentId)) {
+            criteria.andAgentIdEqualTo(normalizeAgentId(agentId));
+        }
+        List<ChatContextRecord> rows = chatContextRecordMapper.selectByExample(example);
+        for (ChatContextRecord record : rows) {
+            String contextId = record.getContextId();
+            String aid = record.getAgentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : record.getAgentId();
+            if (activeChatTurnRegistry.isActive(contextId, aid)) {
+                continue;
+            }
+            if (StringUtils.hasText(agentId)) {
+                deleteOneContextRecord(uid, contextId, agentId);
             } else {
-                ChatContextRecordExample ex = new ChatContextRecordExample();
-                ex.createCriteria().andContextIdEqualTo(contextId).andUserIdEqualTo(uid);
-                List<ChatContextRecord> rows = chatContextRecordMapper.selectByExample(ex);
-                for (ChatContextRecord r : rows) {
-                    String aid = r.getAgentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : r.getAgentId();
-                    chatMemoryRepository.deleteByConversationId(ConversationIdCodec.format(uid, contextId, aid));
-                }
-                if (rows.isEmpty() || !hasContextRecords(contextId)) {
+                chatMemoryRepository.deleteByConversationId(ConversationIdCodec.format(uid, contextId, aid));
+                if (!hasContextRecords(contextId)) {
                     if (attachmentCleanupService != null) {
                         attachmentCleanupService.deleteByChatContextPrefix(uid, contextId);
                     }
+                }
+            }
+        }
+    }
+
+    private void deleteOneContextRecord(String uid, String contextId, String agentId) {
+        if (StringUtils.hasText(agentId)) {
+            String aid = normalizeAgentId(agentId);
+            ChatContextRecord record = chatContextRecordMapper.selectByPrimaryKey(contextId, aid);
+            if (record != null && uid.equals(record.getUserId())) {
+                chatMemoryRepository.deleteByConversationId(ConversationIdCodec.format(uid, contextId, aid));
+            }
+        } else {
+            ChatContextRecordExample ex = new ChatContextRecordExample();
+            ex.createCriteria().andContextIdEqualTo(contextId).andUserIdEqualTo(uid);
+            List<ChatContextRecord> rows = chatContextRecordMapper.selectByExample(ex);
+            for (ChatContextRecord r : rows) {
+                String aid = r.getAgentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : r.getAgentId();
+                chatMemoryRepository.deleteByConversationId(ConversationIdCodec.format(uid, contextId, aid));
+            }
+            if (rows.isEmpty() || !hasContextRecords(contextId)) {
+                if (attachmentCleanupService != null) {
+                    attachmentCleanupService.deleteByChatContextPrefix(uid, contextId);
                 }
             }
         }

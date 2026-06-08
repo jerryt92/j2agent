@@ -3,6 +3,7 @@ package io.github.jerryt92.j2agent.service.llm.memory;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.jerryt92.j2agent.config.RedisKeyNamespaces;
 import org.redisson.api.RBucket;
 import org.redisson.api.RedissonClient;
 import org.redisson.client.codec.StringCodec;
@@ -33,11 +34,6 @@ public class RedissonCachingChatMemoryRepository implements ChatMemoryRepository
      */
     private static final int CACHE_TTL_SECONDS = 1800;
 
-    /**
-     * Redis key 前缀
-     */
-    private static final String CACHE_KEY_PREFIX = "ai:center:chat-memory:";
-
     private static final TypeReference<List<CachedChatMemoryEntry>> ENTRY_LIST_TYPE =
             new TypeReference<>() {
             };
@@ -46,6 +42,7 @@ public class RedissonCachingChatMemoryRepository implements ChatMemoryRepository
     private final ChatMemoryRepository jdbcDelegate;
     private final ObjectMapper objectMapper;
     private final ChatMemoryMessageCodec messageCodec;
+    private final String cacheKeyPrefix;
 
     /**
      * @param jdbcDelegate 纯 JDBC 实现的记忆仓储（Bean 名 jdbcChatMemoryRepository）
@@ -54,11 +51,13 @@ public class RedissonCachingChatMemoryRepository implements ChatMemoryRepository
             RedissonClient redissonClient,
             @Qualifier("jdbcChatMemoryRepository") ChatMemoryRepository jdbcDelegate,
             ObjectMapper objectMapper,
-            ChatMemoryMessageCodec messageCodec) {
+            ChatMemoryMessageCodec messageCodec,
+            RedisKeyNamespaces redisKeyNamespaces) {
         this.redissonClient = redissonClient;
         this.jdbcDelegate = jdbcDelegate;
         this.objectMapper = objectMapper;
         this.messageCodec = messageCodec;
+        this.cacheKeyPrefix = redisKeyNamespaces.key("chat-memory:");
     }
 
     /**
@@ -131,7 +130,7 @@ public class RedissonCachingChatMemoryRepository implements ChatMemoryRepository
     }
 
     private RBucket<String> stringBucket(String conversationId) {
-        return redissonClient.getBucket(CACHE_KEY_PREFIX + conversationId, StringCodec.INSTANCE);
+        return redissonClient.getBucket(cacheKeyPrefix + conversationId, StringCodec.INSTANCE);
     }
 
     private List<CachedChatMemoryEntry> toEntries(List<Message> messages) {

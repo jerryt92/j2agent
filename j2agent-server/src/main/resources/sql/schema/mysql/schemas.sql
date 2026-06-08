@@ -32,12 +32,12 @@ CREATE TABLE chat_context_item
     agent_id          varchar(64)  NOT NULL DEFAULT '' COMMENT '智能体ID，与 chat_context_record 对齐',
     message_index     int          NOT NULL,
     chat_role         int          NOT NULL COMMENT '0-system, 1-user, 2-assistant',
-    content           text         NOT NULL,
+    content           longtext     NOT NULL,
     feedback          int COMMENT '1-good, 2-bad',
-    rag_infos         text COMMENT 'RAG 信息',
+    rag_infos         longtext COMMENT 'RAG 信息',
     add_time          bigint       NOT NULL,
     token_count       int          NULL COMMENT 'token数量',
-    meta_json         text         NULL COMMENT '扩展元数据',
+    meta_json         longtext     NULL COMMENT '扩展元数据',
     PRIMARY KEY (message_id)
 ) COMMENT ='聊天消息';
 

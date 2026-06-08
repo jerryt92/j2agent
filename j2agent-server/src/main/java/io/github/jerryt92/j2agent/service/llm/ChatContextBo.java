@@ -27,7 +27,7 @@ public class ChatContextBo {
     private final String agentId;
 
     /**
-     * 会话标题（通常取首条用户消息摘要）
+     * 会话标题（取最近一条用户消息摘要）
      */
     private String title;
 

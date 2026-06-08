@@ -11,12 +11,14 @@ import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentService;
 import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentUrlResolver;
 import io.github.jerryt92.j2agent.service.llm.TurnStepItem;
 import io.github.jerryt92.j2agent.service.llm.reasoning.SpringAiReasoningMetadataAdapter;
+import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -26,6 +28,7 @@ import java.util.Map;
 /**
  * 将 Spring AI {@link Message} 与库表行（content + meta_json + chat_role）互转，支持工具链消息持久化。
  */
+@Slf4j
 @Component
 public class ChatMemoryMessageCodec {
 
@@ -33,6 +36,20 @@ public class ChatMemoryMessageCodec {
      * 与 {@link io.github.jerryt92.j2agent.model.MessageDto.RoleEnum#TOOL} 对应的库内角色值。
      */
     public static final int CHAT_ROLE_TOOL = 3;
+
+    /**
+     * MySQL TEXT 列安全上限（约 65535 字节），用于落库前诊断日志。
+     */
+    public static final int MYSQL_TEXT_CHAR_SAFE_LIMIT = 65_535;
+
+    /**
+     * 扩列 LONGTEXT 后 content 的应用层兜底上限。
+     */
+    static final int MAX_PERSISTED_CONTENT_LENGTH = 1_048_576;
+
+    static final int MAX_PERSISTED_META_JSON_LENGTH = 1_048_576;
+
+    static final String TRUNCATED_SUFFIX = "...(truncated)";
 
     static final String JSON_KEY_VERSION = "v";
     static final String JSON_KEY_KIND = "kind";
@@ -70,11 +87,11 @@ public class ChatMemoryMessageCodec {
      */
     public PersistedRow encode(Message message) throws JsonProcessingException {
         if (message instanceof UserMessage um) {
-            String t = um.getText() != null ? um.getText() : "";
+            String t = capContentField(um.getText() != null ? um.getText() : "", "user");
             Object attachments = um.getMetadata().get(META_ATTACHMENTS);
             List<ChatAttachmentDto> persistedAttachments = sanitizeAttachmentsForPersist(attachments);
             String meta = persistedAttachments == null ? null
-                    : objectMapper.writeValueAsString(Map.of(META_ATTACHMENTS, persistedAttachments));
+                    : truncateMetaJson(objectMapper.writeValueAsString(Map.of(META_ATTACHMENTS, persistedAttachments)));
             return new PersistedRow(1, t, meta);
         }
         if (message instanceof AssistantMessage am) {
@@ -82,36 +99,37 @@ public class ChatMemoryMessageCodec {
                 ObjectNode root = objectMapper.createObjectNode();
                 root.put(JSON_KEY_VERSION, 1);
                 root.put(JSON_KEY_KIND, KIND_ASSISTANT_TOOL);
-                root.put("text", am.getText() != null ? am.getText() : "");
+                root.put("text", capContentField(am.getText() != null ? am.getText() : "", "assistant_tool_text"));
                 ArrayNode arr = root.putArray("toolCalls");
                 for (AssistantMessage.ToolCall tc : am.getToolCalls()) {
                     ObjectNode n = arr.addObject();
                     n.put("id", tc.id() != null ? tc.id() : "");
                     n.put("type", tc.type() != null ? tc.type() : "");
                     n.put("name", tc.name() != null ? tc.name() : "");
-                    n.put("arguments", tc.arguments() != null ? tc.arguments() : "");
+                    putTruncatedToolPayload(n, "arguments", tc.arguments(), "assistant_tool_arguments");
                 }
-                String meta = objectMapper.writeValueAsString(Map.of(
+                String meta = truncateMetaJson(objectMapper.writeValueAsString(Map.of(
                         META_DISPLAY_IN_CHAT, false,
-                        META_KIND, META_KIND_ASSISTANT_TOOL));
-                return new PersistedRow(2, objectMapper.writeValueAsString(root), meta);
+                        META_KIND, META_KIND_ASSISTANT_TOOL)));
+                return new PersistedRow(2, capContentField(objectMapper.writeValueAsString(root), "assistant_tool"), meta);
             }
-            String t = am.getText() != null ? am.getText() : "";
+            String t = capContentField(am.getText() != null ? am.getText() : "", "assistant");
             if (isSkillLoadAuditContent(t, null)) {
-                String meta = objectMapper.writeValueAsString(Map.of(
+                String meta = truncateMetaJson(objectMapper.writeValueAsString(Map.of(
                         META_DISPLAY_IN_CHAT, false,
-                        META_KIND, META_KIND_SKILL_LOAD_AUDIT));
+                        META_KIND, META_KIND_SKILL_LOAD_AUDIT)));
                 return new PersistedRow(2, t, meta);
             }
             if (isTurnTraceContent(t, null)) {
-                String meta = objectMapper.writeValueAsString(Map.of(
+                String meta = truncateMetaJson(objectMapper.writeValueAsString(Map.of(
                         META_DISPLAY_IN_CHAT, false,
-                        META_KIND, META_KIND_TURN_TRACE));
+                        META_KIND, META_KIND_TURN_TRACE)));
                 return new PersistedRow(2, t, meta);
             }
             String reasoning = extractReasoningFromMetadata(am);
             if (StringUtils.hasText(reasoning)) {
-                String meta = objectMapper.writeValueAsString(Map.of(META_REASONING_CONTENT, reasoning));
+                String meta = truncateMetaJson(objectMapper.writeValueAsString(
+                        Map.of(META_REASONING_CONTENT, capContentField(reasoning, "reasoningContent"))));
                 return new PersistedRow(2, t, meta);
             }
             return new PersistedRow(2, t, null);
@@ -125,12 +143,12 @@ public class ChatMemoryMessageCodec {
                 ObjectNode n = arr.addObject();
                 n.put("id", r.id() != null ? r.id() : "");
                 n.put("name", r.name() != null ? r.name() : "");
-                n.put("responseData", r.responseData() != null ? r.responseData() : "");
+                putTruncatedToolPayload(n, "responseData", r.responseData(), "tool_response");
             }
-            String meta = objectMapper.writeValueAsString(Map.of(
+            String meta = truncateMetaJson(objectMapper.writeValueAsString(Map.of(
                     META_DISPLAY_IN_CHAT, false,
-                    META_KIND, META_KIND_TOOL_RESULT));
-            return new PersistedRow(CHAT_ROLE_TOOL, objectMapper.writeValueAsString(root), meta);
+                    META_KIND, META_KIND_TOOL_RESULT)));
+            return new PersistedRow(CHAT_ROLE_TOOL, capContentField(objectMapper.writeValueAsString(root), "tool_response"), meta);
         }
         return null;
     }
@@ -448,6 +466,38 @@ public class ChatMemoryMessageCodec {
         } catch (JsonProcessingException e) {
             return null;
         }
+    }
+
+    private void putTruncatedToolPayload(ObjectNode node, String fieldName, String rawValue, String kind) {
+        String value = rawValue != null ? rawValue : "";
+        int maxLen = ToolEventEmitter.MAX_TOOL_RESULT_LENGTH;
+        if (value.length() <= maxLen) {
+            node.put(fieldName, value);
+            return;
+        }
+        log.warn("Chat memory {} truncated: {} -> {}", kind, value.length(), maxLen);
+        node.put(fieldName, value.substring(0, maxLen));
+        node.put(fieldName + "Truncated", true);
+        node.put(fieldName + "Length", value.length());
+    }
+
+    private String capContentField(String content, String kind) {
+        if (content == null) {
+            return "";
+        }
+        if (content.length() <= MAX_PERSISTED_CONTENT_LENGTH) {
+            return content;
+        }
+        log.warn("Chat memory {} content capped: {} -> {}", kind, content.length(), MAX_PERSISTED_CONTENT_LENGTH);
+        return content.substring(0, MAX_PERSISTED_CONTENT_LENGTH) + TRUNCATED_SUFFIX;
+    }
+
+    private String truncateMetaJson(String metaJson) {
+        if (!StringUtils.hasText(metaJson) || metaJson.length() <= MAX_PERSISTED_META_JSON_LENGTH) {
+            return metaJson;
+        }
+        log.warn("Chat memory meta_json truncated: {} -> {}", metaJson.length(), MAX_PERSISTED_META_JSON_LENGTH);
+        return metaJson.substring(0, MAX_PERSISTED_META_JSON_LENGTH);
     }
 
     /**

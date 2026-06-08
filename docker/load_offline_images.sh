@@ -7,7 +7,6 @@
 # 使用说明:
 #   ./load_offline_images.sh
 #   ./load_offline_images.sh images_offline_amd64_dir
-#   ./load_offline_images.sh /opt/ai-center/images_offline_amd64_dir
 #
 # 注意: 请使用 bash 或直接 ./load_offline_images.sh 执行，勿用 sh（Ubuntu 下 sh 为 dash）。
 # ==============================================================================
