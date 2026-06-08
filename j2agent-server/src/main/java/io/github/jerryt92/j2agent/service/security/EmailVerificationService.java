@@ -1,5 +1,6 @@
 package io.github.jerryt92.j2agent.service.security;
 
+import io.github.jerryt92.j2agent.config.RedisKeyNamespaces;
 import io.github.jerryt92.j2agent.constants.ErrorConstants;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -22,20 +23,24 @@ public class EmailVerificationService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailVerificationService.class);
 
-    private static final String CODE_KEY_PREFIX = "email-reg:code:";
-    private static final String RATE_KEY_PREFIX = "email-reg:rate:";
-    private static final String RESET_CODE_KEY_PREFIX = "email-reset:code:";
-    private static final String RESET_RATE_KEY_PREFIX = "email-reset:rate:";
     private static final Duration CODE_TTL = Duration.ofMinutes(10);
     /** 限流窗口内同一邮箱最多发送次数 */
     private static final int MAX_SEND_PER_WINDOW = 5;
     private static final Duration RATE_WINDOW = Duration.ofSeconds(60);
 
     private final StringRedisTemplate redisTemplate;
+    private final String codeKeyPrefix;
+    private final String rateKeyPrefix;
+    private final String resetCodeKeyPrefix;
+    private final String resetRateKeyPrefix;
     private final SecureRandom random = new SecureRandom();
 
-    public EmailVerificationService(StringRedisTemplate redisTemplate) {
+    public EmailVerificationService(StringRedisTemplate redisTemplate, RedisKeyNamespaces redisKeyNamespaces) {
         this.redisTemplate = redisTemplate;
+        this.codeKeyPrefix = redisKeyNamespaces.key("email-reg:code:");
+        this.rateKeyPrefix = redisKeyNamespaces.key("email-reg:rate:");
+        this.resetCodeKeyPrefix = redisKeyNamespaces.key("email-reset:code:");
+        this.resetRateKeyPrefix = redisKeyNamespaces.key("email-reset:rate:");
     }
 
     /**
@@ -46,7 +51,7 @@ public class EmailVerificationService {
         try {
             assertSendAllowed(normalized);
             String code = String.format("%06d", random.nextInt(1_000_000));
-            redisTemplate.opsForValue().set(CODE_KEY_PREFIX + normalized, code, CODE_TTL);
+            redisTemplate.opsForValue().set(codeKeyPrefix + normalized, code, CODE_TTL);
             return code;
         } catch (ResponseStatusException ex) {
             throw ex;
@@ -64,7 +69,7 @@ public class EmailVerificationService {
         try {
             assertResetSendAllowed(normalized);
             String code = String.format("%06d", random.nextInt(1_000_000));
-            redisTemplate.opsForValue().set(RESET_CODE_KEY_PREFIX + normalized, code, CODE_TTL);
+            redisTemplate.opsForValue().set(resetCodeKeyPrefix + normalized, code, CODE_TTL);
             return code;
         } catch (ResponseStatusException ex) {
             throw ex;
@@ -83,7 +88,7 @@ public class EmailVerificationService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ErrorConstants.RESET_PASSWORD_CODE_REQUIRED);
         }
         try {
-            String key = RESET_CODE_KEY_PREFIX + normalized;
+            String key = resetCodeKeyPrefix + normalized;
             String stored = redisTemplate.opsForValue().get(key);
             if (stored == null || !stored.equals(code.trim())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ErrorConstants.RESET_PASSWORD_CODE_INVALID);
@@ -106,7 +111,7 @@ public class EmailVerificationService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ErrorConstants.REGISTER_CODE_REQUIRED);
         }
         try {
-            String key = CODE_KEY_PREFIX + normalized;
+            String key = codeKeyPrefix + normalized;
             String stored = redisTemplate.opsForValue().get(key);
             if (stored == null || !stored.equals(code.trim())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ErrorConstants.REGISTER_CODE_INVALID);
@@ -124,11 +129,11 @@ public class EmailVerificationService {
      * 检查发送次数：窗口内前 5 次放行，第 6 次起拒绝。
      */
     private void assertSendAllowed(String normalizedEmail) {
-        assertSendAllowed(normalizedEmail, RATE_KEY_PREFIX, ErrorConstants.REGISTER_RATE_LIMIT);
+        assertSendAllowed(normalizedEmail, rateKeyPrefix, ErrorConstants.REGISTER_RATE_LIMIT);
     }
 
     private void assertResetSendAllowed(String normalizedEmail) {
-        assertSendAllowed(normalizedEmail, RESET_RATE_KEY_PREFIX, ErrorConstants.RESET_PASSWORD_RATE_LIMIT);
+        assertSendAllowed(normalizedEmail, resetRateKeyPrefix, ErrorConstants.RESET_PASSWORD_RATE_LIMIT);
     }
 
     private void assertSendAllowed(String normalizedEmail, String rateKeyPrefix, String rateLimitError) {

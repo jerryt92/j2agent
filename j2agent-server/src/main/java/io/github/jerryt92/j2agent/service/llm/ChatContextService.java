@@ -11,12 +11,15 @@ import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemExample;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemWithBLOBs;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecord;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecordExample;
+import io.github.jerryt92.j2agent.constants.ErrorConstants;
 import io.github.jerryt92.j2agent.service.llm.memory.ConversationIdCodec;
 import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentCleanupService;
 import io.github.jerryt92.j2agent.service.security.LoginService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -41,16 +44,19 @@ public class ChatContextService {
     private final ChatMemoryRepository chatMemoryRepository;
     private final LoginService loginService;
     private final ChatAttachmentCleanupService attachmentCleanupService;
+    private final ActiveChatTurnRegistry activeChatTurnRegistry;
 
     public ChatContextService(ChatContextRecordMapper chatContextRecordMapper,
                               ChatContextItemMapper chatContextItemMapper,
                               ChatMemoryRepository chatMemoryRepository,
                               LoginService loginService,
+                              ActiveChatTurnRegistry activeChatTurnRegistry,
                               @Autowired(required = false) ChatAttachmentCleanupService attachmentCleanupService) {
         this.chatContextRecordMapper = chatContextRecordMapper;
         this.chatContextItemMapper = chatContextItemMapper;
         this.chatMemoryRepository = chatMemoryRepository;
         this.loginService = loginService;
+        this.activeChatTurnRegistry = activeChatTurnRegistry;
         this.attachmentCleanupService = attachmentCleanupService;
     }
 
@@ -125,6 +131,19 @@ public class ChatContextService {
         SessionBo session = loginService.getSession();
         if (session == null) {
             return;
+        }
+        for (String contextId : contextIds) {
+            if (StringUtils.hasText(agentId)) {
+                if (activeChatTurnRegistry.isActive(contextId, normalizeAgentId(agentId))) {
+                    throw new ResponseStatusException(
+                            HttpStatus.CONFLICT,
+                            ErrorConstants.CHAT_CONTEXT_IN_PROGRESS);
+                }
+            } else if (activeChatTurnRegistry.isAnyActive(contextId)) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        ErrorConstants.CHAT_CONTEXT_IN_PROGRESS);
+            }
         }
         String uid = session.getUserId();
         for (String contextId : contextIds) {

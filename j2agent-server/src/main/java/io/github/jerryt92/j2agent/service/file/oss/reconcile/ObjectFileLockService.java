@@ -1,11 +1,11 @@
 package io.github.jerryt92.j2agent.service.file.oss.reconcile;
 
+import io.github.jerryt92.j2agent.config.RedisKeyNamespaces;
+import io.github.jerryt92.j2agent.service.file.oss.ObjectStorageService;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Service;
-
-import io.github.jerryt92.j2agent.service.file.oss.ObjectStorageService;
 
 /**
  * 按 objectKey 串行化文件写操作与后台对账任务。
@@ -13,15 +13,16 @@ import io.github.jerryt92.j2agent.service.file.oss.ObjectStorageService;
 @Service
 @ConditionalOnBean(ObjectStorageService.class)
 public class ObjectFileLockService {
-    static final String LOCK_PREFIX = "j2agent:object-file:lock:";
 
     private final RedissonClient redissonClient;
+    private final String lockPrefix;
 
-    public ObjectFileLockService(RedissonClient redissonClient) {
+    public ObjectFileLockService(RedissonClient redissonClient, RedisKeyNamespaces redisKeyNamespaces) {
         this.redissonClient = redissonClient;
+        this.lockPrefix = redisKeyNamespaces.key("object-file:lock:");
     }
 
     public RLock lock(String objectKey) {
-        return redissonClient.getLock(LOCK_PREFIX + objectKey);
+        return redissonClient.getLock(lockPrefix + objectKey);
     }
 }

@@ -56,6 +56,7 @@ public class ChatService {
     private static final String ANONYMOUS_USER = "anonymous";
     private final ChatContextService chatContextService;
     private final ChatInputProperties chatInputProperties;
+    private final ActiveChatTurnRegistry activeChatTurnRegistry;
     static Map<String, ChatCallback<AgentUiEventEnvelope>> contextChatCallbackMap = new HashMap<>();
     private final AgentRouter agentRouter;
     /**
@@ -71,6 +72,7 @@ public class ChatService {
                        FollowUpSuggestionService followUpSuggestionService,
                        ChatInputProperties chatInputProperties,
                        ChatMemoryMessageCodec chatMemoryMessageCodec,
+                       ActiveChatTurnRegistry activeChatTurnRegistry,
                        ObjectProvider<io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentService>
                                chatAttachmentServiceProvider) {
         this.chatContextService = chatContextService;
@@ -78,6 +80,7 @@ public class ChatService {
         this.followUpSuggestionService = followUpSuggestionService;
         this.chatInputProperties = chatInputProperties;
         this.chatMemoryMessageCodec = chatMemoryMessageCodec;
+        this.activeChatTurnRegistry = activeChatTurnRegistry;
         this.chatAttachmentServiceProvider = chatAttachmentServiceProvider;
     }
 
@@ -90,7 +93,13 @@ public class ChatService {
         TurnStepRecorder turnStepRecorder = new TurnStepRecorder();
         AtomicBoolean turnTraceFlushed = new AtomicBoolean(false);
         Runnable originalCompleteCall = chatChatCallback.completeCall;
-        String contextId = null;
+        String resolvedContextId = request.getContextId();
+        if (resolvedContextId == null) {
+            resolvedContextId = UUIDv7Utils.randomUUIDv7();
+        } else if (userId != null && !chatContextService.userOwnsContext(resolvedContextId, userId)) {
+            throw new IllegalArgumentException("Current user does not own the contextId.");
+        }
+        final String contextId = resolvedContextId;
         final AtomicReference<String> conversationIdRef = new AtomicReference<>(null);
         final AtomicReference<ChatMemory> agentChatMemoryRef = new AtomicReference<>(null);
         Consumer<AgentUiEventEnvelope> originalResponseCall = chatChatCallback.responseCall;
@@ -107,25 +116,28 @@ public class ChatService {
                 turnId,
                 turnStepRecorder,
                 turnTraceFlushed);
+        final AtomicReference<String> resolvedAgentIdRef = new AtomicReference<>(null);
         try {
-            contextId = request.getContextId();
-            if (contextId == null) {
-                contextId = UUIDv7Utils.randomUUIDv7();
-            } else {
-                if (userId != null && !chatContextService.userOwnsContext(contextId, userId)) {
-                    throw new IllegalArgumentException("Current user does not own the contextId.");
-                }
-            }
             contextChatCallbackMap.put(contextId, chatChatCallback);
             if (CollectionUtils.isEmpty(request.getMessages())) {
                 terminateTurnWithFailure(chatChatCallback, contextId, turnId, seq, stateMachine, turnLock,
-                        terminated, originalCompleteCall, "emptyMessages", null, null, flushTurnTrace);
+                        terminated, originalCompleteCall, "emptyMessages", null, null, flushTurnTrace,
+                        () -> contextChatCallbackMap.remove(contextId));
                 return;
             }
             AiAgent aiAgentForConversation = agentRouter.route(agentId);
-            final String turnConversationId = buildConversationId(userId, contextId, aiAgentForConversation.getAgentId());
+            final String resolvedAgentId = aiAgentForConversation.getAgentId();
+            resolvedAgentIdRef.set(resolvedAgentId);
+            activeChatTurnRegistry.register(contextId, resolvedAgentId);
+            AtomicBoolean activeTurnReleased = new AtomicBoolean(false);
+            Runnable releaseActiveTurn = () -> {
+                if (activeTurnReleased.compareAndSet(false, true)) {
+                    activeChatTurnRegistry.unregister(contextId, resolvedAgentId);
+                    contextChatCallbackMap.remove(contextId);
+                }
+            };
+            final String turnConversationId = buildConversationId(userId, contextId, resolvedAgentId);
             conversationIdRef.set(turnConversationId);
-            String finalContextId = contextId;
             int index = request.getMessages().size() - 1;
             StringBuilder streamedContent = new StringBuilder();
             StringBuilder streamedReasoning = new StringBuilder();
@@ -135,7 +147,7 @@ public class ChatService {
             /** 中断/错误时仅补偿落库未完成 assistant 一次，避免与 Advisor 正常 after() 重复 */
             AtomicBoolean interruptAssistantFlushed = new AtomicBoolean(false);
             ToolEventEmitter toolEventEmitter = new ToolEventEmitter(
-                    finalContextId,
+                    contextId,
                     turnId,
                     seq,
                     stateMachine,
@@ -152,7 +164,7 @@ public class ChatService {
                 }
                 attachments = attachmentService.validateAndReference(
                         latestUser.getAttachments(),
-                        finalContextId,
+                        contextId,
                         aiAgentForConversation.getAgentId(),
                         latestUser.getIndex() == null ? index : latestUser.getIndex(),
                         userId);
@@ -164,7 +176,7 @@ public class ChatService {
             final int userMessageIndex = latestUser.getIndex() == null ? index : latestUser.getIndex();
             AgentRunContext agentRunContext = new AgentRunContext(
                     limitedUserMessage,
-                    finalContextId,
+                    contextId,
                     userId,
                     turnId,
                     turnConversationId,
@@ -196,7 +208,7 @@ public class ChatService {
                                 && stateMachine.getState() != AgentState.CANCELLED) {
                             AgentStateTransition toCompleted = stateMachine.transit(AgentState.COMPLETED, "streamFinished");
                             chatChatCallback.responseCall.accept(AgentEventBuilder.build(
-                                    finalContextId,
+                                    contextId,
                                     turnId,
                                     seq.getAndIncrement(),
                                     stateMachine.getState(),
@@ -221,7 +233,7 @@ public class ChatService {
                                 noticePayload.put("items", suggestions);
                                 synchronized (turnLock) {
                                     chatChatCallback.responseCall.accept(AgentEventBuilder.build(
-                                            finalContextId,
+                                            contextId,
                                             turnId,
                                             seq.getAndIncrement(),
                                             AgentState.COMPLETED,
@@ -239,6 +251,7 @@ public class ChatService {
                 } finally {
                     flushTurnTrace.run();
                     runOriginalCompleteCall(originalCompleteCall);
+                    releaseActiveTurn.run();
                 }
             };
             chatChatCallback.errorCall = t -> {
@@ -251,7 +264,7 @@ public class ChatService {
                     currentState = stateMachine.getState();
                 }
                 log.error("Agent stream failed, contextId={}, turnId={}, detail={}",
-                        finalContextId,
+                        contextId,
                         turnId,
                         "elapsedMs=" + (streamStartedAtMs.get() == 0L ? "unknown" : String.valueOf(System.currentTimeMillis() - streamStartedAtMs.get()))
                                 + ", state=" + currentState
@@ -261,7 +274,7 @@ public class ChatService {
                         t);
                 terminateTurnWithFailure(
                         chatChatCallback,
-                        finalContextId,
+                        contextId,
                         turnId,
                         seq,
                         stateMachine,
@@ -275,13 +288,14 @@ public class ChatService {
                             flushPartialAssistantOnInterrupt(agentChatMemory, turnConversationId, streamedContent,
                                     streamedReasoning, streamedTextLock, interruptAssistantFlushed, true);
                         },
-                        flushTurnTrace);
+                        flushTurnTrace,
+                        releaseActiveTurn);
             };
             // 流式接收
             synchronized (turnLock) {
                 AgentStateTransition toThinking = stateMachine.transit(AgentState.THINKING, "userMessageAccepted");
                 chatChatCallback.responseCall.accept(AgentEventBuilder.build(
-                        finalContextId,
+                        contextId,
                         turnId,
                         seq.getAndIncrement(),
                         stateMachine.getState(),
@@ -296,7 +310,7 @@ public class ChatService {
                     attachmentNotice.put("messageIndex", userMessageIndex);
                     attachmentNotice.put("attachments", finalAttachments);
                     chatChatCallback.responseCall.accept(AgentEventBuilder.build(
-                            finalContextId,
+                            contextId,
                             turnId,
                             seq.getAndIncrement(),
                             stateMachine.getState(),
@@ -335,7 +349,7 @@ public class ChatService {
                                 int nextRetryNo = retryNo.incrementAndGet();
                                 log.warn("LLM stream attempt failed, willRetry. nextRetryNo={}, contextId={}, turnId={}, state={}, elapsedMs={}, bufferedAssistantTextLen={}\n{}",
                                         nextRetryNo,
-                                        finalContextId,
+                                        contextId,
                                         turnId,
                                         currentState,
                                         System.currentTimeMillis() - streamStartedAtMs.get(),
@@ -372,7 +386,7 @@ public class ChatService {
                                 transition = stateMachine.transit(AgentState.STREAMING_TEXT, "firstAnswerToken");
                             }
                             chatChatCallback.responseCall.accept(AgentEventBuilder.build(
-                                    finalContextId,
+                                    contextId,
                                     turnId,
                                     seq.getAndIncrement(),
                                     stateMachine.getState(),
@@ -401,7 +415,7 @@ public class ChatService {
                             && stateMachine.getState() != AgentState.CANCELLED) {
                         AgentStateTransition toCancelled = stateMachine.transit(AgentState.CANCELLED, "websocketClosed");
                         recordingResponseCall.accept(AgentEventBuilder.build(
-                                finalContextId,
+                                contextId,
                                 turnId,
                                 seq.getAndIncrement(),
                                 stateMachine.getState(),
@@ -414,6 +428,7 @@ public class ChatService {
                 }
                 flushTurnTrace.run();
                 runOriginalCompleteCall(originalCompleteCall);
+                releaseActiveTurn.run();
             };
             log.info("conversationId: {}, ask: {}", turnConversationId, latestUserMessage);
         } catch (Throwable t) {
@@ -421,8 +436,16 @@ public class ChatService {
             if (conversationIdRef.get() != null) {
                 ThinkingOverrideRegistry.unbind(conversationIdRef.get());
             }
+            Runnable releaseActiveTurnOnFailure = () -> {
+                String resolvedAgentId = resolvedAgentIdRef.get();
+                if (resolvedAgentId != null) {
+                    activeChatTurnRegistry.unregister(contextId, resolvedAgentId);
+                }
+                contextChatCallbackMap.remove(contextId);
+            };
             terminateTurnWithFailure(chatChatCallback, contextId, turnId, seq, stateMachine, turnLock,
-                    terminated, originalCompleteCall, resolveErrorCode(t), t, null, flushTurnTrace);
+                    terminated, originalCompleteCall, resolveErrorCode(t), t, null, flushTurnTrace,
+                    releaseActiveTurnOnFailure);
         }
     }
 
@@ -440,7 +463,8 @@ public class ChatService {
                                           String errorCode,
                                           Throwable cause,
                                           Runnable beforeEmit,
-                                          Runnable afterTerminal) {
+                                          Runnable afterTerminal,
+                                          Runnable releaseActiveTurn) {
         if (!terminated.compareAndSet(false, true)) {
             return;
         }
@@ -460,6 +484,9 @@ public class ChatService {
             afterTerminal.run();
         }
         runOriginalCompleteCall(originalCompleteCall);
+        if (releaseActiveTurn != null) {
+            releaseActiveTurn.run();
+        }
     }
 
     private static void runOriginalCompleteCall(Runnable originalCompleteCall) {
