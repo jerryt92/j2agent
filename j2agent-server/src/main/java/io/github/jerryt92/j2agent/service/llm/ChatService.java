@@ -10,16 +10,15 @@ import io.github.jerryt92.j2agent.model.AgentEventType;
 import io.github.jerryt92.j2agent.model.AgentState;
 import io.github.jerryt92.j2agent.model.AgentStateTransition;
 import io.github.jerryt92.j2agent.model.AgentUiEventEnvelope;
+import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
 import io.github.jerryt92.j2agent.model.ChatCallback;
 import io.github.jerryt92.j2agent.model.ChatRequestDto;
-import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
-import org.springframework.beans.factory.ObjectProvider;
 import io.github.jerryt92.j2agent.model.ChatResponseDto;
 import io.github.jerryt92.j2agent.model.MessageDto;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRouter;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunContext;
-import io.github.jerryt92.j2agent.service.llm.agent.inf.constant.AgentThinkingOverride;
 import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
+import io.github.jerryt92.j2agent.service.llm.agent.inf.constant.AgentThinkingOverride;
 import io.github.jerryt92.j2agent.service.llm.memory.ChatMemoryMessageCodec;
 import io.github.jerryt92.j2agent.service.llm.memory.ConversationIdCodec;
 import io.github.jerryt92.j2agent.service.llm.reasoning.AssistantMessageReasoningExtractor;
@@ -34,6 +33,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 import reactor.core.Disposable;
@@ -334,7 +334,8 @@ public class ChatService {
                     })
                     .retryWhen(Retry.backoff(3, Duration.ofSeconds(1))
                             .maxBackoff(Duration.ofSeconds(3))
-                            .filter(t -> isConnectionResetByPeer(t)
+                            .filter(t -> (isConnectionResetByPeer(t)
+                                    || LlmProviderErrorFormatter.isEmptyStreamFailure(t))
                                     && isStillThinkingAndEmpty(streamedContent, streamedReasoning, stateMachine,
                                     streamedTextLock, turnLock))
                             .doBeforeRetry(rs -> {
