@@ -47,9 +47,17 @@ class ChatFileKeysTest {
     }
 
     @Test
-    void requireOwnedKeyForReferenceShouldAllowLegacyKey() {
+    void requireOwnedKeyShouldRejectLegacyKey() {
         String legacy = "chat/alice/upload-uuid/image.png";
-        assertDoesNotThrow(() -> ChatFileKeys.requireOwnedKeyForReference(legacy, "alice", "ctx-1"));
+        assertThrows(ResponseStatusException.class,
+                () -> ChatFileKeys.requireOwnedKey(legacy, "alice"));
+    }
+
+    @Test
+    void requireOwnedKeyForReferenceShouldRejectLegacyKey() {
+        String legacy = "chat/alice/upload-uuid/image.png";
+        assertThrows(ResponseStatusException.class,
+                () -> ChatFileKeys.requireOwnedKeyForReference(legacy, "alice", "ctx-1"));
     }
 
     @Test

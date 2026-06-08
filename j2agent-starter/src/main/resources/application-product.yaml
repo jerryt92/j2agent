@@ -80,10 +80,10 @@ j2agent:
     type: ${J2AGENT_STORAGE_TYPE}
     bucket: ${J2AGENT_STORAGE_BUCKET}
     chat-attachment-display: ${J2AGENT_CHAT_ATTACHMENT_DISPLAY:proxy}
-    minio:
-      endpoint: ${J2AGENT_MINIO_ENDPOINT}
-      access-key: ${MINIO_ROOT_USER:}
-      secret-key: ${MINIO_ROOT_PASSWORD:}
+    s3:
+      endpoint: ${J2AGENT_S3_ENDPOINT:}
+      access-key-id: ${J2AGENT_S3_ACCESS_KEY_ID:}
+      secret-access-key: ${J2AGENT_S3_SECRET_ACCESS_KEY:}
     oss:
       endpoint: ${OSS_ENDPOINT:}
       access-key-id: ${OSS_ACCESS_KEY_ID:}
@@ -93,10 +93,6 @@ j2agent:
       secret-key: ${QINIU_SECRET_KEY:}
       domain: ${QINIU_DOMAIN:}
       use-https: ${QINIU_USE_HTTPS:true}
-    r2:
-      endpoint: ${R2_ENDPOINT:}
-      access-key-id: ${R2_ACCESS_KEY_ID:}
-      secret-access-key: ${R2_SECRET_ACCESS_KEY:}
     sync:
       retention-days: ${J2AGENT_STORAGE_SYNC_RETENTION_DAYS:7}
       cleanup-cron: "${J2AGENT_STORAGE_SYNC_CLEANUP_CRON:0 30 2 * * *}"

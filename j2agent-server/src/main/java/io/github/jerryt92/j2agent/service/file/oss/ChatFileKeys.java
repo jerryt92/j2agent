@@ -35,30 +35,22 @@ public final class ChatFileKeys {
         if (!StringUtils.hasText(objectKey) || !objectKey.startsWith(CHAT_ROOT + userId + "/")) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "image does not belong to current user");
         }
+        if (!isNewFormatStoredBasename(basename(objectKey))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "invalid chat image key");
+        }
     }
 
     public static void requireOwnedKeyForReference(String objectKey, String userId, String contextId) {
         requireOwnedKey(objectKey, userId);
-        if (objectKey.startsWith(chatObjectPrefix(userId, contextId))) {
-            return;
+        if (!objectKey.startsWith(chatObjectPrefix(userId, contextId))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "image does not belong to current conversation");
         }
-        if (!isNewFormatStoredBasename(basename(objectKey))) {
-            return;
-        }
-        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "image does not belong to current conversation");
     }
 
     static boolean isNewFormatStoredBasename(String basename) {
         return basename.length() > 23
                 && basename.charAt(22) == '_'
                 && basename.substring(0, 22).matches("[A-Za-z0-9]{22}");
-    }
-
-    static boolean isLegacyChatKey(String objectKey, String userId) {
-        if (!StringUtils.hasText(objectKey) || !objectKey.startsWith(CHAT_ROOT + userId + "/")) {
-            return false;
-        }
-        return !isNewFormatStoredBasename(basename(objectKey));
     }
 
     public static String displayName(String objectKey) {

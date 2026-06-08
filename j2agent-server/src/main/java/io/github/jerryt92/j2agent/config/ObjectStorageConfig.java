@@ -8,12 +8,20 @@ import io.github.jerryt92.j2agent.service.file.oss.provider.R2ObjectStorageServi
 
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
-import io.minio.MinioClient;
 import okhttp3.OkHttpClient;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.StringUtils;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3Configuration;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+
+import java.net.URI;
 
 /**
  * 根据配置装配对象存储实现，业务侧只依赖 {@link ObjectStorageService}。
@@ -34,15 +42,8 @@ public class ObjectStorageConfig {
     }
 
     private ObjectStorageService createMinioService(ObjectStorageProperties properties) {
-        ObjectStorageProperties.Minio minio = properties.getMinio();
-        requireText(minio.getEndpoint(), "j2agent.storage.minio.endpoint");
-        requireText(minio.getAccessKey(), "j2agent.storage.minio.access-key");
-        requireText(minio.getSecretKey(), "j2agent.storage.minio.secret-key");
-        MinioClient client = MinioClient.builder()
-                .endpoint(minio.getEndpoint())
-                .credentials(minio.getAccessKey(), minio.getSecretKey())
-                .build();
-        return new MinioObjectStorageService(client, properties.getBucket());
+        S3Clients clients = createS3Clients(properties.getS3(), "j2agent.storage.s3");
+        return new MinioObjectStorageService(clients.s3Client(), clients.presigner(), properties.getBucket());
     }
 
     private ObjectStorageService createOssService(ObjectStorageProperties properties) {
@@ -74,15 +75,39 @@ public class ObjectStorageConfig {
     }
 
     private ObjectStorageService createR2Service(ObjectStorageProperties properties) {
-        ObjectStorageProperties.R2 r2 = properties.getR2();
-        requireText(r2.getEndpoint(), "j2agent.storage.r2.endpoint");
-        requireText(r2.getAccessKeyId(), "j2agent.storage.r2.access-key-id");
-        requireText(r2.getSecretAccessKey(), "j2agent.storage.r2.secret-access-key");
-        MinioClient client = MinioClient.builder()
-                .endpoint(r2.getEndpoint())
-                .credentials(r2.getAccessKeyId(), r2.getSecretAccessKey())
+        S3Clients clients = createS3Clients(properties.getS3(), "j2agent.storage.s3");
+        return new R2ObjectStorageService(clients.s3Client(), clients.presigner(), properties.getBucket());
+    }
+
+    private S3Clients createS3Clients(ObjectStorageProperties.S3Compatible s3, String propertyPrefix) {
+        requireText(s3.getEndpoint(), propertyPrefix + ".endpoint");
+        requireText(s3.getAccessKeyId(), propertyPrefix + ".access-key-id");
+        return createS3Clients(s3.getEndpoint(), s3.getAccessKeyId(), s3.getSecretAccessKey());
+    }
+
+    private S3Clients createS3Clients(String endpoint, String accessKeyId, String secretAccessKey) {
+        requireText(secretAccessKey, "j2agent.storage.s3.secret-access-key");
+        S3Configuration s3Config = S3Configuration.builder()
+                .pathStyleAccessEnabled(true)
                 .build();
-        return new R2ObjectStorageService(client, properties.getBucket());
+        URI endpointUri = URI.create(endpoint);
+        var credentialsProvider = StaticCredentialsProvider.create(
+                AwsBasicCredentials.create(accessKeyId, secretAccessKey)
+        );
+        S3Client s3Client = S3Client.builder()
+                .endpointOverride(endpointUri)
+                .region(Region.US_EAST_1)
+                .credentialsProvider(credentialsProvider)
+                .serviceConfiguration(s3Config)
+                .httpClientBuilder(UrlConnectionHttpClient.builder())
+                .build();
+        S3Presigner presigner = S3Presigner.builder()
+                .endpointOverride(endpointUri)
+                .region(Region.US_EAST_1)
+                .credentialsProvider(credentialsProvider)
+                .serviceConfiguration(s3Config)
+                .build();
+        return new S3Clients(s3Client, presigner);
     }
 
     private void requireText(String value, String propertyName) {
