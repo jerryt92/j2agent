@@ -114,7 +114,7 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
         }
         ConversationIdCodec.Parts parts = ConversationIdCodec.parse(conversationId);
         ensureContextRecord(parts, messages);
-        maybeEnsureTitle(parts, messages);
+        updateTitleFromUserMessages(parts, messages);
         String agentId = parts.agentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : parts.agentId();
         Integer lastMessageIndex = chatMemoryExtMapper.selectLastMessageIndexForUpdate(parts.contextId(), agentId);
         int nextIndex = lastMessageIndex == null ? 0 : lastMessageIndex + 1;
@@ -209,26 +209,29 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
     }
 
     /**
-     * 记录已存在但标题仍为空时，按首条用户消息补写标题（纯图片为 {@link #IMAGE_ONLY_TITLE}，有文字则截断首句）。
+     * 本批消息含用户消息时，按最后一条用户消息更新标题（纯图片为 {@link #IMAGE_ONLY_TITLE}，有文字则截断）。
      */
-    private void maybeEnsureTitle(ConversationIdCodec.Parts parts, List<Message> messages) {
-        String agentId = parts.agentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : parts.agentId();
+    private void updateTitleFromUserMessages(ConversationIdCodec.Parts parts, List<Message> messages) {
+        UserMessage lastUserMessage = null;
         for (Message message : messages) {
-            if (!(message instanceof UserMessage um)) {
-                continue;
+            if (message instanceof UserMessage um) {
+                lastUserMessage = um;
             }
-            ChatContextRecord record = chatContextRecordMapper.selectByPrimaryKey(parts.contextId(), agentId);
-            if (record == null || StringUtils.hasText(record.getTitle())) {
-                return;
-            }
-            List<ChatAttachmentDto> attachments = ChatMemoryMessageCodec.attachmentsFromUserMessage(um);
-            chatMemoryExtMapper.updateTitle(
-                    parts.contextId(),
-                    agentId,
-                    autoTitle(um.getText(), attachments),
-                    System.currentTimeMillis());
+        }
+        if (lastUserMessage == null) {
             return;
         }
+        String agentId = parts.agentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : parts.agentId();
+        ChatContextRecord record = chatContextRecordMapper.selectByPrimaryKey(parts.contextId(), agentId);
+        if (record == null) {
+            return;
+        }
+        List<ChatAttachmentDto> attachments = ChatMemoryMessageCodec.attachmentsFromUserMessage(lastUserMessage);
+        chatMemoryExtMapper.updateTitle(
+                parts.contextId(),
+                agentId,
+                autoTitle(lastUserMessage.getText(), attachments),
+                System.currentTimeMillis());
     }
 
     /**
