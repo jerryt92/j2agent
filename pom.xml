@@ -21,7 +21,7 @@
         <springframework.ai.version>1.1.5</springframework.ai.version>
         <spring.ai.alibaba.version>1.1.2.2</spring.ai.alibaba.version>
         <jackson.version>2.18.3</jackson.version>
-        <minio.version>8.6.0</minio.version>
+        <aws.sdk.version>2.29.45</aws.sdk.version>
         <aliyun-oss.version>3.18.4</aliyun-oss.version>
         <qiniu.version>7.19.0</qiniu.version>
     </properties>
@@ -184,9 +184,11 @@
                 <version>3.29.0</version>
             </dependency>
             <dependency>
-                <groupId>io.minio</groupId>
-                <artifactId>minio</artifactId>
-                <version>${minio.version}</version>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${aws.sdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
             <dependency>
                 <groupId>com.aliyun.oss</groupId>

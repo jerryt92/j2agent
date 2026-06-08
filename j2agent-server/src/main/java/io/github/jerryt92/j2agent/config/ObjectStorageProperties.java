@@ -16,10 +16,9 @@ public class ObjectStorageProperties {
     private boolean enabled;
     private StorageType type = StorageType.MINIO;
     private String bucket;
-    private Minio minio = new Minio();
+    private S3Compatible s3 = new S3Compatible();
     private Oss oss = new Oss();
     private Qiniu qiniu = new Qiniu();
-    private R2 r2 = new R2();
     private Sync sync = new Sync();
     private Upload upload = new Upload();
     private Delete delete = new Delete();
@@ -45,10 +44,10 @@ public class ObjectStorageProperties {
 
     @Getter
     @Setter
-    public static class Minio {
+    public static class S3Compatible {
         private String endpoint;
-        private String accessKey;
-        private String secretKey;
+        private String accessKeyId;
+        private String secretAccessKey;
     }
 
     @Getter
@@ -66,14 +65,6 @@ public class ObjectStorageProperties {
         private String secretKey;
         private String domain;
         private boolean useHttps = true;
-    }
-
-    @Getter
-    @Setter
-    public static class R2 {
-        private String endpoint;
-        private String accessKeyId;
-        private String secretAccessKey;
     }
 
     @Getter

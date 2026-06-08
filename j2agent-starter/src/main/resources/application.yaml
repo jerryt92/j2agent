@@ -103,10 +103,10 @@ j2agent:
         max-attempts: 20
         initial-delay-seconds: 10
         max-delay-seconds: 300
-    minio:
+    s3:
       endpoint: http://127.0.0.1:19000
-      access-key: minioadmin
-      secret-key: j2apassword@2026#
+      access-key-id: minioadmin
+      secret-access-key: j2apassword@2026#
     oss:
       endpoint: ${OSS_ENDPOINT:}
       access-key-id: ${OSS_ACCESS_KEY_ID:}
@@ -116,10 +116,6 @@ j2agent:
       secret-key: ${QINIU_SECRET_KEY:}
       domain: ${QINIU_DOMAIN:}
       use-https: true
-    r2:
-      endpoint: ${R2_ENDPOINT:}
-      access-key-id: ${R2_ACCESS_KEY_ID:}
-      secret-access-key: ${R2_SECRET_ACCESS_KEY:}
     sync:
       retention-days: 7
       cleanup-cron: "0 30 2 * * *"

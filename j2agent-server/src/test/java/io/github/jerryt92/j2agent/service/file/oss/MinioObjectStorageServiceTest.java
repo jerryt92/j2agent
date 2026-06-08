@@ -3,80 +3,92 @@ package io.github.jerryt92.j2agent.service.file.oss;
 import io.github.jerryt92.j2agent.service.file.oss.model.ObjectStoragePage;
 import io.github.jerryt92.j2agent.service.file.oss.provider.MinioObjectStorageService;
 
-import io.minio.ListObjectsArgs;
-import io.minio.MinioClient;
-import io.minio.RemoveObjectArgs;
-import io.minio.Result;
-import io.minio.StatObjectArgs;
-import io.minio.StatObjectResponse;
-import io.minio.messages.Item;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectResponse;
+import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
+import software.amazon.awssdk.services.s3.model.HeadBucketResponse;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.S3Object;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 import java.time.Instant;
-import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class MinioObjectStorageServiceTest {
-    private static final ZonedDateTime LAST_MODIFIED = ZonedDateTime.ofInstant(Instant.EPOCH, java.time.ZoneOffset.UTC);
+    private static final Instant LAST_MODIFIED = Instant.EPOCH;
+
+    private S3Client s3Client;
+    private S3Presigner presigner;
+    private MinioObjectStorageService service;
+
+    @BeforeEach
+    void setUp() {
+        s3Client = mock(S3Client.class);
+        presigner = mock(S3Presigner.class);
+        when(s3Client.headBucket(any(HeadBucketRequest.class)))
+                .thenReturn(HeadBucketResponse.builder().build());
+        service = new MinioObjectStorageService(s3Client, presigner, "bucket");
+    }
 
     @Test
-    void shouldRemoveEmptyParentDirectoryMarkersAfterDeletingNestedObject() throws Exception {
-        MinioClient client = mock(MinioClient.class);
-        MinioObjectStorageService service = new MinioObjectStorageService(client, "bucket");
-
-        when(client.listObjects(any(ListObjectsArgs.class))).thenReturn(List.of());
-        when(client.statObject(any(StatObjectArgs.class))).thenAnswer(invocation -> {
-            StatObjectArgs args = invocation.getArgument(0);
-            if (Set.of("manual/images/", "manual/").contains(args.object())) {
-                return mock(StatObjectResponse.class);
+    void shouldRemoveEmptyParentDirectoryMarkersAfterDeletingNestedObject() {
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenReturn(ListObjectsV2Response.builder().build());
+        when(s3Client.headObject(any(HeadObjectRequest.class))).thenAnswer(invocation -> {
+            HeadObjectRequest request = invocation.getArgument(0);
+            if (Set.of("manual/images/", "manual/").contains(request.key())) {
+                return HeadObjectResponse.builder().build();
             }
-            throw new RuntimeException("unexpected stat: " + args.object());
+            throw NoSuchKeyException.builder().message("not found").build();
         });
-        doNothing().when(client).removeObject(any(RemoveObjectArgs.class));
+        when(s3Client.deleteObject(any(DeleteObjectRequest.class)))
+                .thenReturn(DeleteObjectResponse.builder().build());
 
         service.removeObject("bucket", "manual/images/logo.png");
 
-        ArgumentCaptor<RemoveObjectArgs> captor = ArgumentCaptor.forClass(RemoveObjectArgs.class);
-        verify(client, times(3)).removeObject(captor.capture());
+        ArgumentCaptor<DeleteObjectRequest> captor = ArgumentCaptor.forClass(DeleteObjectRequest.class);
+        verify(s3Client, times(3)).deleteObject(captor.capture());
         assertEquals(
                 List.of("manual/images/logo.png", "manual/images/", "manual/"),
-                captor.getAllValues().stream().map(RemoveObjectArgs::object).toList()
+                captor.getAllValues().stream().map(DeleteObjectRequest::key).toList()
         );
     }
 
     @Test
-    void shouldSkipDirectoryMarkersWhenListingObjects() throws Exception {
-        MinioClient client = mock(MinioClient.class);
-        MinioObjectStorageService service = new MinioObjectStorageService(client, "bucket");
-
-        Item marker = mock(Item.class);
-        when(marker.isDir()).thenReturn(false);
-        when(marker.objectName()).thenReturn("manual/images/");
-        when(marker.etag()).thenReturn("etag");
-        when(marker.size()).thenReturn(0L);
-        when(marker.lastModified()).thenReturn(LAST_MODIFIED);
-
-        Item file = mock(Item.class);
-        when(file.isDir()).thenReturn(false);
-        when(file.objectName()).thenReturn("manual/images/logo.png");
-        when(file.etag()).thenReturn("etag");
-        when(file.size()).thenReturn(10L);
-        when(file.lastModified()).thenReturn(LAST_MODIFIED);
-
-        when(client.listObjects(any(ListObjectsArgs.class))).thenReturn(List.of(
-                new Result<>(marker),
-                new Result<>(file)
-        ));
+    void shouldSkipDirectoryMarkersWhenListingObjects() {
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(ListObjectsV2Response.builder()
+                .contents(
+                        S3Object.builder()
+                                .key("manual/images/")
+                                .eTag("etag")
+                                .size(0L)
+                                .lastModified(LAST_MODIFIED)
+                                .build(),
+                        S3Object.builder()
+                                .key("manual/images/logo.png")
+                                .eTag("etag")
+                                .size(10L)
+                                .lastModified(LAST_MODIFIED)
+                                .build()
+                )
+                .isTruncated(false)
+                .build());
 
         ObjectStoragePage page = service.listObjects("bucket", "", null, 10);
 
@@ -85,30 +97,25 @@ class MinioObjectStorageServiceTest {
     }
 
     @Test
-    void shouldStopCleaningWhenSiblingObjectsRemain() throws Exception {
-        MinioClient client = mock(MinioClient.class);
-        MinioObjectStorageService service = new MinioObjectStorageService(client, "bucket");
-
-        Item marker = mock(Item.class);
-        when(marker.objectName()).thenReturn("manual/images/");
-
-        Item sibling = mock(Item.class);
-        when(sibling.isDir()).thenReturn(false);
-        when(sibling.objectName()).thenReturn("manual/images/thumb.png");
-        when(sibling.etag()).thenReturn("etag");
-        when(sibling.size()).thenReturn(10L);
-        when(sibling.lastModified()).thenReturn(LAST_MODIFIED);
-
-        when(client.listObjects(any(ListObjectsArgs.class))).thenReturn(List.of(
-                new Result<>(marker),
-                new Result<>(sibling)
-        ));
-        doNothing().when(client).removeObject(any(RemoveObjectArgs.class));
+    void shouldStopCleaningWhenSiblingObjectsRemain() {
+        when(s3Client.listObjectsV2(any(ListObjectsV2Request.class))).thenReturn(ListObjectsV2Response.builder()
+                .contents(
+                        S3Object.builder().key("manual/images/").build(),
+                        S3Object.builder()
+                                .key("manual/images/thumb.png")
+                                .eTag("etag")
+                                .size(10L)
+                                .lastModified(LAST_MODIFIED)
+                                .build()
+                )
+                .build());
+        when(s3Client.deleteObject(any(DeleteObjectRequest.class)))
+                .thenReturn(DeleteObjectResponse.builder().build());
 
         service.removeObject("bucket", "manual/images/logo.png");
 
-        ArgumentCaptor<RemoveObjectArgs> captor = ArgumentCaptor.forClass(RemoveObjectArgs.class);
-        verify(client, times(1)).removeObject(captor.capture());
-        assertEquals("manual/images/logo.png", captor.getValue().object());
+        ArgumentCaptor<DeleteObjectRequest> captor = ArgumentCaptor.forClass(DeleteObjectRequest.class);
+        verify(s3Client, times(1)).deleteObject(captor.capture());
+        assertEquals("manual/images/logo.png", captor.getValue().key());
     }
 }

@@ -18,9 +18,9 @@ class ObjectStorageConfigTest {
     @Test
     void shouldCreateMinioService() {
         ObjectStorageProperties properties = baseProperties(ObjectStorageProperties.StorageType.MINIO);
-        properties.getMinio().setEndpoint("http://127.0.0.1:9000");
-        properties.getMinio().setAccessKey("access-key");
-        properties.getMinio().setSecretKey("secret-key");
+        properties.getS3().setEndpoint("http://127.0.0.1:9000");
+        properties.getS3().setAccessKeyId("access-key-id");
+        properties.getS3().setSecretAccessKey("secret-access-key");
 
         assertInstanceOf(MinioObjectStorageService.class, config.objectStorageService(properties));
     }
@@ -50,11 +50,20 @@ class ObjectStorageConfigTest {
     @Test
     void shouldCreateCloudflareR2Service() {
         ObjectStorageProperties properties = baseProperties(ObjectStorageProperties.StorageType.R2);
-        properties.getR2().setEndpoint("https://account-id.r2.cloudflarestorage.com");
-        properties.getR2().setAccessKeyId("access-key");
-        properties.getR2().setSecretAccessKey("secret-key");
+        properties.getS3().setEndpoint("https://account-id.r2.cloudflarestorage.com");
+        properties.getS3().setAccessKeyId("access-key");
+        properties.getS3().setSecretAccessKey("secret-key");
 
         assertInstanceOf(R2ObjectStorageService.class, config.objectStorageService(properties));
+    }
+
+    @Test
+    void shouldRejectMissingSecretAccessKeyForS3Storage() {
+        ObjectStorageProperties properties = baseProperties(ObjectStorageProperties.StorageType.MINIO);
+        properties.getS3().setEndpoint("http://127.0.0.1:9000");
+        properties.getS3().setAccessKeyId("access-key-id");
+
+        assertThrows(IllegalArgumentException.class, () -> config.objectStorageService(properties));
     }
 
     @Test
