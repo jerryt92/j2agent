@@ -31,8 +31,10 @@ import lombok.extern.log4j.Log4j2;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -86,8 +88,14 @@ public class ChatController extends AbstractWebSocketHandler implements ChatApi 
     }
 
     @Override
-    public ResponseEntity<Void> deleteHistoryContext(List<String> contextId, String agentId) {
-        chatContextService.deleteHistoryContext(contextId, agentId);
+    public ResponseEntity<Void> deleteHistoryContext(List<String> contextId, Boolean clearAll, String agentId) {
+        if (Boolean.TRUE.equals(clearAll)) {
+            chatContextService.clearAllHistoryContext(agentId);
+        } else if (contextId == null || contextId.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "context-id is required unless clear-all=true");
+        } else {
+            chatContextService.deleteHistoryContext(contextId, agentId);
+        }
         return ResponseEntity.ok().build();
     }
 

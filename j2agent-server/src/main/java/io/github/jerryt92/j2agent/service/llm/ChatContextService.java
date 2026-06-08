@@ -147,24 +147,63 @@ public class ChatContextService {
         }
         String uid = session.getUserId();
         for (String contextId : contextIds) {
+            deleteOneContextRecord(uid, contextId, agentId);
+        }
+    }
+
+    /**
+     * 清空当前用户历史；可选按 agentId 过滤。运行中的会话跳过，不抛错。
+     */
+    @Transactional(rollbackFor = Throwable.class)
+    public void clearAllHistoryContext(String agentId) {
+        SessionBo session = loginService.getSession();
+        if (session == null) {
+            return;
+        }
+        String uid = session.getUserId();
+        ChatContextRecordExample example = new ChatContextRecordExample();
+        var criteria = example.createCriteria().andUserIdEqualTo(uid);
+        if (StringUtils.hasText(agentId)) {
+            criteria.andAgentIdEqualTo(normalizeAgentId(agentId));
+        }
+        List<ChatContextRecord> rows = chatContextRecordMapper.selectByExample(example);
+        for (ChatContextRecord record : rows) {
+            String contextId = record.getContextId();
+            String aid = record.getAgentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : record.getAgentId();
+            if (activeChatTurnRegistry.isActive(contextId, aid)) {
+                continue;
+            }
             if (StringUtils.hasText(agentId)) {
-                String aid = normalizeAgentId(agentId);
-                ChatContextRecord record = chatContextRecordMapper.selectByPrimaryKey(contextId, aid);
-                if (record != null && uid.equals(record.getUserId())) {
-                    chatMemoryRepository.deleteByConversationId(ConversationIdCodec.format(uid, contextId, aid));
-                }
+                deleteOneContextRecord(uid, contextId, agentId);
             } else {
-                ChatContextRecordExample ex = new ChatContextRecordExample();
-                ex.createCriteria().andContextIdEqualTo(contextId).andUserIdEqualTo(uid);
-                List<ChatContextRecord> rows = chatContextRecordMapper.selectByExample(ex);
-                for (ChatContextRecord r : rows) {
-                    String aid = r.getAgentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : r.getAgentId();
-                    chatMemoryRepository.deleteByConversationId(ConversationIdCodec.format(uid, contextId, aid));
-                }
-                if (rows.isEmpty() || !hasContextRecords(contextId)) {
+                chatMemoryRepository.deleteByConversationId(ConversationIdCodec.format(uid, contextId, aid));
+                if (!hasContextRecords(contextId)) {
                     if (attachmentCleanupService != null) {
                         attachmentCleanupService.deleteByChatContextPrefix(uid, contextId);
                     }
+                }
+            }
+        }
+    }
+
+    private void deleteOneContextRecord(String uid, String contextId, String agentId) {
+        if (StringUtils.hasText(agentId)) {
+            String aid = normalizeAgentId(agentId);
+            ChatContextRecord record = chatContextRecordMapper.selectByPrimaryKey(contextId, aid);
+            if (record != null && uid.equals(record.getUserId())) {
+                chatMemoryRepository.deleteByConversationId(ConversationIdCodec.format(uid, contextId, aid));
+            }
+        } else {
+            ChatContextRecordExample ex = new ChatContextRecordExample();
+            ex.createCriteria().andContextIdEqualTo(contextId).andUserIdEqualTo(uid);
+            List<ChatContextRecord> rows = chatContextRecordMapper.selectByExample(ex);
+            for (ChatContextRecord r : rows) {
+                String aid = r.getAgentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : r.getAgentId();
+                chatMemoryRepository.deleteByConversationId(ConversationIdCodec.format(uid, contextId, aid));
+            }
+            if (rows.isEmpty() || !hasContextRecords(contextId)) {
+                if (attachmentCleanupService != null) {
+                    attachmentCleanupService.deleteByChatContextPrefix(uid, contextId);
                 }
             }
         }
