@@ -14,6 +14,8 @@ import io.github.jerryt92.j2agent.service.file.oss.reconcile.ObjectUploadReconci
 import io.github.jerryt92.j2agent.service.file.oss.util.ObjectKeyUtils;
 
 import io.github.jerryt92.j2agent.mapper.ObjectFileMapper;
+import io.github.jerryt92.j2agent.config.ObjectStorageProperties;
+import io.github.jerryt92.j2agent.controller.FileManagementController;
 import io.github.jerryt92.j2agent.model.po.ObjectFilePo;
 import io.github.jerryt92.j2agent.utils.UUIDv7Utils;
 import org.redisson.api.RLock;
@@ -31,6 +33,7 @@ import java.net.URL;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -52,6 +55,7 @@ public class ObjectFileManagementService {
     private final ObjectDeleteReconcileQueueService deleteReconcileQueueService;
     private final ObjectFileLockService lockService;
     private final ObjectFileReferenceService referenceService;
+    private final ObjectStorageProperties storageProperties;
 
     public ObjectFileManagementService(
             ObjectStorageService storageService,
@@ -59,7 +63,8 @@ public class ObjectFileManagementService {
             ObjectUploadReconcileQueueService reconcileQueueService,
             ObjectDeleteReconcileQueueService deleteReconcileQueueService,
             ObjectFileLockService lockService,
-            ObjectFileReferenceService referenceService
+            ObjectFileReferenceService referenceService,
+            ObjectStorageProperties storageProperties
     ) {
         this.storageService = storageService;
         this.fileMapper = fileMapper;
@@ -67,6 +72,7 @@ public class ObjectFileManagementService {
         this.deleteReconcileQueueService = deleteReconcileQueueService;
         this.lockService = lockService;
         this.referenceService = referenceService;
+        this.storageProperties = storageProperties;
     }
 
     public ObjectFilePage list(String prefix, String keyword, String status, int offset, int limit) {
@@ -182,15 +188,85 @@ public class ObjectFileManagementService {
         } catch (DuplicateKeyException e) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "object already exists", e);
         }
-        PresignedUploadCredential credential = storageService.generatePresignedUploadUrl(
-                bucket,
+        PresignedUploadCredential credential = buildDirectUploadCredential(
                 objectKey,
-                DIRECT_UPLOAD_EXPIRY,
                 contentType,
                 sizeBytes
         );
         reconcileQueueService.scheduleFirst(bucket, objectKey);
         return new DirectUploadInitResult(objectKey, credential);
+    }
+
+    public void writeProxiedDirectUpload(String objectKey, InputStream input, long sizeBytes, String contentType) {
+        withLock(objectKey, () -> {
+            writeProxiedDirectUploadUnderLock(objectKey, input, sizeBytes, contentType);
+            return null;
+        });
+    }
+
+    private void writeProxiedDirectUploadUnderLock(
+            String objectKey,
+            InputStream input,
+            long sizeBytes,
+            String contentType
+    ) {
+        if (input == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "upload body must not be empty");
+        }
+        if (sizeBytes <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Content-Length must be positive");
+        }
+        String bucket = storageService.getDefaultBucket();
+        String hash = ObjectKeyUtils.hash(objectKey);
+        ObjectFilePo po = fileMapper.selectByKey(bucket, hash);
+        if (po == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "file record not found");
+        }
+        if (!UPLOADING.equals(po.getOperationStatus())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "file is not in uploading state: " + po.getOperationStatus()
+            );
+        }
+        if (po.getSizeBytes() != null && po.getSizeBytes() > 0 && po.getSizeBytes() != sizeBytes) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "uploaded size does not match expected size");
+        }
+        try {
+            storageService.putObject(bucket, objectKey, input, sizeBytes, contentType);
+        } catch (Exception e) {
+            fileMapper.updateStatus(bucket, hash, ERROR, message(e), System.currentTimeMillis());
+            throw new ObjectStorageException("Failed to upload " + objectKey, e);
+        }
+    }
+
+    private PresignedUploadCredential buildDirectUploadCredential(
+            String objectKey,
+            String contentType,
+            long sizeBytes
+    ) {
+        if (storageProperties.getChatAttachmentDisplay()
+                == ObjectStorageProperties.ChatAttachmentDisplayMode.DIRECT) {
+            String bucket = storageService.getDefaultBucket();
+            return storageService.generatePresignedUploadUrl(
+                    bucket,
+                    objectKey,
+                    DIRECT_UPLOAD_EXPIRY,
+                    contentType,
+                    sizeBytes
+            );
+        }
+        Map<String, String> headers = new HashMap<>();
+        if (StringUtils.hasText(contentType)) {
+            headers.put("Content-Type", contentType);
+        }
+        return new PresignedUploadCredential(
+                storageService.getProvider(),
+                FileManagementController.stableUploadContentUrl(objectKey),
+                "PUT",
+                Map.copyOf(headers),
+                System.currentTimeMillis() + DIRECT_UPLOAD_EXPIRY.toMillis(),
+                Map.of()
+        );
     }
 
     public UploadReconcileOutcome reconcileDirectUpload(String objectKey) {

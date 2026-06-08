@@ -11,6 +11,7 @@ import io.github.jerryt92.j2agent.service.file.oss.reconcile.ObjectUploadReconci
 import io.github.jerryt92.j2agent.service.file.oss.util.ObjectKeyUtils;
 
 import io.github.jerryt92.j2agent.mapper.ObjectFileMapper;
+import io.github.jerryt92.j2agent.config.ObjectStorageProperties;
 import io.github.jerryt92.j2agent.model.po.ObjectFilePo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,14 +42,18 @@ class ObjectFileManagementServiceTest {
             mock(ObjectDeleteReconcileQueueService.class);
     private final ObjectFileLockService lockService = mock(ObjectFileLockService.class);
     private final ObjectFileReferenceService referenceService = mock(ObjectFileReferenceService.class);
+    private final ObjectStorageProperties storageProperties = new ObjectStorageProperties();
     private ObjectFileManagementService service;
 
     @BeforeEach
     void setUp() {
         RLock lock = mock(RLock.class);
         when(lockService.lock(any())).thenReturn(lock);
+        storageProperties.setChatAttachmentDisplay(
+                ObjectStorageProperties.ChatAttachmentDisplayMode.DIRECT);
         service = new ObjectFileManagementService(
-                storage, mapper, reconcileQueue, deleteReconcileQueue, lockService, referenceService
+                storage, mapper, reconcileQueue, deleteReconcileQueue, lockService, referenceService,
+                storageProperties
         );
     }
 
@@ -160,6 +165,41 @@ class ObjectFileManagementServiceTest {
         assertEquals("PUT", result.credential().method());
         verify(mapper).insert(any(ObjectFilePo.class));
         verify(reconcileQueue).scheduleFirst("bucket", "a.txt");
+    }
+
+    @Test
+    void shouldReturnProxyUploadUrlOnDirectUploadInitWhenDisplayModeIsProxy() {
+        storageProperties.setChatAttachmentDisplay(
+                ObjectStorageProperties.ChatAttachmentDisplayMode.PROXY);
+        when(storage.getDefaultBucket()).thenReturn("bucket");
+        when(storage.getProvider()).thenReturn("MinIO");
+        when(storage.objectExists("bucket", "a.txt")).thenReturn(false);
+
+        var result = service.initDirectUpload("", "a.txt", "text/plain", 1L);
+
+        assertEquals("a.txt", result.objectKey());
+        assertEquals("PUT", result.credential().method());
+        assertTrue(result.credential().uploadUrl().contains("/files/upload/content?object-key="));
+        verify(storage, never()).generatePresignedUploadUrl(
+                any(), any(), any(Duration.class), any(), any(Long.class));
+    }
+
+    @Test
+    void shouldWriteProxiedDirectUploadToStorage() throws Exception {
+        ObjectFilePo uploading = file("a.txt");
+        uploading.setOperationStatus("UPLOADING");
+        uploading.setSizeBytes(5L);
+        when(storage.getDefaultBucket()).thenReturn("bucket");
+        when(mapper.selectByKey("bucket", ObjectKeyUtils.hash("a.txt"))).thenReturn(uploading);
+
+        service.writeProxiedDirectUpload(
+                "a.txt",
+                new java.io.ByteArrayInputStream("hello".getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+                5L,
+                "text/plain"
+        );
+
+        verify(storage).putObject(eq("bucket"), eq("a.txt"), any(), eq(5L), eq("text/plain"));
     }
 
     @Test

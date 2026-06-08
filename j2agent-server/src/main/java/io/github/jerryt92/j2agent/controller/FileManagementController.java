@@ -36,11 +36,14 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
+import jakarta.servlet.http.HttpServletRequest;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -123,6 +126,32 @@ public class FileManagementController implements FileManagementApi {
     public static String stableContentUrl(String objectKey) {
         return "/v1/rest/j2agent/files/content?object-key="
                 + URLEncoder.encode(objectKey, StandardCharsets.UTF_8);
+    }
+
+    public static String stableUploadContentUrl(String objectKey) {
+        return "/v1/rest/j2agent/files/upload/content?object-key="
+                + URLEncoder.encode(objectKey, StandardCharsets.UTF_8);
+    }
+
+    @PutMapping(value = "/v1/rest/j2agent/files/upload/content", consumes = MediaType.ALL_VALUE)
+    public ResponseEntity<Void> uploadContent(
+            @RequestParam("object-key") String objectKey,
+            HttpServletRequest request
+    ) throws IOException {
+        if (!StringUtils.hasText(objectKey)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "object-key is required");
+        }
+        long contentLength = request.getContentLengthLong();
+        if (contentLength <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Content-Length is required");
+        }
+        fileService.writeProxiedDirectUpload(
+                objectKey,
+                request.getInputStream(),
+                contentLength,
+                request.getContentType()
+        );
+        return ResponseEntity.ok().build();
     }
 
     @Override
