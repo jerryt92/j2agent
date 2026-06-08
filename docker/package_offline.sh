@@ -11,7 +11,8 @@
 #
 # 核心特性:
 # - 🏗️ 架构选择: 支持跨平台拉取目标架构镜像 (如 linux/amd64 或 linux/arm64)。
-# - 📋 自动解析: 自动读取 docker-compose 配置文件并提取唯一镜像列表。
+# - 📋 自动解析: 自动读取 docker-compose 配置文件并提取唯一镜像列表；
+#   对含 build 的服务，解析其 Dockerfile 中的 FROM 基镜像（替代本地构建产物镜像名）。
 # - 🎯 灵活选择: 支持按序号选择需要打包的镜像（逗号分隔），或直接回车全选。
 # - ⚡ 本地优先: 可选择跳过全局拉取，优先使用本地已存在的镜像，节省网络与时间。
 # - 💾 多种导出: 支持合并为一个单个 .tar 文件，或按镜像分别导出到一个新建目录。
@@ -91,13 +92,136 @@ esac
 echo -e "✅ 已选择架构: ${GREEN}${PLATFORM}${NC}"
 echo "----------------------------------------"
 
+# 解析 compose：普通服务用 image；含 build 的服务改用 Dockerfile 基镜像
+collect_compose_images() {
+    local compose_file="$1"
+    local compose_dir
+    compose_dir="$(cd "$(dirname "$compose_file")" && pwd)"
+    local compose_abs="${compose_dir}/$(basename "$compose_file")"
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo -e "${YELLOW}⚠️  未找到 python3，无法解析 build 服务 Dockerfile，回退为 config --images。${NC}" >&2
+        docker compose -f "$compose_abs" config --images | sort -u | grep -v "^$"
+        return
+    fi
+
+    python3 - "$compose_abs" "$compose_dir" <<'PY'
+import json
+import os
+import re
+import subprocess
+import sys
+
+compose_file, compose_dir = sys.argv[1], sys.argv[2]
+
+def extract_from_images(dockerfile):
+    images = []
+    seen = set()
+    with open(dockerfile, encoding="utf-8") as handle:
+        for raw in handle:
+            line = raw.split("#", 1)[0].strip()
+            if not re.match(r"(?i)^FROM\s+", line):
+                continue
+            line = re.sub(r"(?i)^FROM\s+", "", line)
+            while re.match(r"^--\S+\s+", line):
+                line = re.sub(r"^--\S+\s+", "", line, count=1)
+            line = re.sub(r"(?i)\s+AS\s+.*", "", line).strip()
+            if not line or line.lower() == "scratch":
+                continue
+            key = line.lower()
+            if key not in seen:
+                seen.add(key)
+                images.append(line)
+    return images
+
+def resolve_dockerfile(build):
+    if isinstance(build, str):
+        context = build if os.path.isabs(build) else os.path.normpath(os.path.join(compose_dir, build))
+        return os.path.join(context, "Dockerfile")
+    context = build.get("context", ".")
+    if not os.path.isabs(context):
+        context = os.path.normpath(os.path.join(compose_dir, context))
+    dockerfile = build.get("dockerfile", "Dockerfile")
+    return os.path.join(context, dockerfile)
+
+config = json.loads(
+    subprocess.run(
+        ["docker", "compose", "-f", compose_file, "config", "--format", "json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+)
+
+build_service_images = set()
+dockerfile_base_images = []
+
+for service in config.get("services", {}).values():
+    build = service.get("build")
+    if not build:
+        continue
+    image = service.get("image")
+    if image:
+        build_service_images.add(image)
+    dockerfile = resolve_dockerfile(build)
+    if not os.path.isfile(dockerfile):
+        print(f"WARN: Dockerfile not found: {dockerfile}", file=sys.stderr)
+        continue
+    dockerfile_base_images.extend(extract_from_images(dockerfile))
+
+all_images = [
+    line.strip()
+    for line in subprocess.run(
+        ["docker", "compose", "-f", compose_file, "config", "--images"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    if line.strip()
+]
+
+final_images = []
+seen = set()
+
+for image in all_images:
+    if image in build_service_images:
+        continue
+    key = image.lower()
+    if key in seen:
+        continue
+    seen.add(key)
+    final_images.append((image, False))
+
+for image in dockerfile_base_images:
+    key = image.lower()
+    if key in seen:
+        continue
+    seen.add(key)
+    final_images.append((image, True))
+
+for image, is_build in final_images:
+    print(f"{image}\t{1 if is_build else 0}")
+PY
+}
+
 # ===========================
 # 2. 读取并列出镜像 (自动去重)
 # ===========================
 echo "🔍 正在读取镜像列表 (自动去重)..."
 
-# 使用 sort -u 进行去重，防止同一个镜像出现多次导致序号混乱
-ALL_IMAGES=($(docker compose -f "$COMPOSE_FILE" config --images | sort -u | grep -v "^$"))
+ALL_IMAGES=()
+ALL_IMAGE_LABELS=()
+while IFS=$'\t' read -r image is_build; do
+    if [ -z "$image" ]; then
+        continue
+    fi
+    ALL_IMAGES+=("$image")
+    if [ "$is_build" = "1" ]; then
+        ALL_IMAGE_LABELS+=("$image (build)")
+    else
+        ALL_IMAGE_LABELS+=("$image")
+    fi
+done < <(collect_compose_images "$COMPOSE_FILE")
 
 if [ ${#ALL_IMAGES[@]} -eq 0 ]; then
     echo -e "${RED}❌ 错误：未能读取到任何镜像列表。${NC}"
@@ -106,8 +230,8 @@ fi
 
 echo -e "${CYAN}📋 发现以下唯一镜像：${NC}"
 i=1
-for img in "${ALL_IMAGES[@]}"; do
-    echo -e "${YELLOW}$i.${NC} $img"
+for label in "${ALL_IMAGE_LABELS[@]}"; do
+    echo -e "${YELLOW}$i.${NC} $label"
     ((i++))
 done
 
@@ -159,10 +283,22 @@ fi
 # ===========================
 # 4. 最终确认与拉取选项
 # ===========================
+image_display_label() {
+    local img="$1"
+    local idx
+    for idx in "${!ALL_IMAGES[@]}"; do
+        if [ "${ALL_IMAGES[$idx]}" = "$img" ]; then
+            echo "${ALL_IMAGE_LABELS[$idx]}"
+            return
+        fi
+    done
+    echo "$img"
+}
+
 echo "----------------------------------------"
 echo -e "${CYAN}📦 准备打包清单:${NC}"
 for img in $TARGET_IMAGES; do
-    echo -e "   - ${GREEN}$img${NC}"
+    echo -e "   - ${GREEN}$(image_display_label "$img")${NC}"
 done
 echo "----------------------------------------"
 
@@ -185,34 +321,35 @@ echo ""
 FINAL_TARGET_IMAGES="" # 用于存放最终确实存在的镜像，防止 save 报错
 
 for img in $TARGET_IMAGES; do
+    img_label="$(image_display_label "$img")"
     if [ "$DO_PULL" = true ]; then
-        echo -e "⏳ [正在拉取] $img ..."
+        echo -e "⏳ [正在拉取] $img_label ..."
         docker pull --platform "$PLATFORM" "$img"
         if [ $? -eq 0 ]; then
             FINAL_TARGET_IMAGES="$FINAL_TARGET_IMAGES $img"
         else
-            echo -e "${RED}❌ 拉取失败: $img，将跳过打包该镜像。${NC}"
+            echo -e "${RED}❌ 拉取失败: $img_label，将跳过打包该镜像。${NC}"
         fi
     else
         # 检查本地是否存在该镜像
         if docker image inspect "$img" > /dev/null 2>&1; then
-            echo -e "${GREEN}✅ 本地已存在: $img${NC}"
+            echo -e "${GREEN}✅ 本地已存在: $img_label${NC}"
             FINAL_TARGET_IMAGES="$FINAL_TARGET_IMAGES $img"
         else
-            echo -e "${YELLOW}⚠️ 本地未找到镜像: $img${NC}"
+            echo -e "${YELLOW}⚠️ 本地未找到镜像: $img_label${NC}"
             read -p "   👉 是否现在拉取该镜像？ (y/n) [默认 y]: " PULL_MISSING
             PULL_MISSING=${PULL_MISSING:-y}
 
             if [[ "$PULL_MISSING" == "y" || "$PULL_MISSING" == "Y" ]]; then
-                echo -e "⏳ [正在拉取] $img ..."
+                echo -e "⏳ [正在拉取] $img_label ..."
                 docker pull --platform "$PLATFORM" "$img"
                 if [ $? -eq 0 ]; then
                     FINAL_TARGET_IMAGES="$FINAL_TARGET_IMAGES $img"
                 else
-                    echo -e "${RED}❌ 拉取失败: $img，将跳过打包该镜像。${NC}"
+                    echo -e "${RED}❌ 拉取失败: $img_label，将跳过打包该镜像。${NC}"
                 fi
             else
-                echo -e "⏩ 已跳过: $img"
+                echo -e "⏩ 已跳过: $img_label"
             fi
         fi
     fi
@@ -234,7 +371,7 @@ echo -e "📦 [正在分别打包] 将把以下镜像分别导出到目录 ${YEL
     for img in $FINAL_TARGET_IMAGES; do
         # 替换镜像名中的 / 和 : 为 _，确保它是合法的文件名
         SAFE_FILENAME=$(echo "$img" | tr '/:' '_').tar
-        echo -e "   ⏳ 正在打包 ${GREEN}$img${NC} -> ${OUTPUT_DIR}/${SAFE_FILENAME}"
+        echo -e "   ⏳ 正在打包 ${GREEN}$(image_display_label "$img")${NC} -> ${OUTPUT_DIR}/${SAFE_FILENAME}"
         docker save -o "${OUTPUT_DIR}/${SAFE_FILENAME}" "$img"
         if [ $? -ne 0 ]; then
             echo -e "${RED}   ❌ 打包失败: $img${NC}"
