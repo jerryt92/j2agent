@@ -9,8 +9,8 @@ import io.github.jerryt92.j2agent.model.KnowledgeRetrieveResponseDto;
 import io.github.jerryt92.j2agent.model.KnowledgeSyncResult;
 import io.github.jerryt92.j2agent.server.api.KnowledgeApi;
 import io.github.jerryt92.j2agent.service.rag.knowledge.KnowledgeService;
+import io.github.jerryt92.j2agent.service.rag.knowledge.repo.KnowledgeRepoMaintenanceCoordinator;
 import io.github.jerryt92.j2agent.service.rag.knowledge.repo.KnowledgeRepoSyncOutcome;
-import io.github.jerryt92.j2agent.service.rag.knowledge.repo.KnowledgeRepoSyncService;
 import io.github.jerryt92.j2agent.service.rag.retrieval.Retriever;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
@@ -36,14 +36,14 @@ public class KnowledgeController implements KnowledgeApi {
 
     private final KnowledgeService knowledgeService;
     private final Retriever retriever;
-    private final KnowledgeRepoSyncService knowledgeRepoSyncService;
+    private final KnowledgeRepoMaintenanceCoordinator maintenanceCoordinator;
 
     public KnowledgeController(KnowledgeService knowledgeService,
                                Retriever retriever,
-                               KnowledgeRepoSyncService knowledgeRepoSyncService) {
+                               KnowledgeRepoMaintenanceCoordinator maintenanceCoordinator) {
         this.knowledgeService = knowledgeService;
         this.retriever = retriever;
-        this.knowledgeRepoSyncService = knowledgeRepoSyncService;
+        this.maintenanceCoordinator = maintenanceCoordinator;
     }
 
     @Override
@@ -59,7 +59,7 @@ public class KnowledgeController implements KnowledgeApi {
     @Override
     public ResponseEntity<KnowledgeSyncResult> syncKnowledge(Boolean fullRebuild) {
         boolean fullRebuildRequested = Boolean.TRUE.equals(fullRebuild);
-        KnowledgeRepoSyncOutcome outcome = knowledgeRepoSyncService.syncNowAndAwait(KNOWLEDGE_SYNC_TIMEOUT, fullRebuildRequested);
+        KnowledgeRepoSyncOutcome outcome = maintenanceCoordinator.syncNowAndAwait(KNOWLEDGE_SYNC_TIMEOUT, fullRebuildRequested);
         KnowledgeSyncResult result = new KnowledgeSyncResult()
                 .success(outcome.succeeded())
                 .message(outcome.message());

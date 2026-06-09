@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * 监听 {@link ProviderConfigChangedEvent}，对应 api_type 的运行时组件热更新。
+ * Embedding 变更由 {@link io.github.jerryt92.j2agent.service.embedding.EmbeddingChangeOrchestrator} 编排。
  */
 @Slf4j
 @Component
@@ -26,11 +27,6 @@ public class ProviderConfigChangedListener {
             String apiType = event.getApiType();
             if (ProviderTypes.API_TYPE_LLM.equals(apiType)) {
                 aiRuntimeReloadService.reloadLlmStack();
-            } else if (ProviderTypes.API_TYPE_EMBEDDING.equals(apiType)) {
-                aiRuntimeReloadService.reloadEmbeddingStack();
-                if (event.isActiveSwitched()) {
-                    aiRuntimeReloadService.initVectorDatabaseAfterEmbeddingActivated();
-                }
             }
         } catch (Exception e) {
             log.error("处理 ProviderConfigChangedEvent 失败: apiType={}", event.getApiType(), e);

@@ -23,6 +23,9 @@ public final class EmbeddingActiveConfig {
     /** Ollama 模型驻留时间（秒） */
     private Integer keepAliveSeconds;
 
+    /** 单次 Embedding API 请求的最大 input 条数；未配置时运行时默认 10 */
+    private Integer embeddingBatchSize;
+
     public String getProviderType() {
         return providerType;
     }
@@ -69,5 +72,13 @@ public final class EmbeddingActiveConfig {
 
     public void setKeepAliveSeconds(Integer keepAliveSeconds) {
         this.keepAliveSeconds = keepAliveSeconds;
+    }
+
+    public Integer getEmbeddingBatchSize() {
+        return embeddingBatchSize;
+    }
+
+    public void setEmbeddingBatchSize(Integer embeddingBatchSize) {
+        this.embeddingBatchSize = embeddingBatchSize;
     }
 }

@@ -11,9 +11,17 @@ public class ProviderConfigChangedEvent {
     /** 是否切换了当前生效项 */
     private final boolean activeSwitched;
 
+    /** Embedding 运行时连接参数是否变化（需 re-probe 与完全重建） */
+    private final boolean embeddingRuntimeChanged;
+
     public ProviderConfigChangedEvent(String apiType, boolean activeSwitched) {
+        this(apiType, activeSwitched, false);
+    }
+
+    public ProviderConfigChangedEvent(String apiType, boolean activeSwitched, boolean embeddingRuntimeChanged) {
         this.apiType = apiType;
         this.activeSwitched = activeSwitched;
+        this.embeddingRuntimeChanged = embeddingRuntimeChanged;
     }
 
     public String getApiType() {
@@ -22,5 +30,9 @@ public class ProviderConfigChangedEvent {
 
     public boolean isActiveSwitched() {
         return activeSwitched;
+    }
+
+    public boolean isEmbeddingRuntimeChanged() {
+        return embeddingRuntimeChanged;
     }
 }

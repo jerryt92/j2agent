@@ -50,12 +50,20 @@ public class EmbeddingService {
     private static final int MAX_LIFE_SECONDS = 300;
     /** Ollama embedding API 路径 */
     private static final String OLLAMA_EMBEDDINGS_PATH = "/api/embed";
+    /** 未配置时的默认 Embedding 批量大小 */
+    public static final int DEFAULT_EMBEDDING_BATCH_SIZE = 10;
+    /** Embedding 批量大小上限 */
+    public static final int MAX_EMBEDDING_BATCH_SIZE = 128;
 
     // 用于标记数据所属嵌入模型/版本
     @Getter
     private String checkEmbeddingHash;
     @Getter
     private Integer dimension;
+    @Getter
+    private volatile Long lastProbeTime;
+    @Getter
+    private volatile String lastProbeError;
     public final EmbeddingModel.EmbeddingsRequest checkEmbeddingsRequest =
             new EmbeddingModel.EmbeddingsRequest().setInput(List.of("test"));
 
@@ -133,9 +141,31 @@ public class EmbeddingService {
      * 启动期探针：用 "test" 输入获取向量维度与哈希，作为知识库一致性校验依据。
      */
     public void init() {
-        // 每次探针前先重置，避免配置失效后继续持有旧维度误导后续流程。
+        probeInternal();
+    }
+
+    /**
+     * 手动或编排触发的探测入口。
+     */
+    public void probe() {
+        probeInternal();
+    }
+
+    private void probeInternal() {
         dimension = null;
         checkEmbeddingHash = null;
+        lastProbeTime = System.currentTimeMillis();
+        lastProbeError = null;
+        if (!hasActiveEmbeddingConfig()) {
+            lastProbeError = "未配置当前 Embedding";
+            log.warn("Init skipped: no active Embedding config.");
+            return;
+        }
+        if (webClient == null) {
+            lastProbeError = "Embedding 客户端未就绪";
+            log.warn("Init skipped: Embedding WebClient unavailable.");
+            return;
+        }
         try {
             EmbeddingModel.EmbeddingsResponse response = embed(checkEmbeddingsRequest);
             if (response != null && !response.getData().isEmpty()) {
@@ -144,17 +174,53 @@ public class EmbeddingService {
                 checkEmbeddingHash = HashUtil.getMessageDigest(
                         Arrays.toString(testEmbed.getEmbeddings()).getBytes(),
                         HashUtil.MdAlgorithm.SHA256);
+                lastProbeError = null;
             } else {
+                lastProbeError = "探测请求未返回向量";
                 log.warn("Init failed: Unable to fetch embedding for test input.");
             }
         } catch (IllegalStateException e) {
-            // 启动期允许 Embedding 未配置，避免阻塞服务启动；实际调用时再按需报错
+            lastProbeError = e.getMessage();
             log.warn("Init skipped: Embedding config unavailable.", e);
-        } catch (WebClientResponseException | WebClientRequestException e) {
+        } catch (WebClientResponseException e) {
+            lastProbeError = "Embedding 服务响应错误: HTTP " + e.getStatusCode().value();
+            log.warn("Init failed: Embedding service unavailable.", e);
+        } catch (WebClientRequestException e) {
+            lastProbeError = "Embedding 服务连接失败: " + e.getMessage();
             log.warn("Init failed: Embedding service unavailable.", e);
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    /**
+     * 供管理端展示的运行时状态。
+     */
+    public EmbeddingRuntimeStatus getRuntimeStatus(boolean fullRebuildRunning) {
+        EmbeddingActiveConfig cfg = activeProviderHolder.getActiveEmbedding();
+        return new EmbeddingRuntimeStatus(
+                isReady(),
+                dimension,
+                checkEmbeddingHash,
+                cfg == null ? null : cfg.getModelName(),
+                cfg == null ? null : cfg.getProviderType(),
+                lastProbeTime,
+                lastProbeError,
+                fullRebuildRunning,
+                resolveEmbeddingBatchSize()
+        );
+    }
+
+    /**
+     * 当前生效 Embedding 配置的批量大小；未配置或无效时默认 10，上限 128。
+     */
+    public int resolveEmbeddingBatchSize() {
+        EmbeddingActiveConfig cfg = activeProviderHolder.getActiveEmbedding();
+        Integer configured = cfg == null ? null : cfg.getEmbeddingBatchSize();
+        if (configured == null || configured <= 0) {
+            return DEFAULT_EMBEDDING_BATCH_SIZE;
+        }
+        return Math.min(configured, MAX_EMBEDDING_BATCH_SIZE);
     }
 
     /**
@@ -222,7 +288,7 @@ public class EmbeddingService {
     private void handleOpenAIEmbeddings(EmbeddingActiveConfig cfg,
                                         EmbeddingModel.EmbeddingsRequest embeddingsRequest,
                                         List<EmbeddingModel.EmbeddingsItem> embeddingsItems) {
-        List<List<String>> partitionInputs = ListUtils.partition(embeddingsRequest.getInput(), 10);
+        List<List<String>> partitionInputs = ListUtils.partition(embeddingsRequest.getInput(), resolveEmbeddingBatchSize());
         for (List<String> partitionInput : partitionInputs) {
             OpenAiApi.EmbeddingRequest<List<String>> openAIEmbeddingsRequest =
                     new OpenAiApi.EmbeddingRequest<>(partitionInput, cfg.getModelName());
@@ -252,7 +318,7 @@ public class EmbeddingService {
     private void handleOllamaEmbeddings(EmbeddingActiveConfig cfg,
                                         EmbeddingModel.EmbeddingsRequest embeddingsRequest,
                                         List<EmbeddingModel.EmbeddingsItem> embeddingsItems) {
-        List<List<String>> partitionedInputs = ListUtils.partition(embeddingsRequest.getInput(), 10);
+        List<List<String>> partitionedInputs = ListUtils.partition(embeddingsRequest.getInput(), resolveEmbeddingBatchSize());
         int keepAliveSeconds = cfg.getKeepAliveSeconds() == null ? 0 : Math.max(cfg.getKeepAliveSeconds(), 0);
         String keepAlive = keepAliveSeconds + "s";
         for (List<String> partitionInput : partitionedInputs) {

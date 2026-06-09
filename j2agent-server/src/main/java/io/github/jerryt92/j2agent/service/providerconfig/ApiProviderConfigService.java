@@ -15,6 +15,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 /**
  * 模型提供商配置 CRUD 与「设为当前」事务。
  *
@@ -25,6 +26,11 @@ import java.util.Map;
 @Service
 @DependsOn("flywayInitializer")
 public class ApiProviderConfigService {
+
+    /** Embedding 批量大小默认值 */
+    private static final int DEFAULT_EMBEDDING_BATCH_SIZE = 10;
+    /** Embedding 批量大小上限 */
+    private static final int MAX_EMBEDDING_BATCH_SIZE = 128;
 
     /** apiKey 脱敏后保留的末尾字符数 */
     private static final int API_KEY_TAIL_VISIBLE = 4;
@@ -78,7 +84,7 @@ public class ApiProviderConfigService {
         po.setApiType(apiType);
         po.setConfigName(configName);
         po.setProviderType(providerType);
-        po.setConfigJson(writeJson(sanitizeConfig(config, providerType)));
+        po.setConfigJson(writeJson(sanitizeConfig(config, apiType, providerType)));
         po.setEnabled(toByte(enabled));
         po.setIsCurrent((byte) 0);
         po.setDescription(description);
@@ -93,7 +99,8 @@ public class ApiProviderConfigService {
             mapper.markCurrent(po.getId(), now);
             po.setIsCurrent((byte) 1);
         }
-        publish(apiType, switched);
+        boolean embeddingRuntimeChanged = isEmbeddingRuntimeChangedOnCreate(apiType, switched);
+        publish(apiType, switched, embeddingRuntimeChanged);
         return toView(po);
     }
 
@@ -112,12 +119,16 @@ public class ApiProviderConfigService {
         validateProvider(apiType, providerType);
         validateConfigName(configName);
 
+        Map<String, Object> oldConfig = readJson(old.getConfigJson());
+        String oldProviderType = old.getProviderType();
+        boolean wasCurrent = byteEquals(old.getIsCurrent(), 1);
+
         Map<String, Object> merged = mergeConfigPreservingApiKey(old, config);
-        merged = sanitizeConfig(merged, providerType);
+        merged = sanitizeConfig(merged, apiType, providerType);
 
         long now = System.currentTimeMillis();
         boolean willDisable = !enabled && byteEquals(old.getEnabled(), 1)
-                && byteEquals(old.getIsCurrent(), 1);
+                && wasCurrent;
         old.setConfigName(configName);
         old.setProviderType(providerType);
         old.setConfigJson(writeJson(merged));
@@ -129,7 +140,9 @@ public class ApiProviderConfigService {
         }
         mapper.updateByPrimaryKey(old);
 
-        publish(apiType, willDisable);
+        boolean embeddingRuntimeChanged = isEmbeddingRuntimeChangedOnUpdate(
+                apiType, wasCurrent, willDisable, oldProviderType, oldConfig, providerType, merged);
+        publish(apiType, willDisable, embeddingRuntimeChanged);
         return toView(old);
     }
 
@@ -143,7 +156,7 @@ public class ApiProviderConfigService {
             throw new IllegalStateException("当前生效配置不可删除，请先切换其他配置为当前");
         }
         mapper.deleteByPrimaryKey(id);
-        publish(po.getApiType(), false);
+        publish(po.getApiType(), false, false);
     }
 
     /**
@@ -160,7 +173,8 @@ public class ApiProviderConfigService {
         mapper.markCurrent(id, now);
         po.setIsCurrent((byte) 1);
         po.setUpdateTime(now);
-        publish(po.getApiType(), true);
+        boolean embeddingRuntimeChanged = ProviderTypes.API_TYPE_EMBEDDING.equals(po.getApiType());
+        publish(po.getApiType(), true, embeddingRuntimeChanged);
         return toView(po);
     }
 
@@ -222,8 +236,50 @@ public class ApiProviderConfigService {
         );
     }
 
-    private void publish(String apiType, boolean activeSwitched) {
-        eventPublisher.publishEvent(new ProviderConfigChangedEvent(apiType, activeSwitched));
+    private void publish(String apiType, boolean activeSwitched, boolean embeddingRuntimeChanged) {
+        eventPublisher.publishEvent(new ProviderConfigChangedEvent(apiType, activeSwitched, embeddingRuntimeChanged));
+    }
+
+    private static boolean isEmbeddingRuntimeChangedOnCreate(String apiType, boolean switchedToCurrent) {
+        return ProviderTypes.API_TYPE_EMBEDDING.equals(apiType) && switchedToCurrent;
+    }
+
+    private static boolean isEmbeddingRuntimeChangedOnUpdate(String apiType,
+                                                             boolean wasCurrent,
+                                                             boolean willDisableCurrent,
+                                                             String oldProviderType,
+                                                             Map<String, Object> oldConfig,
+                                                             String newProviderType,
+                                                             Map<String, Object> newConfig) {
+        if (!ProviderTypes.API_TYPE_EMBEDDING.equals(apiType)) {
+            return false;
+        }
+        if (willDisableCurrent) {
+            return true;
+        }
+        if (!wasCurrent) {
+            return false;
+        }
+        if (!Objects.equals(oldProviderType, newProviderType)) {
+            return true;
+        }
+        return embeddingRuntimeConfigChanged(oldConfig, newConfig);
+    }
+
+    private static boolean embeddingRuntimeConfigChanged(Map<String, Object> oldConfig,
+                                                         Map<String, Object> newConfig) {
+        return !Objects.equals(stringValue(oldConfig, "modelName"), stringValue(newConfig, "modelName"))
+                || !Objects.equals(stringValue(oldConfig, "baseUrl"), stringValue(newConfig, "baseUrl"))
+                || !Objects.equals(stringValue(oldConfig, "embeddingsPath"), stringValue(newConfig, "embeddingsPath"))
+                || !Objects.equals(stringValue(oldConfig, "apiKey"), stringValue(newConfig, "apiKey"));
+    }
+
+    private static String stringValue(Map<String, Object> config, String key) {
+        if (config == null) {
+            return null;
+        }
+        Object value = config.get(key);
+        return value == null ? null : String.valueOf(value);
     }
 
     private ApiProviderConfigPo requirePo(Long id) {
@@ -261,7 +317,7 @@ public class ApiProviderConfigService {
     /**
      * 规范化 config：Ollama 空 contextLength 不写入；非 Ollama 剔除 contextLength；非 Anthropic 剔除 maxTokens。
      */
-    private Map<String, Object> sanitizeConfig(Map<String, Object> config, String providerType) {
+    private Map<String, Object> sanitizeConfig(Map<String, Object> config, String apiType, String providerType) {
         if (config == null) {
             return Collections.emptyMap();
         }
@@ -278,11 +334,33 @@ public class ApiProviderConfigService {
             copy.remove("maxTokens");
         }
         sanitizeThinkingFields(copy, providerType);
+        if (ProviderTypes.API_TYPE_EMBEDDING.equals(apiType)) {
+            sanitizeEmbeddingBatchSize(copy);
+        } else {
+            copy.remove("embeddingBatchSize");
+        }
         copy.remove("useRag");
         copy.remove("useTools");
         copy.remove("useMcpTools");
         copy.remove("chatMemoryDualRead");
         return copy;
+    }
+
+    /**
+     * 规范化 Embedding 批量大小：无效值剔除，有效值 clamp 到 1–128。
+     */
+    private static void sanitizeEmbeddingBatchSize(Map<String, Object> copy) {
+        Integer batchSize = readPositiveInteger(copy, "embeddingBatchSize");
+        if (batchSize == null) {
+            copy.remove("embeddingBatchSize");
+            return;
+        }
+        int clamped = Math.min(Math.max(batchSize, 1), MAX_EMBEDDING_BATCH_SIZE);
+        if (clamped == DEFAULT_EMBEDDING_BATCH_SIZE) {
+            copy.remove("embeddingBatchSize");
+        } else {
+            copy.put("embeddingBatchSize", clamped);
+        }
     }
 
     /**

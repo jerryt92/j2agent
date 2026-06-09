@@ -103,6 +103,19 @@ public class KnowledgeRepoMetadataService {
         return !collectionByPrefixDir.isEmpty();
     }
 
+    /**
+     * 当前 info.json 配置中声明的全部 Milvus collection 名（去重）。
+     */
+    public Set<String> listConfiguredCollectionNames() {
+        LinkedHashSet<String> names = new LinkedHashSet<>();
+        for (String collection : collectionByPrefixDir.values()) {
+            if (StringUtils.isNotBlank(collection)) {
+                names.add(collection.trim());
+            }
+        }
+        return Collections.unmodifiableSet(names);
+    }
+
     private void clearMetadata() {
         collectionByPrefixDir = Map.of();
         infoJsonHashByPrefixDir = Map.of();

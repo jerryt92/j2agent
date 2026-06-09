@@ -1,12 +1,12 @@
 package io.github.jerryt92.j2agent.service;
 
 import io.github.jerryt92.j2agent.config.ReloadableRoutingChatModel;
-import io.github.jerryt92.j2agent.config.VectorDatabaseInit;
 import io.github.jerryt92.j2agent.service.embedding.EmbeddingService;
 import io.github.jerryt92.j2agent.service.llm.mcp.McpRuntimeProperties;
 import io.github.jerryt92.j2agent.service.providerconfig.ActiveProviderHolder;
 import io.github.jerryt92.j2agent.service.providerconfig.EmbeddingActiveConfig;
 import io.github.jerryt92.j2agent.service.providerconfig.LlmActiveConfig;
+import io.github.jerryt92.j2agent.service.rag.knowledge.repo.KnowledgeRepoMaintenanceCoordinator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
@@ -23,18 +23,18 @@ public class AiRuntimeReloadService {
     private final ActiveProviderHolder activeProviderHolder;
     private final ReloadableRoutingChatModel reloadableRoutingChatModel;
     private final EmbeddingService embeddingService;
-    private final VectorDatabaseInit vectorDatabaseInit;
+    private final KnowledgeRepoMaintenanceCoordinator maintenanceCoordinator;
     private final McpRuntimeProperties mcpRuntimeProperties;
 
     public AiRuntimeReloadService(ActiveProviderHolder activeProviderHolder,
                                   ReloadableRoutingChatModel reloadableRoutingChatModel,
                                   EmbeddingService embeddingService,
-                                  VectorDatabaseInit vectorDatabaseInit,
+                                  KnowledgeRepoMaintenanceCoordinator maintenanceCoordinator,
                                   McpRuntimeProperties mcpRuntimeProperties) {
         this.activeProviderHolder = activeProviderHolder;
         this.reloadableRoutingChatModel = reloadableRoutingChatModel;
         this.embeddingService = embeddingService;
-        this.vectorDatabaseInit = vectorDatabaseInit;
+        this.maintenanceCoordinator = maintenanceCoordinator;
         this.mcpRuntimeProperties = mcpRuntimeProperties;
     }
 
@@ -107,22 +107,22 @@ public class AiRuntimeReloadService {
     }
 
     /**
-     * 强制触发向量库重检并按需重建。
+     * 强制触发向量库重检并按需 configure（不触发知识库 drop）。
      */
     public void reloadVectorDatabase() {
         try {
-            vectorDatabaseInit.reload();
+            maintenanceCoordinator.requestVectorDatabaseReloadCheck();
         } catch (Exception e) {
             log.error("Vector database reload failed.", e);
         }
     }
 
     /**
-     * 当用户切换当前 Embedding 配置时，立即触发异步初始化流程。
+     * 当用户切换当前 Embedding 配置时，触发 probe（完全重建由 EmbeddingChangeOrchestrator 编排）。
      */
     public void initVectorDatabaseAfterEmbeddingActivated() {
         try {
-            vectorDatabaseInit.init();
+            maintenanceCoordinator.requestProbeOnly();
         } catch (Exception e) {
             log.error("Vector database init after embedding activation failed.", e);
         }
