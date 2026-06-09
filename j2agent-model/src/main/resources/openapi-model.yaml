@@ -926,6 +926,39 @@ components:
           description: 新增时是否立即设为当前生效（仅 enabled=true 时生效）
           default: false
 
+    EmbeddingRuntimeStatusDto:
+      type: object
+      description: Embedding 运行时探测状态
+      properties:
+        ready:
+          type: boolean
+          description: 是否已探测成功且可用于知识库写入
+        dimension:
+          type: integer
+          description: 探测到的向量维度
+        checkEmbeddingHash:
+          type: string
+          description: 探针向量 SHA-256，用于标记向量版本
+        modelName:
+          type: string
+          description: 当前生效模型名
+        providerType:
+          type: string
+          description: 当前生效 provider
+        lastProbeTime:
+          type: integer
+          format: int64
+          description: 最近一次探测时间（毫秒）
+        probeError:
+          type: string
+          description: 探测失败时的错误信息
+        fullRebuildRunning:
+          type: boolean
+          description: 知识库 exclusive 完全重建是否进行中
+        embeddingBatchSize:
+          type: integer
+          description: 当前生效的 Embedding API 批量大小（默认 10）
+
     McpToolItem:
       type: object
       properties:

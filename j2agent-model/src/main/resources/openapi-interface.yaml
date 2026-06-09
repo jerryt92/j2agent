@@ -861,6 +861,34 @@ paths:
               schema:
                 $ref: './openapi-model.yaml#/components/schemas/ProviderConfigDto'
 
+  /v1/rest/j2agent/provider-config/embedding/runtime:
+    get:
+      tags: [ ProviderConfig ]
+      summary: 获取 Embedding 运行时状态
+      description: 返回当前生效 Embedding 的探测维度、就绪状态及知识库完全重建进度。
+      operationId: getEmbeddingRuntime
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/EmbeddingRuntimeStatusDto'
+
+  /v1/rest/j2agent/provider-config/embedding/probe:
+    post:
+      tags: [ ProviderConfig ]
+      summary: 重新探测 Embedding 维度
+      description: 按当前生效配置重新调用 Embedding 探针并刷新向量库初始化参数。
+      operationId: probeEmbeddingRuntime
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/EmbeddingRuntimeStatusDto'
+
   /v1/rest/j2agent/mcp/config:
     get:
       tags: [ MCP ]

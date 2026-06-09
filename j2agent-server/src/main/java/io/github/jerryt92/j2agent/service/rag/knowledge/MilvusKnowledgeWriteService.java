@@ -3,6 +3,7 @@ package io.github.jerryt92.j2agent.service.rag.knowledge;
 import io.github.jerryt92.j2agent.model.EmbeddingModel;
 import io.github.jerryt92.j2agent.service.embedding.EmbeddingService;
 import io.github.jerryt92.j2agent.service.rag.knowledge.bo.KnowledgeVectorBo;
+import io.github.jerryt92.j2agent.service.rag.knowledge.repo.KnowledgeRepoSyncGuard;
 import io.github.jerryt92.j2agent.service.rag.knowledge.repo.MarkdownQaParser;
 import io.github.jerryt92.j2agent.service.rag.vdb.VectorDatabaseService;
 import io.github.jerryt92.j2agent.service.rag.vdb.milvus.MilvusSchemaDefinition;
@@ -22,7 +23,6 @@ import java.util.List;
 @Slf4j
 @Service
 public class MilvusKnowledgeWriteService {
-    private static final int EMBEDDING_BATCH_SIZE = 10;
     private static final int MAX_QUESTION_LENGTH = maxLengthOf(MilvusSchemaDefinition.FIELD_QUESTION);
     private static final int MAX_ANSWER_LENGTH = maxLengthOf(MilvusSchemaDefinition.FIELD_ANSWER);
     private static final int MAX_TEXT_LENGTH = maxLengthOf(MilvusSchemaDefinition.FIELD_TEXT);
@@ -35,6 +35,15 @@ public class MilvusKnowledgeWriteService {
     public static class EmbeddingUnavailableException extends RuntimeException {
         public EmbeddingUnavailableException(String message, Throwable cause) {
             super(message, cause);
+        }
+    }
+
+    /**
+     * 同步被协调器 guard 或线程中断终止。
+     */
+    public static class SyncInterruptedException extends RuntimeException {
+        public SyncInterruptedException(String message) {
+            super(message);
         }
     }
 
@@ -53,6 +62,15 @@ public class MilvusKnowledgeWriteService {
                                  String fileSha256,
                                  String collectionTag,
                                  List<String> partitionNames) {
+        return upsertQaSegments(segments, sourceFile, fileSha256, collectionTag, partitionNames, null);
+    }
+
+    public int upsertQaSegments(List<MarkdownQaParser.QaSegment> segments,
+                                 String sourceFile,
+                                 String fileSha256,
+                                 String collectionTag,
+                                 List<String> partitionNames,
+                                 KnowledgeRepoSyncGuard guard) {
         if (segments == null || segments.isEmpty()) {
             return 0;
         }
@@ -63,15 +81,27 @@ public class MilvusKnowledgeWriteService {
             return 0;
         }
         int totalUpserted = 0;
-        List<List<MarkdownQaParser.QaSegment>> batches = ListUtils.partition(validSegments, EMBEDDING_BATCH_SIZE);
+        int batchSize = embeddingService.resolveEmbeddingBatchSize();
+        List<List<MarkdownQaParser.QaSegment>> batches = ListUtils.partition(validSegments, batchSize);
         for (int batchIndex = 0; batchIndex < batches.size(); batchIndex++) {
+            ensureUpsertMayContinue(guard, sourceFile);
             List<MarkdownQaParser.QaSegment> batch = batches.get(batchIndex);
             int batchNumber = batchIndex + 1;
             List<KnowledgeVectorBo> vectors = embedBatch(batch, sourceFile, fileSha256, collectionTag, batchNumber, batches.size());
+            ensureUpsertMayContinue(guard, sourceFile);
             vectorDatabaseService.putData(collectionTag, vectors, partitionNames);
             totalUpserted += vectors.size();
         }
         return totalUpserted;
+    }
+
+    private void ensureUpsertMayContinue(KnowledgeRepoSyncGuard guard, String sourceFile) {
+        if (guard != null && !guard.shouldContinue()) {
+            throw new SyncInterruptedException("知识库向量化被中断: " + sourceFile);
+        }
+        if (Thread.currentThread().isInterrupted()) {
+            throw new SyncInterruptedException("知识库向量化批次被中断: " + sourceFile);
+        }
     }
 
     /**
@@ -190,7 +220,7 @@ public class MilvusKnowledgeWriteService {
     }
 
     /**
-     * 删除指定物理 collection。
+     * 删除指定物理 collection（含 drop 后 absent 等待）。
      */
     public void dropCollection(String collectionName) {
         vectorDatabaseService.dropCollection(collectionName);

@@ -15,6 +15,11 @@ public interface VectorDatabaseService {
     void reBuildVectorDatabase(int dimension, String metricTypeStr);
 
     /**
+     * 当前 Milvus 写入/创建 collection 时期望的 embedding 维度（由 {@link #reBuildVectorDatabase} 同步）。
+     */
+    Integer getExpectedDimension();
+
+    /**
      * 按指定 collection 混合检索（语义向量 + 稀疏向量）。
      */
     default List<EmbeddingModel.EmbeddingsQueryItem> hybridRetrieval(String collectionName,
@@ -103,4 +108,9 @@ public interface VectorDatabaseService {
      * 删除当前 Milvus 实例中的全部 collection。
      */
     void dropAllCollections();
+
+    /**
+     * 重建底层客户端连接，清空 SDK 侧 collection schema 缓存（用于完全重建/维度变更）。
+     */
+    void resetClient();
 }

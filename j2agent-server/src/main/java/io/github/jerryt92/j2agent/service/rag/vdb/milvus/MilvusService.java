@@ -11,9 +11,11 @@ import io.milvus.v2.client.MilvusClientV2;
 import io.milvus.v2.common.IndexParam;
 import io.milvus.v2.service.collection.request.AddFieldReq;
 import io.milvus.v2.service.collection.request.CreateCollectionReq;
+import io.milvus.v2.service.collection.request.DescribeCollectionReq;
 import io.milvus.v2.service.collection.request.DropCollectionReq;
 import io.milvus.v2.service.collection.request.GetLoadStateReq;
 import io.milvus.v2.service.collection.request.HasCollectionReq;
+import io.milvus.v2.service.collection.response.DescribeCollectionResp;
 import io.milvus.v2.service.partition.request.CreatePartitionReq;
 import io.milvus.v2.service.partition.request.HasPartitionReq;
 import io.milvus.v2.service.vector.request.AnnSearchReq;
@@ -39,12 +41,16 @@ import java.util.Map;
 
 @Slf4j
 public class MilvusService implements VectorDatabaseService {
+    private static final int COLLECTION_ABSENT_MAX_ATTEMPTS = 5;
+    private static final long COLLECTION_ABSENT_WAIT_MS = 200L;
+    private static final int SCHEMA_READ_MAX_ATTEMPTS = 5;
+
     private final String clusterEndpoint;
     private final String token;
     private final String schemaConfigPath;
     private IndexParam.MetricType metricType;
     private Integer lastDimension;
-    private MilvusClientV2 client;
+    private volatile MilvusClientV2 client;
 
     public MilvusService(
             String clusterEndpoint,
@@ -61,8 +67,14 @@ public class MilvusService implements VectorDatabaseService {
         metricType = IndexParam.MetricType.valueOf(metricTypeStr);
         lastDimension = dimension;
         initClientIfNeeded();
+        log.info("Milvus 向量库参数已同步: lastDimension={}, metricType={}", lastDimension, metricType);
         // 启动阶段仅初始化连接与参数，不主动创建默认 collection。
         // 真实 collection 在写入时按文件映射按需创建，避免出现不需要的默认集合。
+    }
+
+    @Override
+    public Integer getExpectedDimension() {
+        return lastDimension;
     }
 
     /**
@@ -83,6 +95,7 @@ public class MilvusService implements VectorDatabaseService {
      * 根据统一 schema 定义创建 collection 与索引。
      */
     private void createCollection(String targetCollectionName, int dimension) {
+        log.info("Creating collection {} with embedding dimension={}", targetCollectionName, dimension);
         // 通过统一定义构建 Milvus schema
         CreateCollectionReq.CollectionSchema schema = client.createSchema();
         for (MilvusSchemaDefinition.FieldDef fieldDef : MilvusSchemaConfigLoader.load(schemaConfigPath, dimension)) {
@@ -148,6 +161,7 @@ public class MilvusService implements VectorDatabaseService {
 
         Boolean loaded = client.getLoadState(customSetupLoadStateReq);
         log.info("Collection {} is loaded: {}", targetCollectionName, loaded);
+        assertCollectionSchemaDimension(targetCollectionName, dimension);
     }
 
     /**
@@ -164,8 +178,9 @@ public class MilvusService implements VectorDatabaseService {
     @Override
     public void putData(String targetCollectionName, List<KnowledgeVectorBo> knowledgeVectors, List<String> partitionNames) {
         initClientIfNeeded();
-        createCollectionIfAbsent(targetCollectionName);
+        ensureCollectionReady(targetCollectionName);
         ensurePartitionsExist(targetCollectionName, partitionNames);
+        validateEmbeddingDimensions(targetCollectionName, knowledgeVectors);
         List<JsonObject> milvusData = new ArrayList<>();
         for (KnowledgeVectorBo vectorBo : knowledgeVectors) {
             milvusData.add(Translator.translateToMilvusData(vectorBo));
@@ -227,6 +242,7 @@ public class MilvusService implements VectorDatabaseService {
      * 按指定 collection 进行稠密向量检索。
      */
     private List<EmbeddingModel.EmbeddingsQueryItem> knnRetrieval(String targetCollectionName, float[] queryVector, int topK, List<String> partitionNames) {
+        validateQueryVectorDimension(targetCollectionName, queryVector);
         FloatVec floatVec = new FloatVec(queryVector);
         var searchBuilder = SearchReq.builder()
                 .collectionName(targetCollectionName)
@@ -300,6 +316,154 @@ public class MilvusService implements VectorDatabaseService {
         }
         client.dropCollection(DropCollectionReq.builder().collectionName(targetCollectionName).build());
         log.info("Dropped collection {}", targetCollectionName);
+        waitUntilCollectionAbsent(targetCollectionName);
+    }
+
+    /**
+     * upsert 前校验向量维度与 collection schema，避免 Milvus ParamException。
+     */
+    private void validateEmbeddingDimensions(String targetCollectionName, List<KnowledgeVectorBo> knowledgeVectors) {
+        if (lastDimension == null || knowledgeVectors == null || knowledgeVectors.isEmpty()) {
+            return;
+        }
+        int schemaDimension = requireCollectionEmbeddingDimension(targetCollectionName);
+        if (schemaDimension != lastDimension) {
+            throw new IllegalStateException(
+                    "Milvus collection schema 维度与当前 Embedding 不一致: collection=" + targetCollectionName
+                            + ", schemaDimension=" + schemaDimension + ", expected=" + lastDimension
+                            + "。请触发完全重建。");
+        }
+        for (KnowledgeVectorBo vectorBo : knowledgeVectors) {
+            List<Float> embedding = vectorBo.getEmbedding();
+            if (embedding == null) {
+                continue;
+            }
+            if (embedding.size() != lastDimension) {
+                throw new IllegalStateException(
+                        "向量维度与当前 Embedding 不一致: expected=" + lastDimension + ", actual=" + embedding.size()
+                                + ", collection=" + vectorBo.getCollectionTag()
+                                + ", milvusSchemaDimension=" + schemaDimension);
+            }
+        }
+        log.debug("Upsert 维度校验通过: collection={}, milvusLastDimension={}, schemaDimension={}, vectorBatchSize={}",
+                targetCollectionName, lastDimension, schemaDimension, knowledgeVectors.size());
+    }
+
+    /**
+     * 读取 collection 中 embedding 字段的 schema 维度（带重试）。
+     */
+    private Integer resolveCollectionEmbeddingDimension(String targetCollectionName) {
+        if (targetCollectionName == null || targetCollectionName.isBlank() || !hasCollection(targetCollectionName)) {
+            return null;
+        }
+        for (int attempt = 1; attempt <= SCHEMA_READ_MAX_ATTEMPTS; attempt++) {
+            Integer dimension = readCollectionEmbeddingDimensionOnce(targetCollectionName);
+            if (dimension != null) {
+                return dimension;
+            }
+            sleepQuietly(COLLECTION_ABSENT_WAIT_MS);
+        }
+        return null;
+    }
+
+    private int requireCollectionEmbeddingDimension(String targetCollectionName) {
+        Integer schemaDimension = resolveCollectionEmbeddingDimension(targetCollectionName);
+        if (schemaDimension == null) {
+            throw new IllegalStateException(
+                    "无法读取 collection " + targetCollectionName + " 的 embedding schema 维度，拒绝 upsert/检索");
+        }
+        return schemaDimension;
+    }
+
+    private Integer readCollectionEmbeddingDimensionOnce(String targetCollectionName) {
+        if (targetCollectionName == null || targetCollectionName.isBlank() || !hasCollection(targetCollectionName)) {
+            return null;
+        }
+        DescribeCollectionResp response = client.describeCollection(DescribeCollectionReq.builder()
+                .collectionName(targetCollectionName)
+                .build());
+        CreateCollectionReq.CollectionSchema schema = response.getCollectionSchema();
+        if (schema == null) {
+            return null;
+        }
+        CreateCollectionReq.FieldSchema embeddingField = schema.getField(MilvusSchemaDefinition.FIELD_EMBEDDING);
+        return embeddingField == null ? null : embeddingField.getDimension();
+    }
+
+    /**
+     * 确保 collection 存在且 embedding 字段维度与 {@link #lastDimension} 一致。
+     */
+    private void ensureCollectionReady(String targetCollectionName) {
+        if (lastDimension == null) {
+            throw new IllegalStateException("未初始化向量维度，无法创建 collection: " + targetCollectionName);
+        }
+        if (!hasCollection(targetCollectionName)) {
+            createCollection(targetCollectionName, lastDimension);
+            return;
+        }
+        int schemaDimension = requireCollectionEmbeddingDimension(targetCollectionName);
+        if (schemaDimension == lastDimension) {
+            return;
+        }
+        log.warn("Collection {} schema dimension={} 与当前 Milvus 期望维度={} 不一致，drop 后重建",
+                targetCollectionName, schemaDimension, lastDimension);
+        dropCollection(targetCollectionName);
+        resetClient();
+        createCollection(targetCollectionName, lastDimension);
+    }
+
+    private void assertCollectionSchemaDimension(String targetCollectionName, int expectedDimension) {
+        Integer schemaDimension = resolveCollectionEmbeddingDimension(targetCollectionName);
+        if (schemaDimension == null || schemaDimension != expectedDimension) {
+            dropCollection(targetCollectionName);
+            throw new IllegalStateException(
+                    "Collection " + targetCollectionName + " 创建后 schema 维度=" + schemaDimension
+                            + " 与期望 " + expectedDimension + " 不一致，已 drop");
+        }
+        log.info("Collection {} schema 维度校验通过: milvusLastDimension={}, collectionSchemaDimension={}",
+                targetCollectionName, lastDimension, schemaDimension);
+    }
+
+    private void waitUntilCollectionAbsent(String targetCollectionName) {
+        for (int attempt = 1; attempt <= COLLECTION_ABSENT_MAX_ATTEMPTS; attempt++) {
+            if (!hasCollection(targetCollectionName)) {
+                return;
+            }
+            sleepQuietly(COLLECTION_ABSENT_WAIT_MS);
+        }
+        if (hasCollection(targetCollectionName)) {
+            log.warn("Collection {} drop 后仍存在（已重试 {} 次），可能影响后续 create",
+                    targetCollectionName, COLLECTION_ABSENT_MAX_ATTEMPTS);
+        }
+    }
+
+    private static void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * 检索前校验 query 向量维度与 collection schema / 期望维度一致。
+     */
+    private void validateQueryVectorDimension(String targetCollectionName, float[] queryVector) {
+        if (queryVector == null || queryVector.length == 0) {
+            return;
+        }
+        if (lastDimension != null && queryVector.length != lastDimension) {
+            throw new IllegalStateException(
+                    "检索向量维度与当前 Embedding 不一致: expected=" + lastDimension + ", actual=" + queryVector.length
+                            + ", collection=" + targetCollectionName);
+        }
+        Integer schemaDimension = resolveCollectionEmbeddingDimension(targetCollectionName);
+        if (schemaDimension != null && schemaDimension != queryVector.length) {
+            throw new IllegalStateException(
+                    "检索向量维度与 Milvus collection schema 不一致: collection=" + targetCollectionName
+                            + ", schemaDimension=" + schemaDimension + ", actual=" + queryVector.length
+                            + "。请等待知识库完全重建完成。");
+        }
     }
 
     /**
@@ -308,13 +472,7 @@ public class MilvusService implements VectorDatabaseService {
     @Override
     public void createCollectionIfAbsent(String targetCollectionName) {
         initClientIfNeeded();
-        if (hasCollection(targetCollectionName)) {
-            return;
-        }
-        if (lastDimension == null) {
-            throw new IllegalStateException("未初始化向量维度，无法创建 collection: " + targetCollectionName);
-        }
-        createCollection(targetCollectionName, lastDimension);
+        ensureCollectionReady(targetCollectionName);
     }
 
     /**
@@ -331,11 +489,31 @@ public class MilvusService implements VectorDatabaseService {
      */
     @Override
     public void dropAllCollections() {
-        List<String> collectionNames = listCollections();
+        List<String> collectionNames = new ArrayList<>(listCollections());
+        log.warn("Milvus 全量清理开始，待删除 collection={}", collectionNames);
         for (String collectionName : collectionNames) {
             dropCollection(collectionName);
         }
         log.warn("Milvus 全量清理完成，删除 collection 数量={}", collectionNames.size());
+    }
+
+    @Override
+    public void resetClient() {
+        ConnectConfig connectConfig = ConnectConfig.builder()
+                .uri(clusterEndpoint)
+                .token(token)
+                .build();
+        MilvusClientV2 freshClient = new MilvusClientV2(connectConfig);
+        MilvusClientV2 oldClient = this.client;
+        this.client = freshClient;
+        if (oldClient != null) {
+            try {
+                oldClient.close();
+            } catch (Exception e) {
+                log.warn("关闭旧 Milvus 客户端异常", e);
+            }
+        }
+        log.warn("Milvus 客户端已重建，schema 缓存已清空");
     }
 
     /**
@@ -417,6 +595,7 @@ public class MilvusService implements VectorDatabaseService {
         if (targetCollectionName == null || targetCollectionName.isBlank() || !hasCollection(targetCollectionName)) {
             return Collections.emptyList();
         }
+        validateQueryVectorDimension(targetCollectionName, queryVector);
         float safeDenseWeight = Math.max(denseWeight, 0f);
         float safeSparseWeight = Math.max(sparseWeight, 0f);
         if (safeDenseWeight <= 0f && safeSparseWeight <= 0f) {

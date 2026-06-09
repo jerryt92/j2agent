@@ -3,6 +3,7 @@ package io.github.jerryt92.j2agent.service.rag.vdb.milvus;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import io.milvus.v2.common.DataType;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.core.io.ClassPathResource;
 
@@ -15,6 +16,7 @@ import java.util.List;
 /**
  * Milvus 外置 schema 配置加载器。
  */
+@Slf4j
 public final class MilvusSchemaConfigLoader {
     private MilvusSchemaConfigLoader() {
     }
@@ -38,7 +40,11 @@ public final class MilvusSchemaConfigLoader {
                 JSONObject field = fields.getJSONObject(i);
                 DataType dataType = DataType.valueOf(field.getString("dataType"));
                 Integer fieldDimension = field.getInteger("dimension");
-                if (DataType.FloatVector.equals(dataType) && fieldDimension == null) {
+                if (isDenseVectorType(dataType)) {
+                    if (fieldDimension != null && !fieldDimension.equals(dimension)) {
+                        log.warn("外置 Milvus schema 字段 {} 的 dimension={} 与当前 Embedding 维度 {} 不一致，将使用运行时维度",
+                                field.getString("name"), fieldDimension, dimension);
+                    }
                     fieldDimension = dimension;
                 }
                 defs.add(MilvusSchemaDefinition.FieldDef.builder()
@@ -56,6 +62,13 @@ public final class MilvusSchemaConfigLoader {
         } catch (Exception e) {
             return MilvusSchemaDefinition.defaultFields(dimension);
         }
+    }
+
+    private static boolean isDenseVectorType(DataType dataType) {
+        return DataType.FloatVector.equals(dataType)
+                || DataType.BinaryVector.equals(dataType)
+                || DataType.Float16Vector.equals(dataType)
+                || DataType.BFloat16Vector.equals(dataType);
     }
 
     /**

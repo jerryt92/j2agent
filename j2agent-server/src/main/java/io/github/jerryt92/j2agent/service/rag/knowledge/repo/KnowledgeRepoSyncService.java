@@ -1,16 +1,12 @@
 package io.github.jerryt92.j2agent.service.rag.knowledge.repo;
 
-import io.github.jerryt92.j2agent.config.KnowledgeRepoProperties;
 import io.github.jerryt92.j2agent.config.VectorDatabaseInit;
 import io.github.jerryt92.j2agent.service.embedding.EmbeddingService;
 import io.github.jerryt92.j2agent.service.rag.knowledge.MilvusKnowledgeWriteService;
+import io.github.jerryt92.j2agent.service.rag.vdb.VectorDatabaseService;
 import io.github.jerryt92.j2agent.utils.HashUtil;
-import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.DependsOn;
-import org.springframework.context.event.EventListener;
-import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -24,20 +20,14 @@ import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
 import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
 import java.util.HashMap;
+import java.util.function.Consumer;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.stream.Stream;
 
 /**
@@ -47,9 +37,7 @@ import java.util.stream.Stream;
 @Service
 @DependsOn("flywayInitializer")
 public class KnowledgeRepoSyncService {
-    /**
-     * 文件最新状态对象。
-     */
+
     /**
      * 文件最新状态：含 collection 与可选 Milvus 分区列表。
      */
@@ -57,149 +45,165 @@ public class KnowledgeRepoSyncService {
                              String diffHash) {
     }
 
-    private final KnowledgeRepoProperties properties;
     private final KnowledgeRepoMetadataService metadataService;
     private final KnowledgeRepoHashTreeService hashTreeService;
     private final MarkdownQaParser markdownQaParser;
     private final KnowledgeMarkdownImageRewriter knowledgeMarkdownImageRewriter;
     private final MilvusKnowledgeWriteService milvusKnowledgeWriteService;
-    private final VectorDatabaseInit vectorDatabaseInit;
     private final EmbeddingService embeddingService;
+    private final VectorDatabaseService vectorDatabaseService;
+    private final VectorDatabaseInit vectorDatabaseInit;
     private final KnowledgeRepoHashCache hashCache = new KnowledgeRepoHashCache();
-    private final ExecutorService syncExecutor = Executors.newSingleThreadExecutor();
     private final Set<Path> watchedDirectories = ConcurrentHashMap.newKeySet();
     private WatchService watchService;
+    private volatile Consumer<String> watchSyncTrigger;
 
-    public KnowledgeRepoSyncService(KnowledgeRepoProperties properties,
-                                    KnowledgeRepoMetadataService metadataService,
+    public KnowledgeRepoSyncService(KnowledgeRepoMetadataService metadataService,
                                     KnowledgeRepoHashTreeService hashTreeService,
                                     MarkdownQaParser markdownQaParser,
                                     KnowledgeMarkdownImageRewriter knowledgeMarkdownImageRewriter,
                                     MilvusKnowledgeWriteService milvusKnowledgeWriteService,
-                                    VectorDatabaseInit vectorDatabaseInit,
-                                    EmbeddingService embeddingService) {
-        this.properties = properties;
+                                    EmbeddingService embeddingService,
+                                    VectorDatabaseService vectorDatabaseService,
+                                    VectorDatabaseInit vectorDatabaseInit) {
         this.metadataService = metadataService;
         this.hashTreeService = hashTreeService;
         this.markdownQaParser = markdownQaParser;
         this.knowledgeMarkdownImageRewriter = knowledgeMarkdownImageRewriter;
         this.milvusKnowledgeWriteService = milvusKnowledgeWriteService;
-        this.vectorDatabaseInit = vectorDatabaseInit;
         this.embeddingService = embeddingService;
+        this.vectorDatabaseService = vectorDatabaseService;
+        this.vectorDatabaseInit = vectorDatabaseInit;
     }
 
     /**
-     * 应用启动后初始化本地快照并启动目录监听。
+     * 从 DB 加载 hash 快照到内存。
      */
-    @Order(org.springframework.core.Ordered.LOWEST_PRECEDENCE)
-    @EventListener(ApplicationReadyEvent.class)
-    public void onReady() {
-        if (metadataService.getRepoRootPath() == null) {
-            log.warn("知识库根目录未配置，跳过目录同步");
-            return;
-        }
-        // 与 VectorDatabaseInit 异步任务对齐，避免 Milvus 尚未 reBuild 时写入导致无数据或失败
-        vectorDatabaseInit.awaitInitTask(Duration.ofMinutes(12));
+    public void initializeHashCache() {
         hashCache.replaceAll(hashTreeService.loadSnapshot());
-        syncNowSafely();
-        if (properties.isWatchEnabled()) {
-            startWatch();
-        }
     }
 
     /**
-     * 执行一次同步并记录异常。
+     * 执行增量同步（由协调器在持锁后调用）。
      */
-    private void syncNowSafely() {
-        try {
-            syncNow();
-        } catch (Exception e) {
-            log.error("知识库目录同步失败", e);
-        }
-    }
-
-    /**
-     * 执行一次增量同步。
-     */
-    public void syncNow() {
-        syncExecutor.submit(() -> doSyncAfterVectorDatabaseReady(false));
-    }
-
-    /**
-     * 阻塞等待一次增量同步完成，供管理端手动触发。
-     *
-     * @param timeout 最长等待时间
-     */
-    public KnowledgeRepoSyncOutcome syncNowAndAwait(Duration timeout, boolean fullRebuild) {
-        Path rootPath = metadataService.getRepoRootPath();
-        if (rootPath == null) {
-            return KnowledgeRepoSyncOutcome.fail("知识库根目录未配置");
-        }
-        if (!Files.exists(rootPath)) {
-            return KnowledgeRepoSyncOutcome.fail("知识库根目录不存在: " + rootPath.toAbsolutePath().normalize());
-        }
-        vectorDatabaseInit.awaitInitTask(Duration.ofMinutes(12));
-        try {
-            Future<?> future = syncExecutor.submit(() -> doSyncAfterVectorDatabaseReady(fullRebuild));
-            future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
-            return KnowledgeRepoSyncOutcome.ok();
-        } catch (TimeoutException e) {
-            log.warn("知识库目录同步超时: {} ms", timeout.toMillis());
-            return KnowledgeRepoSyncOutcome.fail("知识库同步超时，请稍后重试");
-        } catch (ExecutionException e) {
-            Throwable cause = e.getCause() != null ? e.getCause() : e;
-            log.error("知识库目录同步失败", cause);
-            return KnowledgeRepoSyncOutcome.fail(cause.getMessage() != null ? cause.getMessage() : "知识库同步失败");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return KnowledgeRepoSyncOutcome.fail("知识库同步被中断");
-        }
-    }
-
-    /**
-     * 等待向量库初始化结束后再执行同步，避免多个启动/监听入口并发写 Milvus。
-     */
-    private void doSyncAfterVectorDatabaseReady(boolean fullRebuild) {
-        vectorDatabaseInit.awaitInitTask(Duration.ofMinutes(12));
-        if (!embeddingService.isReady()) {
-            log.warn("Embedding 当前不可用，本轮知识库同步降级为跳过，等待后续重试");
+    public void executeIncrementalSync(KnowledgeRepoSyncGuard guard) {
+        if (!guard.shouldContinue()) {
             return;
         }
-        doSync(fullRebuild);
-    }
-
-    /**
-     * 核心同步逻辑：扫描、diff、upsert、删除、回写状态。
-     */
-    private void doSync(boolean fullRebuild) {
+        if (!embeddingService.isReady()) {
+            log.warn("Embedding 当前不可用，本轮增量同步跳过");
+            return;
+        }
         Path rootPath = metadataService.getRepoRootPath();
         if (rootPath == null || !Files.exists(rootPath)) {
             return;
         }
         try {
-            if (fullRebuild) {
-                runFullRebuildPreparation();
-            }
-            doSyncBody(rootPath);
+            doSyncBody(rootPath, guard);
         } catch (Exception e) {
-            log.error("知识库同步失败: 根目录={}", rootPath.toAbsolutePath().normalize(), e);
+            log.error("知识库增量同步失败: 根目录={}", rootPath.toAbsolutePath().normalize(), e);
+            throw e;
         }
     }
 
     /**
-     * 完全重建前置步骤：清空 Milvus 全部 collection 与哈希状态。
+     * 执行完全重建：drop 知识库 collection + 清空 hash + 获取当前 Embedding 维度 + 全量 re-embed。
+     *
+     * @return 是否完整执行成功（准备、同步均完成且未被 guard 中断）
      */
-    private void runFullRebuildPreparation() {
-        log.warn("知识库完全重建开始：先删除 Milvus 全部 collection 并清空哈希状态表");
-        milvusKnowledgeWriteService.dropAllCollections();
+    public boolean executeFullRebuild(KnowledgeRepoSyncGuard guard) {
+        Path rootPath = metadataService.getRepoRootPath();
+        if (rootPath == null || !Files.exists(rootPath)) {
+            log.warn("完全重建跳过：知识库根目录不可用");
+            return false;
+        }
+        try {
+            if (!guard.shouldContinue()) {
+                log.info("完全重建在准备阶段被打断");
+                return false;
+            }
+            if (!runFullRebuildPreparation(guard)) {
+                log.warn("完全重建准备未完成");
+                return false;
+            }
+            doSyncBody(rootPath, guard);
+            if (!guard.shouldContinue()) {
+                log.error("完全重建在同步 body 阶段被中断，Milvus/哈希可能处于不完整状态，请再次执行完全重建");
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.error("知识库完全重建失败: 根目录={}", rootPath.toAbsolutePath().normalize(), e);
+            throw e;
+        }
+    }
+
+    private boolean runFullRebuildPreparation(KnowledgeRepoSyncGuard guard) {
+        if (!guard.shouldContinue()) {
+            log.info("完全重建准备被打断");
+            return false;
+        }
+        metadataService.reloadMetadata();
+        Set<String> knowledgeCollections = collectKnowledgeCollectionNames();
+        log.warn("知识库完全重建准备开始：将 drop 知识库绑定 collections={}", knowledgeCollections);
+        dropKnowledgeCollections(knowledgeCollections);
         hashTreeService.deleteAll();
         hashCache.replaceAll(Map.of());
+
+        if (!guard.shouldContinue()) {
+            log.info("完全重建在 drop 后、probe 前被打断");
+            return false;
+        }
+        vectorDatabaseService.resetClient();
+        if (!vectorDatabaseInit.probeAndConfigure()) {
+            log.warn("完全重建准备失败：Embedding 探测未成功, probeError={}",
+                    embeddingService.getLastProbeError());
+            return false;
+        }
+        Integer probeDimension = embeddingService.getDimension();
+        Integer milvusLastDimension = vectorDatabaseService.getExpectedDimension();
+        log.warn("知识库完全重建获取当前 Embedding 维度完成：embeddingProbeDimension={}, milvusLastDimension={}",
+                probeDimension, milvusLastDimension);
+        return true;
+    }
+
+    private Set<String> collectKnowledgeCollectionNames() {
+        LinkedHashSet<String> collectionNames = new LinkedHashSet<>();
+        collectionNames.addAll(metadataService.listConfiguredCollectionNames());
+        collectionNames.addAll(hashTreeService.loadActiveCollectionCounts().keySet());
+        collectionNames.addAll(hashTreeService.loadActiveFileCollections().values());
+        collectionNames.removeIf(name -> name == null || name.isBlank());
+        return collectionNames;
+    }
+
+    private void dropKnowledgeCollections(Set<String> collectionNames) {
+        List<String> collectionsBeforeDrop = vectorDatabaseService.listCollections();
+        log.warn("完全重建 drop 前 Milvus collections={}", collectionsBeforeDrop);
+        for (String collectionName : collectionNames) {
+            milvusKnowledgeWriteService.dropCollection(collectionName);
+        }
+        List<String> collectionsAfterDrop = vectorDatabaseService.listCollections();
+        log.warn("完全重建 drop 后 Milvus collections={}", collectionsAfterDrop);
+        List<String> remainingKnowledgeCollections = collectionNames.stream()
+                .filter(milvusKnowledgeWriteService::hasCollection)
+                .toList();
+        if (!remainingKnowledgeCollections.isEmpty()) {
+            log.error("完全重建 drop 后仍有知识库 collection 残留={}，后续 upsert 可能维度不一致", remainingKnowledgeCollections);
+        }
     }
 
     /**
-     * 同步主流程（便于 doSync 统一捕获异常并打日志）。
+     * 同步主流程（便于统一捕获异常并打日志）。
      */
-    private void doSyncBody(Path rootPath) {
+    private void doSyncBody(Path rootPath, KnowledgeRepoSyncGuard guard) {
+        try {
+            doSyncBodyInternal(rootPath, guard);
+        } catch (MilvusKnowledgeWriteService.SyncInterruptedException e) {
+            log.info("知识库同步被中断: {}", e.getMessage());
+        }
+    }
+
+    private void doSyncBodyInternal(Path rootPath, KnowledgeRepoSyncGuard guard) {
         metadataService.reloadMetadata();
         Map<String, String> previousFileCollectionMap = hashTreeService.loadActiveFileCollections();
         Map<String, Long> previousCollectionCounts = hashTreeService.loadActiveCollectionCounts();
@@ -213,6 +217,10 @@ public class KnowledgeRepoSyncService {
         KnowledgeRepoHashCache.DiffResult diffResult = hashCache.diff(latestSnapshot);
         long now = System.currentTimeMillis();
         for (String deletedPath : diffResult.deleted().stream().sorted().toList()) {
+            if (!guard.shouldContinue()) {
+                log.info("知识库同步在删除文件阶段被中断");
+                return;
+            }
             Path path = resolveAbsolutePath(rootPath, deletedPath);
             String collection = previousFileCollectionMap.get(deletedPath);
             if (collection != null && !collection.isBlank()) {
@@ -221,16 +229,24 @@ public class KnowledgeRepoSyncService {
             hashTreeService.markDeleted(Path.of(deletedPath), now);
         }
         for (String changedPath : orderChangedPaths(rootPath, diffResult.added())) {
-            if (!upsertFile(rootPath, resolveAbsolutePath(rootPath, changedPath), changedPath, latestFileStateMap.get(changedPath), now)) {
+            if (!guard.shouldContinue()) {
+                log.info("知识库同步在新增文件阶段被中断");
+                return;
+            }
+            if (!upsertFile(rootPath, resolveAbsolutePath(rootPath, changedPath), changedPath, latestFileStateMap.get(changedPath), now, guard)) {
                 log.warn("知识库文件跳过并等待后续重试: {}", changedPath);
             }
         }
         for (String changedPath : orderChangedPaths(rootPath, diffResult.modified())) {
+            if (!guard.shouldContinue()) {
+                log.info("知识库同步在修改文件阶段被中断");
+                return;
+            }
             Path path = resolveAbsolutePath(rootPath, changedPath);
             FileState latestState = latestFileStateMap.get(changedPath);
             deleteVectorsForModifiedFile(changedPath, previousFileCollectionMap.get(changedPath),
                     latestState == null ? null : latestState.collectionName());
-            if (!upsertFile(rootPath, path, changedPath, latestFileStateMap.get(changedPath), now)) {
+            if (!upsertFile(rootPath, path, changedPath, latestFileStateMap.get(changedPath), now, guard)) {
                 log.warn("知识库文件跳过并等待后续重试: {}", changedPath);
             }
         }
@@ -241,7 +257,12 @@ public class KnowledgeRepoSyncService {
     /**
      * 将单个文件解析并 upsert 到 Milvus。
      */
-    private boolean upsertFile(Path rootPath, Path filePath, String relativePath, FileState fileState, long scanTime) {
+    private boolean upsertFile(Path rootPath, Path filePath, String relativePath, FileState fileState, long scanTime,
+                               KnowledgeRepoSyncGuard guard) {
+        if (!guard.shouldContinue()) {
+            log.info("知识库文件 upsert 被中断: {}", relativePath);
+            return false;
+        }
         try {
             String documentContent = Files.readString(filePath, StandardCharsets.UTF_8);
             int minHeadingLevel = metadataService.resolveMinHeadingLevel(filePath);
@@ -255,7 +276,7 @@ public class KnowledgeRepoSyncService {
                         relativePath, fileState.collectionName(), minHeadingLevel, filenameAsTitle);
             }
             int upsertedCount = milvusKnowledgeWriteService.upsertQaSegments(
-                    segments, relativePath, fileState.fileSha256(), fileState.collectionName(), fileState.partitionNames());
+                    segments, relativePath, fileState.fileSha256(), fileState.collectionName(), fileState.partitionNames(), guard);
             long fileSizeBytes = Files.size(filePath);
             hashTreeService.upsertActive(
                     Path.of(relativePath),
@@ -268,6 +289,9 @@ public class KnowledgeRepoSyncService {
                     scanTime
             );
             return true;
+        } catch (MilvusKnowledgeWriteService.SyncInterruptedException e) {
+            log.info("知识库文件 upsert 被中断: {}", relativePath);
+            throw e;
         } catch (MilvusKnowledgeWriteService.EmbeddingUnavailableException e) {
             log.warn("知识库向量化降级: sourceFile={}, reason={}", relativePath, e.getMessage());
             return false;
@@ -461,11 +485,15 @@ public class KnowledgeRepoSyncService {
     }
 
     /**
-     * 启动目录变更监听。
+     * 启动目录变更监听；文件变更时调用 {@code onFileChange}（通常为协调器增量同步入口）。
      */
-    private void startWatch() {
+    public void startWatch(Consumer<String> onFileChange) {
+        this.watchSyncTrigger = onFileChange;
         Path rootPath = metadataService.getRepoRootPath();
         if (rootPath == null || !Files.exists(rootPath)) {
+            return;
+        }
+        if (watchService != null) {
             return;
         }
         try {
@@ -490,7 +518,10 @@ public class KnowledgeRepoSyncService {
                         if (event.kind() == StandardWatchEventKinds.ENTRY_CREATE && Files.isDirectory(changedPath)) {
                             registerAllDirectoriesSafely(changedPath);
                         }
-                        syncNowSafely();
+                        Consumer<String> trigger = watchSyncTrigger;
+                        if (trigger != null) {
+                            trigger.accept("watch");
+                        }
                     }
                     if (!key.reset()) {
                         watchedDirectories.remove(watchedDir.toAbsolutePath().normalize());
@@ -542,17 +573,17 @@ public class KnowledgeRepoSyncService {
     }
 
     /**
-     * 释放线程和监听资源。
+     * 释放目录监听资源。
      */
-    @PreDestroy
-    public void destroy() {
-        syncExecutor.shutdownNow();
+    public void shutdownWatch() {
         if (watchService != null) {
             try {
                 watchService.close();
             } catch (IOException ignored) {
                 log.warn("关闭 watchService 失败");
             }
+            watchService = null;
         }
+        watchedDirectories.clear();
     }
 }
