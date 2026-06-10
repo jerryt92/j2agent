@@ -2,7 +2,7 @@ package io.github.jerryt92.j2agent.service.rag.knowledge.repo;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import io.github.jerryt92.j2agent.config.KnowledgeRepoProperties;
+import io.github.jerryt92.j2agent.config.rag.KnowledgeRepoProperties;
 import io.github.jerryt92.j2agent.utils.HashUtil;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;

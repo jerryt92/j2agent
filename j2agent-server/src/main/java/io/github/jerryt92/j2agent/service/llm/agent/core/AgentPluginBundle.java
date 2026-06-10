@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.service.llm.agent.core;
 
-import io.github.jerryt92.j2agent.config.PluginLayout;
+import io.github.jerryt92.j2agent.config.plugin.PluginLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
@@ -81,6 +81,28 @@ public record AgentPluginBundle(File jarFile, File resourcesDir, String label) {
         if (bundle != null) {
             bundles.add(bundle);
         }
+    }
+
+    /**
+     * 解析插件根目录下的 agents 扫描根（与 {@link #discover(String)} 一致）。
+     */
+    public static File resolveAgentsRoot(String pluginPath) {
+        if (!StringUtils.hasText(pluginPath)) {
+            throw new IllegalStateException("Plugin path is not configured");
+        }
+        return resolveAgentScanRoot(new File(pluginPath)).root();
+    }
+
+    /**
+     * 校验并解析单个 Agent 安装目录（恰好 1 个 JAR + resources/）。
+     */
+    public static AgentPluginBundle fromAgentDirectory(File dir) {
+        AgentPluginBundle bundle = discoverSubdirectory(dir, "");
+        if (bundle == null) {
+            throw new IllegalArgumentException(
+                    "Invalid agent package layout in " + dir.getName() + " — require exactly one JAR and resources/");
+        }
+        return bundle;
     }
 
     private static AgentPluginBundle discoverSubdirectory(File dir, String labelPrefix) {

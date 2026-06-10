@@ -352,7 +352,7 @@ public class MilvusService implements VectorDatabaseService {
     /**
      * 读取 collection 中 embedding 字段的 schema 维度（带重试）。
      */
-    private Integer resolveCollectionEmbeddingDimension(String targetCollectionName) {
+    private Integer resolveCollectionEmbeddingDimensionInternal(String targetCollectionName) {
         if (targetCollectionName == null || targetCollectionName.isBlank() || !hasCollection(targetCollectionName)) {
             return null;
         }
@@ -367,7 +367,7 @@ public class MilvusService implements VectorDatabaseService {
     }
 
     private int requireCollectionEmbeddingDimension(String targetCollectionName) {
-        Integer schemaDimension = resolveCollectionEmbeddingDimension(targetCollectionName);
+        Integer schemaDimension = resolveCollectionEmbeddingDimensionInternal(targetCollectionName);
         if (schemaDimension == null) {
             throw new IllegalStateException(
                     "无法读取 collection " + targetCollectionName + " 的 embedding schema 维度，拒绝 upsert/检索");
@@ -413,7 +413,7 @@ public class MilvusService implements VectorDatabaseService {
     }
 
     private void assertCollectionSchemaDimension(String targetCollectionName, int expectedDimension) {
-        Integer schemaDimension = resolveCollectionEmbeddingDimension(targetCollectionName);
+        Integer schemaDimension = resolveCollectionEmbeddingDimensionInternal(targetCollectionName);
         if (schemaDimension == null || schemaDimension != expectedDimension) {
             dropCollection(targetCollectionName);
             throw new IllegalStateException(
@@ -457,7 +457,7 @@ public class MilvusService implements VectorDatabaseService {
                     "检索向量维度与当前 Embedding 不一致: expected=" + lastDimension + ", actual=" + queryVector.length
                             + ", collection=" + targetCollectionName);
         }
-        Integer schemaDimension = resolveCollectionEmbeddingDimension(targetCollectionName);
+        Integer schemaDimension = resolveCollectionEmbeddingDimensionInternal(targetCollectionName);
         if (schemaDimension != null && schemaDimension != queryVector.length) {
             throw new IllegalStateException(
                     "检索向量维度与 Milvus collection schema 不一致: collection=" + targetCollectionName
@@ -495,6 +495,31 @@ public class MilvusService implements VectorDatabaseService {
             dropCollection(collectionName);
         }
         log.warn("Milvus 全量清理完成，删除 collection 数量={}", collectionNames.size());
+    }
+
+    @Override
+    public Integer resolveCollectionEmbeddingDimension(String collectionName) {
+        return resolveCollectionEmbeddingDimensionInternal(collectionName);
+    }
+
+    @Override
+    public String sampleStoredCheckEmbeddingHash(String targetCollectionName) {
+        initClientIfNeeded();
+        if (targetCollectionName == null || targetCollectionName.isBlank() || !hasCollection(targetCollectionName)) {
+            return null;
+        }
+        QueryResp queryResp = client.query(QueryReq.builder()
+                .collectionName(targetCollectionName)
+                .filter(MilvusSchemaDefinition.FIELD_TEXT_CHUNK_ID + " != \"\"")
+                .limit(1)
+                .outputFields(List.of(MilvusSchemaDefinition.FIELD_CHECK_EMBEDDING_HASH))
+                .build());
+        if (queryResp == null || queryResp.getQueryResults() == null || queryResp.getQueryResults().isEmpty()) {
+            return null;
+        }
+        Object hash = queryResp.getQueryResults().getFirst().getEntity()
+                .get(MilvusSchemaDefinition.FIELD_CHECK_EMBEDDING_HASH);
+        return hash == null ? null : String.valueOf(hash);
     }
 
     @Override

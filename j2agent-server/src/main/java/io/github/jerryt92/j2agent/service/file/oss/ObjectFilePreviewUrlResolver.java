@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.service.file.oss;
 
-import io.github.jerryt92.j2agent.config.ObjectStorageProperties;
+import io.github.jerryt92.j2agent.config.storage.ObjectStorageProperties;
 import io.github.jerryt92.j2agent.controller.FileManagementController;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Service;

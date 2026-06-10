@@ -9,8 +9,9 @@ import com.alibaba.cloud.ai.graph.agent.interceptor.Interceptor;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
 import com.alibaba.cloud.ai.graph.skills.SkillMetadata;
 import com.alibaba.fastjson2.JSONObject;
-import io.github.jerryt92.j2agent.config.PluginProperties;
+import io.github.jerryt92.j2agent.config.plugin.PluginProperties;
 import io.github.jerryt92.j2agent.constants.CommonConstants;
+import io.github.jerryt92.j2agent.service.rag.query.DefaultQueryTransformers;
 import io.github.jerryt92.j2agent.service.llm.advisor.EmptyQuerySkippingRetrievalAugmentationAdvisor;
 import io.github.jerryt92.j2agent.service.llm.advisor.ReactCompatibleMessageChatMemoryAdvisor;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunContext;
@@ -34,6 +35,7 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
 import org.springframework.ai.rag.generation.augmentation.ContextualQueryAugmenter;
 import org.springframework.ai.rag.generation.augmentation.QueryAugmenter;
+import org.springframework.ai.rag.preretrieval.query.transformation.QueryTransformer;
 import org.springframework.ai.rag.retrieval.join.DocumentJoiner;
 import org.springframework.ai.rag.retrieval.search.DocumentRetriever;
 import org.springframework.ai.support.ToolCallbacks;
@@ -75,6 +77,10 @@ public abstract class AiAgent {
 
     public int getSort() {
         return 100;
+    }
+
+    public String getLogo() {
+        return "🤖";
     }
 
     /**
@@ -193,6 +199,9 @@ public abstract class AiAgent {
     private org.springframework.beans.factory.ObjectProvider<
             io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentService> chatAttachmentServiceProvider;
 
+    @Autowired(required = false)
+    private DefaultQueryTransformers defaultQueryTransformers;
+
     /**
      * Spring 完成字段注入后再构建底层 {@link Agent}，保证 {@link #chatModel}、{@link #chatMemory} 等已就绪。
      */
@@ -285,6 +294,18 @@ public abstract class AiAgent {
     }
 
     /**
+     * RAG 检索前 Query 预处理链（Multimodal → Compression → Rewrite）。
+     * 子类返回空数组可关闭；默认走 {@link DefaultQueryTransformers}。
+     */
+    protected QueryTransformer[] buildQueryTransformers() {
+        if (defaultQueryTransformers == null) {
+            return new QueryTransformer[0];
+        }
+        return defaultQueryTransformers.build(
+                chatAttachmentServiceProvider.getIfAvailable());
+    }
+
+    /**
      * 如需赋予 Agent 工具能力，请覆盖此方法。
      *
      * @return
@@ -369,8 +390,8 @@ public abstract class AiAgent {
 
     private String resolvePluginPath() {
         PluginProperties effective = resolvePluginProperties();
-        if (effective != null && StringUtils.hasText(effective.getPath())) {
-            return effective.getPath();
+        if (effective != null && StringUtils.hasText(effective.resolvePath())) {
+            return effective.resolvePath();
         }
         return environment != null ? environment.getProperty("j2agent.plugin.path") : null;
     }
@@ -421,11 +442,15 @@ public abstract class AiAgent {
                     .defaultAdvisors(memoryAdvisor)
                     .build();
         } else {
-            RetrievalAugmentationAdvisor ragAdvisor = RetrievalAugmentationAdvisor.builder()
+            var ragAdvisorBuilder = RetrievalAugmentationAdvisor.builder()
                     .documentRetriever(documentRetriever)
                     .documentJoiner(buildOrderPreservingDocumentJoiner())
-                    .queryAugmenter(buildQueryAugmenter())
-                    .build();
+                    .queryAugmenter(buildQueryAugmenter());
+            QueryTransformer[] queryTransformers = buildQueryTransformers();
+            if (queryTransformers.length > 0) {
+                ragAdvisorBuilder.queryTransformers(queryTransformers);
+            }
+            RetrievalAugmentationAdvisor ragAdvisor = ragAdvisorBuilder.build();
             chatClient = ChatClient.builder(chatModel)
                     .defaultAdvisors(memoryAdvisor, EmptyQuerySkippingRetrievalAugmentationAdvisor.wrap(ragAdvisor))
                     .build();

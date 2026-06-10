@@ -1,19 +1,24 @@
 package io.github.jerryt92.j2agent.service.llm.advisor;
 
+import io.github.jerryt92.j2agent.service.rag.query.MultimodalQueryTransformer;
+import io.github.jerryt92.j2agent.service.rag.query.QueryUserMessageSupport;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.api.AdvisorChain;
 import org.springframework.ai.chat.client.advisor.api.BaseAdvisor;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
-import org.springframework.util.StringUtils;
 
 /**
- * 纯图片消息（用户文本为空）时跳过 RAG，避免 {@link org.springframework.ai.rag.Query} 因空 query 抛错。
+ * 无检索输入（无文字且无图片）时跳过 RAG，避免空 query 进入检索链路。
+ * 纯图片消息在交给 {@link RetrievalAugmentationAdvisor} 前注入不可见占位 query 文本（Spring AI {@code Query} 要求 text 非空），
+ * 再由 {@link MultimodalQueryTransformer} 产出真实检索句。
  */
+@Slf4j
 public final class EmptyQuerySkippingRetrievalAugmentationAdvisor implements BaseAdvisor {
 
-    static final String SKIP_RAG_CONTEXT_KEY = "j2agent.skipRag";
+    static final String SKIP_RAG_CONTEXT_KEY = "rag.skip";
 
     private final RetrievalAugmentationAdvisor delegate;
 
@@ -27,10 +32,12 @@ public final class EmptyQuerySkippingRetrievalAugmentationAdvisor implements Bas
 
     @Override
     public ChatClientRequest before(ChatClientRequest request, AdvisorChain chain) {
-        if (!hasUserText(request)) {
+        if (shouldSkipRag(request)) {
+            log.info("query transform: skipped entire retrieval (no text and no image)");
             return request.mutate().context(SKIP_RAG_CONTEXT_KEY, true).build();
         }
-        return delegate.before(request, chain);
+        ChatClientRequest ragReady = QueryUserMessageSupport.patchRequestForImageOnlyRag(request);
+        return delegate.before(ragReady, chain);
     }
 
     @Override
@@ -51,11 +58,14 @@ public final class EmptyQuerySkippingRetrievalAugmentationAdvisor implements Bas
         return delegate.getName();
     }
 
-    private static boolean hasUserText(ChatClientRequest request) {
+    static boolean shouldSkipRag(ChatClientRequest request) {
         if (request == null || request.prompt() == null) {
-            return false;
+            return true;
         }
         UserMessage userMessage = request.prompt().getUserMessage();
-        return userMessage != null && StringUtils.hasText(userMessage.getText());
+        if (userMessage == null) {
+            return true;
+        }
+        return !QueryUserMessageSupport.hasRetrievalInput(userMessage);
     }
 }

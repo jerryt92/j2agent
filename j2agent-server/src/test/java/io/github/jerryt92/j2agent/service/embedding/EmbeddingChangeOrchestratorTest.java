@@ -2,7 +2,7 @@ package io.github.jerryt92.j2agent.service.embedding;
 
 import io.github.jerryt92.j2agent.event.ProviderConfigChangedEvent;
 import io.github.jerryt92.j2agent.service.AiRuntimeReloadService;
-import io.github.jerryt92.j2agent.service.providerconfig.ProviderTypes;
+import io.github.jerryt92.j2agent.config.provider.ProviderTypes;
 import io.github.jerryt92.j2agent.service.rag.knowledge.repo.KnowledgeRepoMaintenanceCoordinator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

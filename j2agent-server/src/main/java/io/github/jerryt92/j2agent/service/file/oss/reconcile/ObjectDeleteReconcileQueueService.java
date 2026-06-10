@@ -1,8 +1,8 @@
 package io.github.jerryt92.j2agent.service.file.oss.reconcile;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.jerryt92.j2agent.config.ObjectStorageProperties;
-import io.github.jerryt92.j2agent.config.RedisKeyNamespaces;
+import io.github.jerryt92.j2agent.config.storage.ObjectStorageProperties;
+import io.github.jerryt92.j2agent.config.redis.RedisKeyNamespaces;
 import io.github.jerryt92.j2agent.service.file.oss.ObjectStorageService;
 import io.github.jerryt92.j2agent.service.file.oss.model.ObjectDeleteReconcileTask;
 import org.redisson.api.RBlockingQueue;

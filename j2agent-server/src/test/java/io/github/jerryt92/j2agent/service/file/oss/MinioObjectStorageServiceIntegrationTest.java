@@ -1,7 +1,7 @@
 package io.github.jerryt92.j2agent.service.file.oss;
 
-import io.github.jerryt92.j2agent.config.ObjectStorageConfig;
-import io.github.jerryt92.j2agent.config.ObjectStorageProperties;
+import io.github.jerryt92.j2agent.config.storage.ObjectStorageConfig;
+import io.github.jerryt92.j2agent.config.storage.ObjectStorageProperties;
 import io.github.jerryt92.j2agent.service.file.oss.model.ObjectStoragePage;
 import io.github.jerryt92.j2agent.service.file.oss.model.PresignedUploadCredential;
 import io.github.jerryt92.j2agent.service.file.oss.provider.MinioObjectStorageService;

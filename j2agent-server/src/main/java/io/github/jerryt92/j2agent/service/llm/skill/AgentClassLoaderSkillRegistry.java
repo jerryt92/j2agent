@@ -3,8 +3,8 @@ package io.github.jerryt92.j2agent.service.llm.skill;
 import com.alibaba.cloud.ai.graph.skills.SkillMetadata;
 import com.alibaba.cloud.ai.graph.skills.registry.AbstractSkillRegistry;
 import com.alibaba.cloud.ai.graph.skills.registry.filesystem.SkillScanner;
-import io.github.jerryt92.j2agent.config.PluginLayout;
-import io.github.jerryt92.j2agent.config.PluginProperties;
+import io.github.jerryt92.j2agent.config.plugin.PluginLayout;
+import io.github.jerryt92.j2agent.config.plugin.PluginProperties;
 import io.github.jerryt92.j2agent.service.llm.agent.inf.feature.ExternalSkills;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -500,8 +500,8 @@ public class AgentClassLoaderSkillRegistry extends AbstractSkillRegistry {
         }
 
         private static String resolvePluginPath(PluginProperties pluginProperties, String pluginPathOverride) {
-            if (pluginProperties != null && StringUtils.hasText(pluginProperties.getPath())) {
-                return pluginProperties.getPath();
+            if (pluginProperties != null && StringUtils.hasText(pluginProperties.resolvePath())) {
+                return pluginProperties.resolvePath();
             }
             return pluginPathOverride;
         }

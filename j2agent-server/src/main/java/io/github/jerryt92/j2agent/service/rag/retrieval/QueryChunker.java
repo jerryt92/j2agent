@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.service.rag.retrieval;
 
-import io.github.jerryt92.j2agent.config.RetrieveProperties;
+import io.github.jerryt92.j2agent.config.rag.RetrieveProperties;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 

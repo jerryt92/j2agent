@@ -69,16 +69,19 @@ public class AgentRouter {
     }
 
     /**
-     * 列出所有已注册智能体（按 agentId 排序），供前端展示卡片。
+     * 列出所有已注册智能体（按 sort、agentId 排序），供前端展示卡片。
      */
     public AgentInfoList listRegisteredAgents() {
         List<AgentInfoDto> items = agents.values().stream()
+                .sorted(Comparator.comparingInt(AiAgent::getSort)
+                        .thenComparing(AiAgent::getAgentId))
                 .map(a -> new AgentInfoDto()
                         .agentId(a.getAgentId())
                         .name(a.getAgentName())
                         .description(a.getAgentDescription())
-                        .showHotQuestions(a.isQaTemplateEnabled()))
-                .sorted(Comparator.comparing(AgentInfoDto::getAgentId))
+                        .showHotQuestions(a.isQaTemplateEnabled())
+                        .sort(a.getSort())
+                        .logo(a.getLogo()))
                 .collect(Collectors.toList());
         return new AgentInfoList().agents(items);
     }

@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.service.llm.agent.core;
 
-import io.github.jerryt92.j2agent.config.PluginProperties;
+import io.github.jerryt92.j2agent.config.plugin.PluginLayout;
 import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeansException;
@@ -20,6 +20,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Repository;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.objenesis.SpringObjenesis;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.File;
@@ -55,6 +56,7 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
     private ApplicationContext applicationContext;
     private final List<DynamicRegistration> dynamicRegistrations = new CopyOnWriteArrayList<>();
     private final Object reloadLock = new Object();
+    private final SpringObjenesis agentIdProbeObjenesis = new SpringObjenesis();
 
     @Override
     public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
@@ -104,7 +106,142 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
                 .filter(StringUtils::hasText)
                 .sorted()
                 .collect(Collectors.toList());
-        return new AgentPluginStatus(jarFiles, loadedAgentIds);
+        List<InstalledPackageInfo> packages = listInstalledPackages();
+        return new AgentPluginStatus(jarFiles, loadedAgentIds, packages);
+    }
+
+    /**
+     * 在 reload 互斥锁下执行安装/删除等文件系统变更，避免与热重载竞态。
+     */
+    public <T> T runExclusive(java.util.concurrent.Callable<T> action) throws Exception {
+        synchronized (reloadLock) {
+            return action.call();
+        }
+    }
+
+    /**
+     * 卸载全部插件 Bean 并关闭其 ClassLoader。
+     * Windows 下 JAR 被 ClassLoader 持有文件锁，删除/替换插件目录前必须先调用本方法释放锁；
+     * 调用方随后应执行 {@code reload()} 重新加载剩余插件。
+     */
+    public void unloadPlugins() {
+        synchronized (reloadLock) {
+            unloadDynamicPlugins();
+        }
+    }
+
+    /**
+     * 列出 agents 目录下已安装插件包及预扫描 agentId。
+     */
+    public List<InstalledPackageInfo> listInstalledPackages() {
+        String pluginPath = resolvePluginPath();
+        if (!StringUtils.hasText(pluginPath)) {
+            return List.of();
+        }
+        File agentsRoot = AgentPluginBundle.resolveAgentsRoot(pluginPath);
+        if (!agentsRoot.isDirectory()) {
+            return List.of();
+        }
+        Set<String> loadedAgentIds = dynamicRegistrations.stream()
+                .map(DynamicRegistration::agentId)
+                .filter(StringUtils::hasText)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        DefaultListableBeanFactory beanFactory = applicationContext != null
+                ? (DefaultListableBeanFactory) applicationContext.getAutowireCapableBeanFactory()
+                : null;
+        List<InstalledPackageInfo> packages = new ArrayList<>();
+        File[] subdirs = agentsRoot.listFiles(File::isDirectory);
+        if (subdirs == null) {
+            return List.of();
+        }
+        for (File dir : subdirs) {
+            if (Set.of(PluginLayout.SKILLS_DIR_NAME, PluginLayout.AGENTS_DIR_NAME).contains(dir.getName())) {
+                continue;
+            }
+            try {
+                AgentPluginBundle bundle = AgentPluginBundle.fromAgentDirectory(dir);
+                List<String> agentIds = scanBundleAgentIds(bundle, beanFactory);
+                boolean loaded = !agentIds.isEmpty() && loadedAgentIds.containsAll(agentIds);
+                packages.add(new InstalledPackageInfo(
+                        dir.getName(),
+                        bundle.jarFile().getName(),
+                        agentIds,
+                        loaded));
+            } catch (IllegalArgumentException ex) {
+                log.debug("Skip invalid agent install directory {}: {}", dir.getName(), ex.getMessage());
+            }
+        }
+        packages.sort(java.util.Comparator.comparing(InstalledPackageInfo::agentDir));
+        return packages;
+    }
+
+    /**
+     * 预扫描 bundle 内具体 {@link AiAgent} 实现类（不注册 Bean）。
+     */
+    public List<Class<?>> scanBundleAgentClasses(AgentPluginBundle bundle) {
+        if (applicationContext == null) {
+            return List.of();
+        }
+        File jarFile = bundle.jarFile();
+        PluginAgentClassLoader scanLoader = null;
+        try (JarFile jar = new JarFile(jarFile)) {
+            scanLoader = new PluginAgentClassLoader(
+                    bundle.toClassLoaderUrls(), applicationContext.getClassLoader());
+            return scanAiAgentClasses(jar, scanLoader);
+        } catch (Exception ex) {
+            log.warn("Failed to scan AiAgent classes for bundle {}: {}", bundle.label(), ex.getMessage());
+            return List.of();
+        } finally {
+            closeQuietly(scanLoader);
+        }
+    }
+
+    /**
+     * 预扫描 bundle 内 AiAgent 的 agentId（不注册 Bean）。
+     */
+    public List<String> scanBundleAgentIds(AgentPluginBundle bundle) {
+        DefaultListableBeanFactory beanFactory = applicationContext != null
+                ? (DefaultListableBeanFactory) applicationContext.getAutowireCapableBeanFactory()
+                : null;
+        return scanBundleAgentIds(bundle, beanFactory);
+    }
+
+    /**
+     * 当前容器内置（非插件）agentId 集合。
+     */
+    public Set<String> getBuiltinAgentIds() {
+        if (applicationContext == null) {
+            return Set.of();
+        }
+        DefaultListableBeanFactory beanFactory =
+                (DefaultListableBeanFactory) applicationContext.getAutowireCapableBeanFactory();
+        return collectBuiltinAgentIds(beanFactory);
+    }
+
+    private List<String> scanBundleAgentIds(AgentPluginBundle bundle, DefaultListableBeanFactory beanFactory) {
+        if (applicationContext == null) {
+            return List.of();
+        }
+        File jarFile = bundle.jarFile();
+        PluginAgentClassLoader scanLoader = null;
+        try (JarFile jar = new JarFile(jarFile)) {
+            scanLoader = new PluginAgentClassLoader(
+                    bundle.toClassLoaderUrls(), applicationContext.getClassLoader());
+            List<String> agentIds = new ArrayList<>();
+            for (Class<?> agentClass : scanAiAgentClasses(jar, scanLoader)) {
+                String agentId = resolveAgentId(agentClass, beanFactory);
+                if (StringUtils.hasText(agentId)) {
+                    agentIds.add(agentId);
+                }
+            }
+            agentIds.sort(String::compareTo);
+            return agentIds;
+        } catch (Exception ex) {
+            log.warn("Failed to scan agentIds for bundle {}: {}", bundle.label(), ex.getMessage());
+            return List.of();
+        } finally {
+            closeQuietly(scanLoader);
+        }
     }
 
     /**
@@ -446,19 +583,37 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
     }
 
     /**
-     * 预扫描 agentId：使用 Spring {@link AutowireCapableBeanFactory#autowire}，不注册 Bean。
+     * 预扫描 agentId：优先 Spring 构造器注入；插件内 Bean 尚未注册时回退到无构造调用（仅读取 getAgentId）。
      */
     private String resolveAgentId(Class<?> clazz, DefaultListableBeanFactory beanFactory) {
-        if (!AiAgent.class.isAssignableFrom(clazz) || beanFactory == null) {
+        if (!AiAgent.class.isAssignableFrom(clazz)) {
             return null;
         }
+        if (beanFactory != null) {
+            try {
+                Object probe = beanFactory.autowire(clazz, AutowireCapableBeanFactory.AUTOWIRE_CONSTRUCTOR, false);
+                if (probe instanceof AiAgent aiAgent) {
+                    return aiAgent.getAgentId();
+                }
+            } catch (Exception ex) {
+                log.debug("Cannot resolve agentId via autowire for {}: {}", clazz.getName(), ex.getMessage());
+            }
+        }
+        return resolveAgentIdWithoutConstruction(clazz);
+    }
+
+    /**
+     * 插件 Agent 常依赖同 JAR 内其它 Bean（如 Retriever），安装预扫描时无法完成构造器注入；
+     * getAgentId() 通常为常量，可无构造实例化后读取。
+     */
+    private String resolveAgentIdWithoutConstruction(Class<?> clazz) {
         try {
-            Object probe = beanFactory.autowire(clazz, AutowireCapableBeanFactory.AUTOWIRE_CONSTRUCTOR, false);
+            Object probe = agentIdProbeObjenesis.newInstance(clazz);
             if (probe instanceof AiAgent aiAgent) {
                 return aiAgent.getAgentId();
             }
         } catch (Exception ex) {
-            log.debug("Cannot resolve agentId for class {}: {}", clazz.getName(), ex.getMessage());
+            log.debug("Cannot resolve agentId without construction for {}: {}", clazz.getName(), ex.getMessage());
         }
         return null;
     }
@@ -468,15 +623,11 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
     }
 
     private String resolvePluginPath() {
-        if (applicationContext != null) {
-            PluginProperties properties = applicationContext.getBean(PluginProperties.class);
-            if (properties != null && StringUtils.hasText(properties.getPath())) {
-                return properties.getPath();
-            }
+        if (applicationContext == null) {
+            return null;
         }
-        return applicationContext != null
-                ? applicationContext.getEnvironment().getProperty("j2agent.plugin.path")
-                : null;
+        // 启动早期 BeanDefinition 注册阶段不 getBean(PluginProperties)，避免过早实例化配置 Bean。
+        return applicationContext.getEnvironment().getProperty("j2agent.plugin.path");
     }
 
     private static List<AgentPluginBundle> listPluginBundles(String pluginPath) {
@@ -604,9 +755,22 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
     }
 
     /**
+     * 已安装插件包信息。
+     */
+    public record InstalledPackageInfo(
+            String agentDir,
+            String jarName,
+            List<String> agentIds,
+            boolean loaded) {
+    }
+
+    /**
      * 插件状态。
      */
-    public record AgentPluginStatus(List<String> jarFiles, List<String> loadedAgentIds) {
+    public record AgentPluginStatus(
+            List<String> jarFiles,
+            List<String> loadedAgentIds,
+            List<InstalledPackageInfo> packages) {
     }
 
     /**

@@ -11,7 +11,7 @@ import io.github.jerryt92.j2agent.service.file.oss.reconcile.ObjectUploadReconci
 import io.github.jerryt92.j2agent.service.file.oss.util.ObjectKeyUtils;
 
 import io.github.jerryt92.j2agent.mapper.ObjectFileMapper;
-import io.github.jerryt92.j2agent.config.ObjectStorageProperties;
+import io.github.jerryt92.j2agent.config.storage.ObjectStorageProperties;
 import io.github.jerryt92.j2agent.model.po.ObjectFilePo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

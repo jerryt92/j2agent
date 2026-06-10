@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.service.rag.knowledge.repo;
 
-import io.github.jerryt92.j2agent.config.RedisKeyNamespaces;
+import io.github.jerryt92.j2agent.config.redis.RedisKeyNamespaces;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

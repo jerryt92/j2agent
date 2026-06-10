@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.service.file.oss;
 
-import io.github.jerryt92.j2agent.config.ObjectStorageProperties;
+import io.github.jerryt92.j2agent.config.storage.ObjectStorageProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

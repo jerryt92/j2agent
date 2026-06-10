@@ -607,6 +607,12 @@ components:
         showHotQuestions:
           type: boolean
           description: 是否在聊天页展示热门问题模板
+        sort:
+          type: integer
+          description: 展示排序权重，越小越靠前
+        logo:
+          type: string
+          description: 列表与聊天页 emoji logo
     AgentInfoList:
       type: object
       properties:
@@ -614,6 +620,24 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AgentInfoDto'
+    AgentPluginPackageDto:
+      type: object
+      description: 已安装的 Agent 插件包
+      properties:
+        agentDir:
+          type: string
+          description: 安装目录名，如 example-agent-1.0.0-SNAPSHOT
+        jarName:
+          type: string
+          description: 包内 JAR 文件名
+        agentIds:
+          type: array
+          items:
+            type: string
+          description: 预扫描得到的插件 agentId 列表
+        loaded:
+          type: boolean
+          description: 是否已在当前 reload 中成功加载
     AgentPluginStatusDto:
       type: object
       description: Agent 插件状态
@@ -628,6 +652,47 @@ components:
           items:
             type: string
           description: 当前已由插件 JAR 加载的 agentId 列表
+        packages:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentPluginPackageDto'
+          description: 已安装插件包列表
+    AgentInstallResult:
+      type: object
+      description: Agent 插件安装结果
+      properties:
+        success:
+          type: boolean
+          description: 是否安装成功
+        message:
+          type: string
+          description: 失败原因（成功时可为空）
+        conflict:
+          type: boolean
+          description: 是否因冲突被拒绝（需用户确认 replace 后重试）
+        conflictingAgentIds:
+          type: array
+          items:
+            type: string
+          description: 与已安装插件冲突的 agentId
+        existingAgentDir:
+          type: string
+          description: 冲突时已存在的安装目录名
+        incomingAgentIds:
+          type: array
+          items:
+            type: string
+          description: 待安装包中的 agentId
+        jarFiles:
+          type: array
+          items:
+            type: string
+          description: 安装后目录下的 JAR 标签列表
+        loadedAgentIds:
+          type: array
+          items:
+            type: string
+          description: 安装重载后由插件加载的 agentId 列表
     AgentReloadResult:
       type: object
       description: Agent 插件 JAR 重载结果

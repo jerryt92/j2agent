@@ -4,7 +4,8 @@ import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
 import com.alibaba.cloud.ai.graph.streaming.OutputType;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
-import io.github.jerryt92.j2agent.config.ChatInputProperties;
+import io.github.jerryt92.j2agent.config.chat.ActiveChatTurnProperties;
+import io.github.jerryt92.j2agent.config.chat.ChatInputProperties;
 import io.github.jerryt92.j2agent.model.AgentEventPhase;
 import io.github.jerryt92.j2agent.model.AgentEventType;
 import io.github.jerryt92.j2agent.model.AgentState;
@@ -56,6 +57,7 @@ public class ChatService {
     private static final String ANONYMOUS_USER = "anonymous";
     private final ChatContextService chatContextService;
     private final ChatInputProperties chatInputProperties;
+    private final ActiveChatTurnProperties activeChatTurnProperties;
     private final ActiveChatTurnRegistry activeChatTurnRegistry;
     static Map<String, ChatCallback<AgentUiEventEnvelope>> contextChatCallbackMap = new HashMap<>();
     private final AgentRouter agentRouter;
@@ -71,6 +73,7 @@ public class ChatService {
                        AgentRouter agentRouter,
                        FollowUpSuggestionService followUpSuggestionService,
                        ChatInputProperties chatInputProperties,
+                       ActiveChatTurnProperties activeChatTurnProperties,
                        ChatMemoryMessageCodec chatMemoryMessageCodec,
                        ActiveChatTurnRegistry activeChatTurnRegistry,
                        ObjectProvider<io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentService>
@@ -79,6 +82,7 @@ public class ChatService {
         this.agentRouter = agentRouter;
         this.followUpSuggestionService = followUpSuggestionService;
         this.chatInputProperties = chatInputProperties;
+        this.activeChatTurnProperties = activeChatTurnProperties;
         this.chatMemoryMessageCodec = chatMemoryMessageCodec;
         this.activeChatTurnRegistry = activeChatTurnRegistry;
         this.chatAttachmentServiceProvider = chatAttachmentServiceProvider;
@@ -103,13 +107,6 @@ public class ChatService {
         final AtomicReference<String> conversationIdRef = new AtomicReference<>(null);
         final AtomicReference<ChatMemory> agentChatMemoryRef = new AtomicReference<>(null);
         Consumer<AgentUiEventEnvelope> originalResponseCall = chatChatCallback.responseCall;
-        Consumer<AgentUiEventEnvelope> recordingResponseCall = envelope -> {
-            turnStepRecorder.record(envelope);
-            if (originalResponseCall != null) {
-                originalResponseCall.accept(envelope);
-            }
-        };
-        chatChatCallback.responseCall = recordingResponseCall;
         Runnable flushTurnTrace = () -> flushTurnTrace(
                 agentChatMemoryRef.get(),
                 conversationIdRef.get(),
@@ -129,6 +126,20 @@ public class ChatService {
             final String resolvedAgentId = aiAgentForConversation.getAgentId();
             resolvedAgentIdRef.set(resolvedAgentId);
             activeChatTurnRegistry.register(contextId, resolvedAgentId);
+            AtomicLong lastHeartbeatTouchMs = new AtomicLong(0L);
+            int heartbeatTouchIntervalMs = activeChatTurnProperties.getHeartbeatTouchIntervalSeconds() * 1000;
+            Consumer<AgentUiEventEnvelope> recordingResponseCall = envelope -> {
+                turnStepRecorder.record(envelope);
+                long now = System.currentTimeMillis();
+                long last = lastHeartbeatTouchMs.get();
+                if (now - last >= heartbeatTouchIntervalMs && lastHeartbeatTouchMs.compareAndSet(last, now)) {
+                    activeChatTurnRegistry.touch(contextId, resolvedAgentId);
+                }
+                if (originalResponseCall != null) {
+                    originalResponseCall.accept(envelope);
+                }
+            };
+            chatChatCallback.responseCall = recordingResponseCall;
             AtomicBoolean activeTurnReleased = new AtomicBoolean(false);
             Runnable releaseActiveTurn = () -> {
                 if (activeTurnReleased.compareAndSet(false, true)) {
@@ -197,6 +208,7 @@ public class ChatService {
             AtomicLong streamStartedAtMs = new AtomicLong(0L);
             chatChatCallback.completeCall = () -> {
                 if (!terminated.compareAndSet(false, true)) {
+                    releaseActiveTurn.run();
                     return;
                 }
                 // 建议追问依赖二次写 WS；任一步失败也必须收尾关连接，否则影响下一轮对话。
@@ -399,37 +411,40 @@ public class ChatService {
                         }
                     }, chatChatCallback.errorCall, chatChatCallback.completeCall);
             chatChatCallback.onWebsocketClose = () -> {
-                // 终态幂等保护：避免 complete/error/close 并发时重复收尾
-                if (!terminated.compareAndSet(false, true)) {
-                    return;
-                }
-                unbindThinkingOverride.run();
-                flushPartialAssistantOnInterrupt(agentChatMemory, turnConversationId, streamedContent,
-                        streamedReasoning, streamedTextLock, interruptAssistantFlushed, true);
-                // 关闭上游流，停止继续接收增量 token
-                if (!disposable.isDisposed()) {
-                    disposable.dispose();
-                }
-                synchronized (turnLock) {
-                    if (stateMachine.getState() != AgentState.COMPLETED
-                            && stateMachine.getState() != AgentState.FAILED
-                            && stateMachine.getState() != AgentState.CANCELLED) {
-                        AgentStateTransition toCancelled = stateMachine.transit(AgentState.CANCELLED, "websocketClosed");
-                        recordingResponseCall.accept(AgentEventBuilder.build(
-                                contextId,
-                                turnId,
-                                seq.getAndIncrement(),
-                                stateMachine.getState(),
-                                toCancelled,
-                                AgentEventPhase.COMPLETE,
-                                AgentEventType.SYSTEM,
-                                Map.of("notice", "cancelled")
-                        ));
+                boolean claimedTermination = terminated.compareAndSet(false, true);
+                try {
+                    if (!claimedTermination) {
+                        return;
                     }
+                    unbindThinkingOverride.run();
+                    flushPartialAssistantOnInterrupt(agentChatMemory, turnConversationId, streamedContent,
+                            streamedReasoning, streamedTextLock, interruptAssistantFlushed, true);
+                    // 关闭上游流，停止继续接收增量 token
+                    if (!disposable.isDisposed()) {
+                        disposable.dispose();
+                    }
+                    synchronized (turnLock) {
+                        if (stateMachine.getState() != AgentState.COMPLETED
+                                && stateMachine.getState() != AgentState.FAILED
+                                && stateMachine.getState() != AgentState.CANCELLED) {
+                            AgentStateTransition toCancelled = stateMachine.transit(AgentState.CANCELLED, "websocketClosed");
+                            recordingResponseCall.accept(AgentEventBuilder.build(
+                                    contextId,
+                                    turnId,
+                                    seq.getAndIncrement(),
+                                    stateMachine.getState(),
+                                    toCancelled,
+                                    AgentEventPhase.COMPLETE,
+                                    AgentEventType.SYSTEM,
+                                    Map.of("notice", "cancelled")
+                            ));
+                        }
+                    }
+                    flushTurnTrace.run();
+                    runOriginalCompleteCall(originalCompleteCall);
+                } finally {
+                    releaseActiveTurn.run();
                 }
-                flushTurnTrace.run();
-                runOriginalCompleteCall(originalCompleteCall);
-                releaseActiveTurn.run();
             };
             log.info("conversationId: {}, ask: {}", turnConversationId, latestUserMessage);
         } catch (Throwable t) {
@@ -467,26 +482,32 @@ public class ChatService {
                                           Runnable afterTerminal,
                                           Runnable releaseActiveTurn) {
         if (!terminated.compareAndSet(false, true)) {
+            if (releaseActiveTurn != null) {
+                releaseActiveTurn.run();
+            }
             return;
         }
-        if (beforeEmit != null) {
-            beforeEmit.run();
-        }
-        Consumer<AgentUiEventEnvelope> responseCall = callback.responseCall;
-        if (responseCall != null) {
-            synchronized (turnLock) {
-                if (stateMachine.getState() != AgentState.FAILED) {
-                    responseCall.accept(AgentEventBuilder.buildTurnFailure(
-                            contextId, turnId, seq.getAndIncrement(), stateMachine, errorCode, cause));
+        try {
+            if (beforeEmit != null) {
+                beforeEmit.run();
+            }
+            Consumer<AgentUiEventEnvelope> responseCall = callback.responseCall;
+            if (responseCall != null) {
+                synchronized (turnLock) {
+                    if (stateMachine.getState() != AgentState.FAILED) {
+                        responseCall.accept(AgentEventBuilder.buildTurnFailure(
+                                contextId, turnId, seq.getAndIncrement(), stateMachine, errorCode, cause));
+                    }
                 }
             }
-        }
-        if (afterTerminal != null) {
-            afterTerminal.run();
-        }
-        runOriginalCompleteCall(originalCompleteCall);
-        if (releaseActiveTurn != null) {
-            releaseActiveTurn.run();
+            if (afterTerminal != null) {
+                afterTerminal.run();
+            }
+            runOriginalCompleteCall(originalCompleteCall);
+        } finally {
+            if (releaseActiveTurn != null) {
+                releaseActiveTurn.run();
+            }
         }
     }
 

@@ -15,7 +15,7 @@ spring:
   web:
     resources:
       # 生产前端由宿主机卷挂载；末尾 / 符合 Spring 6.2+ 资源路径约定
-      static-locations: file:${user.home}/j2agent/volumes/j2agent/ui/
+      static-locations: file:./docker/volumes/j2agent/ui/
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     type: com.alibaba.druid.pool.DruidDataSource
@@ -135,7 +135,7 @@ j2agent:
   knowledge:
     repo:
       # 知识库仓库根目录
-      root-path: ${user.home}/j2agent/volumes/j2agent/knowledge-repo
+      root-path: ./docker/volumes/j2agent/knowledge-repo
       watch-enabled: true
   # 回合结束后是否生成「建议追问」NOTICE（关 WebSocket 前发出）
   follow-up-suggestions:
@@ -145,10 +145,15 @@ j2agent:
     max-item-length: 120
   chat-input:
     max-user-message-length: 32768
+  active-chat-turn:
+    heartbeat-ttl-seconds: 30
+    heartbeat-touch-interval-seconds: 10
+    sweeper-interval-seconds: 60
+    key-fallback-ttl-hours: 24
   retrieve:
     max-embedding-input-chars: 8192
     query-chunk-overlap-chars: 50
     max-query-chunks: 5
   # 智能体插件配置
   plugin:
-    path: ${user.home}/j2agent/volumes/j2agent/plugins
+    path: ./docker/volumes/j2agent/plugins

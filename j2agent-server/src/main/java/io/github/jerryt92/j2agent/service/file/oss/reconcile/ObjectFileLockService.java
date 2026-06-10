@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.service.file.oss.reconcile;
 
-import io.github.jerryt92.j2agent.config.RedisKeyNamespaces;
+import io.github.jerryt92.j2agent.config.redis.RedisKeyNamespaces;
 import io.github.jerryt92.j2agent.service.file.oss.ObjectStorageService;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
