@@ -607,6 +607,12 @@ components:
         showHotQuestions:
           type: boolean
           description: 是否在聊天页展示热门问题模板
+        sort:
+          type: integer
+          description: 展示排序权重，越小越靠前
+        logo:
+          type: string
+          description: 列表与聊天页 emoji logo
     AgentInfoList:
       type: object
       properties:

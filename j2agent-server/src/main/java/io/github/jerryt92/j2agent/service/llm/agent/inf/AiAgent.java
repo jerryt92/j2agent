@@ -77,7 +77,7 @@ public abstract class AiAgent {
         return 100;
     }
 
-    public String getAgentEmoji() {
+    public String getLogo() {
         return "🤖";
     }
 
