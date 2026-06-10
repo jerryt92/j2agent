@@ -4,7 +4,7 @@ import com.alibaba.cloud.ai.graph.NodeOutput;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
 import com.alibaba.cloud.ai.graph.streaming.OutputType;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
-import io.github.jerryt92.j2agent.config.ChatInputProperties;
+import io.github.jerryt92.j2agent.config.chat.ChatInputProperties;
 import io.github.jerryt92.j2agent.model.AgentEventPhase;
 import io.github.jerryt92.j2agent.model.AgentEventType;
 import io.github.jerryt92.j2agent.model.AgentState;

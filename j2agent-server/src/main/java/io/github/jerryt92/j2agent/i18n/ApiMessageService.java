@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.i18n;
 
-import io.github.jerryt92.j2agent.config.ErrorI18n;
+import io.github.jerryt92.j2agent.config.i18n.ErrorI18n;
 import org.springframework.stereotype.Service;
 
 import java.text.MessageFormat;

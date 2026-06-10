@@ -1,9 +1,9 @@
 package io.github.jerryt92.j2agent.service.rag.knowledge.repo;
 
-import io.github.jerryt92.j2agent.config.KnowledgeRepoProperties;
-import io.github.jerryt92.j2agent.config.VectorDatabaseInit;
+import io.github.jerryt92.j2agent.config.rag.KnowledgeRepoProperties;
+import io.github.jerryt92.j2agent.config.rag.VectorDatabaseInit;
 import io.github.jerryt92.j2agent.service.embedding.EmbeddingService;
-import io.github.jerryt92.j2agent.service.providerconfig.ActiveProviderHolder;
+import io.github.jerryt92.j2agent.config.provider.ActiveProviderHolder;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;

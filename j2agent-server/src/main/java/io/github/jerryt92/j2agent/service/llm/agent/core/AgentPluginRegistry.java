@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.service.llm.agent.core;
 
-import io.github.jerryt92.j2agent.config.PluginLayout;
+import io.github.jerryt92.j2agent.config.plugin.PluginLayout;
 import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeansException;

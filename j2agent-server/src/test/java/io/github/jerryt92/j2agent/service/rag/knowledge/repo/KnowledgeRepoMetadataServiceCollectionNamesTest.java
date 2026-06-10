@@ -12,7 +12,7 @@ class KnowledgeRepoMetadataServiceCollectionNamesTest {
     @Test
     void listConfiguredCollectionNames_deduplicatesAndTrims() throws Exception {
         KnowledgeRepoMetadataService service = new KnowledgeRepoMetadataService(
-                new io.github.jerryt92.j2agent.config.KnowledgeRepoProperties());
+                new io.github.jerryt92.j2agent.config.rag.KnowledgeRepoProperties());
         injectCollections(service, " rc_wiki ", "rc_wiki", "other");
 
         Set<String> names = service.listConfiguredCollectionNames();

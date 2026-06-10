@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.service.rag.retrieval;
 
-import io.github.jerryt92.j2agent.rag.AbstractCollectionKbRetriever;
+import io.github.jerryt92.j2agent.service.rag.inf.AbstractCollectionKbRetriever;
 import io.github.jerryt92.j2agent.model.EmbeddingModel;
 import io.github.jerryt92.j2agent.model.KnowledgeRetrieveItemDto;
 import io.github.jerryt92.j2agent.model.Translator;

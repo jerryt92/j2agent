@@ -2,7 +2,7 @@ package io.github.jerryt92.j2agent.service.llm;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
-import io.github.jerryt92.j2agent.config.FollowUpSuggestionProperties;
+import io.github.jerryt92.j2agent.config.chat.FollowUpSuggestionProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.model.ChatModel;

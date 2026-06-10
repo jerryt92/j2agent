@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.service.llm;
 
-import io.github.jerryt92.j2agent.config.RedisKeyNamespaces;
+import io.github.jerryt92.j2agent.config.redis.RedisKeyNamespaces;
 import io.github.jerryt92.j2agent.service.llm.memory.ConversationIdCodec;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RAtomicLong;

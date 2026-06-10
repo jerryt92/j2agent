@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.service.llm.agent.core;
 
-import io.github.jerryt92.j2agent.config.PluginProperties;
+import io.github.jerryt92.j2agent.config.plugin.PluginProperties;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream;

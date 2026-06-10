@@ -9,7 +9,7 @@ import io.github.jerryt92.j2agent.service.file.oss.model.ObjectFilePage;
 import io.github.jerryt92.j2agent.service.file.oss.model.ObjectFileView;
 import io.github.jerryt92.j2agent.service.file.oss.model.PresignedUploadCredential;
 
-import io.github.jerryt92.j2agent.config.annotation.RequiredRole;
+import io.github.jerryt92.j2agent.config.security.RequiredRole;
 import io.github.jerryt92.j2agent.model.ObjectBatchResultDto;
 import io.github.jerryt92.j2agent.model.ObjectFileBatchDeleteRequest;
 import io.github.jerryt92.j2agent.model.ObjectFileItemDto;

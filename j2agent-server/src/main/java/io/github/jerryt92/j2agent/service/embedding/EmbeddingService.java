@@ -1,10 +1,10 @@
 package io.github.jerryt92.j2agent.service.embedding;
 
-import io.github.jerryt92.j2agent.config.RetrieveProperties;
+import io.github.jerryt92.j2agent.config.rag.RetrieveProperties;
 import io.github.jerryt92.j2agent.model.EmbeddingModel;
-import io.github.jerryt92.j2agent.service.providerconfig.ActiveProviderHolder;
-import io.github.jerryt92.j2agent.service.providerconfig.EmbeddingActiveConfig;
-import io.github.jerryt92.j2agent.service.providerconfig.ProviderTypes;
+import io.github.jerryt92.j2agent.config.provider.ActiveProviderHolder;
+import io.github.jerryt92.j2agent.config.provider.EmbeddingActiveConfig;
+import io.github.jerryt92.j2agent.config.provider.ProviderTypes;
 import io.github.jerryt92.j2agent.utils.HashUtil;
 import io.netty.channel.ChannelOption;
 import io.netty.handler.ssl.SslContext;

@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.service.security;
 
-import io.github.jerryt92.j2agent.config.RedisKeyNamespaces;
+import io.github.jerryt92.j2agent.config.redis.RedisKeyNamespaces;
 import io.github.jerryt92.j2agent.constants.ErrorConstants;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;

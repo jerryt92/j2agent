@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.interceptor;
 
-import io.github.jerryt92.j2agent.config.annotation.RequiredRole;
+import io.github.jerryt92.j2agent.config.security.RequiredRole;
 import io.github.jerryt92.j2agent.model.security.SessionBo;
 import io.github.jerryt92.j2agent.service.security.LoginService;
 import jakarta.servlet.http.Cookie;

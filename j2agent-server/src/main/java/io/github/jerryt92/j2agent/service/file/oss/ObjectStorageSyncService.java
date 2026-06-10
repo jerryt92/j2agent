@@ -6,7 +6,7 @@ import io.github.jerryt92.j2agent.service.file.oss.model.ObjectStorageObject;
 import io.github.jerryt92.j2agent.service.file.oss.model.ObjectStoragePage;
 import io.github.jerryt92.j2agent.service.file.oss.util.ObjectKeyUtils;
 
-import io.github.jerryt92.j2agent.config.ObjectStorageTaskConfig;
+import io.github.jerryt92.j2agent.config.storage.ObjectStorageTaskConfig;
 import io.github.jerryt92.j2agent.mapper.ObjectFileMapper;
 import io.github.jerryt92.j2agent.mapper.ObjectStorageSyncDiffMapper;
 import io.github.jerryt92.j2agent.mapper.ObjectStorageSyncTaskMapper;

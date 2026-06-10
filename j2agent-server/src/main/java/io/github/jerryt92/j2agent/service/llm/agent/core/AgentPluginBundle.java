@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.service.llm.agent.core;
 
-import io.github.jerryt92.j2agent.config.PluginLayout;
+import io.github.jerryt92.j2agent.config.plugin.PluginLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;

@@ -1,7 +1,7 @@
 package io.github.jerryt92.j2agent.controller;
 
 import com.alibaba.fastjson2.JSONObject;
-import io.github.jerryt92.j2agent.config.annotation.AutoRegisterWebSocketHandler;
+import io.github.jerryt92.j2agent.config.web.AutoRegisterWebSocketHandler;
 import io.github.jerryt92.j2agent.model.AgentEventPhase;
 import io.github.jerryt92.j2agent.model.AgentEventType;
 import io.github.jerryt92.j2agent.model.AgentInfoList;

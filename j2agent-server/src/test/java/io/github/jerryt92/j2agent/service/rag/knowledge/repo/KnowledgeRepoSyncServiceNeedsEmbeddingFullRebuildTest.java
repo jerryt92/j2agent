@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.service.rag.knowledge.repo;
 
-import io.github.jerryt92.j2agent.config.VectorDatabaseInit;
+import io.github.jerryt92.j2agent.config.rag.VectorDatabaseInit;
 import io.github.jerryt92.j2agent.service.embedding.EmbeddingService;
 import io.github.jerryt92.j2agent.service.rag.knowledge.MilvusKnowledgeWriteService;
 import io.github.jerryt92.j2agent.service.rag.vdb.VectorDatabaseService;

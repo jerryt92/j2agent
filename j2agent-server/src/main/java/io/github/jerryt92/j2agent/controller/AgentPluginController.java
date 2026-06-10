@@ -1,6 +1,6 @@
 package io.github.jerryt92.j2agent.controller;
 
-import io.github.jerryt92.j2agent.config.annotation.RequiredRole;
+import io.github.jerryt92.j2agent.config.security.RequiredRole;
 import io.github.jerryt92.j2agent.model.AgentInstallResult;
 import io.github.jerryt92.j2agent.model.AgentPluginPackageDto;
 import io.github.jerryt92.j2agent.model.AgentPluginStatusDto;

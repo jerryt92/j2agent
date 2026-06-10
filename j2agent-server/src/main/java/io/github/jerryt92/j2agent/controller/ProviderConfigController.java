@@ -1,12 +1,12 @@
 package io.github.jerryt92.j2agent.controller;
 
-import io.github.jerryt92.j2agent.config.annotation.RequiredRole;
+import io.github.jerryt92.j2agent.config.security.RequiredRole;
 import io.github.jerryt92.j2agent.model.EmbeddingRuntimeStatusDto;
 import io.github.jerryt92.j2agent.model.ProviderConfigDto;
 import io.github.jerryt92.j2agent.model.ProviderConfigUpsertDto;
 import io.github.jerryt92.j2agent.server.api.ProviderConfigApi;
-import io.github.jerryt92.j2agent.service.providerconfig.ApiProviderConfigService;
-import io.github.jerryt92.j2agent.service.providerconfig.ApiProviderConfigService.ProviderConfigView;
+import io.github.jerryt92.j2agent.config.provider.ApiProviderConfigService;
+import io.github.jerryt92.j2agent.config.provider.ApiProviderConfigService.ProviderConfigView;
 import io.github.jerryt92.j2agent.service.embedding.EmbeddingChangeOrchestrator;
 import io.github.jerryt92.j2agent.service.embedding.EmbeddingRuntimeStatus;
 import io.github.jerryt92.j2agent.service.embedding.EmbeddingService;

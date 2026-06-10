@@ -1,11 +1,12 @@
 package io.github.jerryt92.j2agent.service;
 
-import io.github.jerryt92.j2agent.config.ReloadableRoutingChatModel;
+import io.github.jerryt92.j2agent.config.llm.ReloadableRoutingChatModel;
 import io.github.jerryt92.j2agent.service.embedding.EmbeddingService;
+import io.github.jerryt92.j2agent.service.llm.LlmSyncService;
 import io.github.jerryt92.j2agent.service.llm.mcp.McpRuntimeProperties;
-import io.github.jerryt92.j2agent.service.providerconfig.ActiveProviderHolder;
-import io.github.jerryt92.j2agent.service.providerconfig.EmbeddingActiveConfig;
-import io.github.jerryt92.j2agent.service.providerconfig.LlmActiveConfig;
+import io.github.jerryt92.j2agent.config.provider.ActiveProviderHolder;
+import io.github.jerryt92.j2agent.config.provider.EmbeddingActiveConfig;
+import io.github.jerryt92.j2agent.config.provider.LlmActiveConfig;
 import io.github.jerryt92.j2agent.service.rag.knowledge.repo.KnowledgeRepoMaintenanceCoordinator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -22,17 +23,20 @@ public class AiRuntimeReloadService {
 
     private final ActiveProviderHolder activeProviderHolder;
     private final ReloadableRoutingChatModel reloadableRoutingChatModel;
+    private final LlmSyncService llmSyncService;
     private final EmbeddingService embeddingService;
     private final KnowledgeRepoMaintenanceCoordinator maintenanceCoordinator;
     private final McpRuntimeProperties mcpRuntimeProperties;
 
     public AiRuntimeReloadService(ActiveProviderHolder activeProviderHolder,
                                   ReloadableRoutingChatModel reloadableRoutingChatModel,
+                                  LlmSyncService llmSyncService,
                                   EmbeddingService embeddingService,
                                   KnowledgeRepoMaintenanceCoordinator maintenanceCoordinator,
                                   McpRuntimeProperties mcpRuntimeProperties) {
         this.activeProviderHolder = activeProviderHolder;
         this.reloadableRoutingChatModel = reloadableRoutingChatModel;
+        this.llmSyncService = llmSyncService;
         this.embeddingService = embeddingService;
         this.maintenanceCoordinator = maintenanceCoordinator;
         this.mcpRuntimeProperties = mcpRuntimeProperties;
@@ -71,6 +75,7 @@ public class AiRuntimeReloadService {
         try {
             activeProviderHolder.reloadFromDb();
             reloadableRoutingChatModel.reload();
+            llmSyncService.reload();
             LlmActiveConfig cfg = activeProviderHolder.getActiveLlm();
             log.info("LLM reloaded: provider={}, baseUrl={}, model={}",
                     cfg == null ? "none" : cfg.getProviderType(),
