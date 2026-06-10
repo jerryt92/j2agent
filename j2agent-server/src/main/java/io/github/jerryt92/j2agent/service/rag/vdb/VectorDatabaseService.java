@@ -113,4 +113,14 @@ public interface VectorDatabaseService {
      * 重建底层客户端连接，清空 SDK 侧 collection schema 缓存（用于完全重建/维度变更）。
      */
     void resetClient();
+
+    /**
+     * 读取 collection 中 embedding 字段的 schema 维度；collection 不存在时返回 null。
+     */
+    Integer resolveCollectionEmbeddingDimension(String collectionName);
+
+    /**
+     * 抽样读取 collection 中一条向量的 {@code check_embedding_hash}；无数据或 collection 不存在时返回 null。
+     */
+    String sampleStoredCheckEmbeddingHash(String collectionName);
 }

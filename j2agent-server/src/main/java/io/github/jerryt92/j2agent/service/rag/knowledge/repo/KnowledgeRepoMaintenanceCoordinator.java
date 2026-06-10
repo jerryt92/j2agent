@@ -2,11 +2,8 @@ package io.github.jerryt92.j2agent.service.rag.knowledge.repo;
 
 import io.github.jerryt92.j2agent.config.KnowledgeRepoProperties;
 import io.github.jerryt92.j2agent.config.VectorDatabaseInit;
-import io.github.jerryt92.j2agent.service.PropertiesService;
 import io.github.jerryt92.j2agent.service.embedding.EmbeddingService;
 import io.github.jerryt92.j2agent.service.providerconfig.ActiveProviderHolder;
-import io.github.jerryt92.j2agent.service.rag.knowledge.MilvusKnowledgeWriteService;
-import io.github.jerryt92.j2agent.service.rag.vdb.VectorDatabaseService;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -27,7 +24,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Consumer;
 
 /**
  * 知识库维护统一协调器：单实例串行 + Redis 分布式锁，编排初始化、增量同步、完全重建。
@@ -40,6 +36,8 @@ public class KnowledgeRepoMaintenanceCoordinator {
     private static final Duration LOCK_WAIT_SHORT = Duration.ofSeconds(5);
     private static final Duration LOCK_WAIT_REBUILD = Duration.ofMinutes(2);
     private static final Duration STOP_PREVIOUS_TIMEOUT = Duration.ofMinutes(2);
+    private static final int STARTUP_PROBE_MAX_ATTEMPTS = 50;
+    private static final Duration STARTUP_PROBE_RETRY_INTERVAL = Duration.ofSeconds(5);
 
     private final KnowledgeRepoProperties properties;
     private final KnowledgeRepoMetadataService metadataService;
@@ -117,7 +115,7 @@ public class KnowledgeRepoMaintenanceCoordinator {
     }
 
     /**
-     * 启动初始化：停止其他任务 → drop collection → 全量 re-embed → 启动目录监听。
+     * 启动初始化：probe → 增量同步（检测到 Embedding 与 Milvus 不一致时 exclusive 完全重建）→ 启动目录监听。
      */
     public void requestStartupInit() {
         Path rootPath = metadataService.getRepoRootPath();
@@ -125,11 +123,8 @@ public class KnowledgeRepoMaintenanceCoordinator {
             log.warn("知识库根目录未配置，跳过维护初始化");
             return;
         }
-        long generation = claimExclusiveGeneration();
-        log.info("应用启动知识库初始化：exclusive 完全重建 generation={}", generation);
-        activateExclusiveGateAndStopPrevious();
-        submitMaintenanceTask(KnowledgeRepoMaintenanceTaskType.INITIALIZING,
-                () -> runStartupFullRebuild(generation));
+        log.info("应用启动知识库初始化");
+        submitMaintenanceTask(KnowledgeRepoMaintenanceTaskType.INITIALIZING, this::runStartupInit);
     }
 
     /**
@@ -253,8 +248,85 @@ public class KnowledgeRepoMaintenanceCoordinator {
         }
     }
 
-    private void runStartupFullRebuild(long generation) {
-        runExclusiveFullRebuild(generation, false, false);
+    private void runStartupInit() {
+        setTaskType(KnowledgeRepoMaintenanceTaskType.INITIALIZING);
+        Path rootPath = metadataService.getRepoRootPath();
+        if (rootPath == null || !Files.exists(rootPath)) {
+            if (rootPath != null) {
+                log.warn("知识库根目录不存在，跳过启动同步: {}", rootPath.toAbsolutePath().normalize());
+            }
+            setTaskType(KnowledgeRepoMaintenanceTaskType.IDLE);
+            startWatchIfEnabled();
+            return;
+        }
+        try {
+            String repoHash = lockService.repoRootHash(rootPath);
+            boolean executed = lockService.tryWithLock(repoHash, LOCK_WAIT_REBUILD, () -> runStartupInitBody(rootPath));
+            if (!executed) {
+                log.info("启动知识库初始化跳过：未获取 Redis 维护锁");
+            }
+        } catch (KnowledgeRepoMaintenanceLockService.KnowledgeRepoMaintenanceLockException e) {
+            log.error("启动知识库初始化失败：Redis 锁不可用", e);
+            lastFailureMessage = "Redis 不可用，无法执行知识库同步";
+            setTaskType(KnowledgeRepoMaintenanceTaskType.FAILED);
+        }
+        if (currentTaskType != KnowledgeRepoMaintenanceTaskType.FAILED) {
+            setTaskType(KnowledgeRepoMaintenanceTaskType.IDLE);
+        }
+        startWatchIfEnabled();
+    }
+
+    private void runStartupInitBody(Path rootPath) {
+        if (!embeddingService.hasActiveEmbeddingConfig()) {
+            log.info("未设置当前 Embedding 配置，跳过启动知识库同步");
+            return;
+        }
+        if (!vectorDatabaseInit.probeAndConfigureWithRetry(STARTUP_PROBE_MAX_ATTEMPTS, STARTUP_PROBE_RETRY_INTERVAL)) {
+            String probeError = embeddingService.getLastProbeError();
+            lastFailureMessage = probeError != null && !probeError.isBlank()
+                    ? probeError
+                    : "Embedding 探测失败，无法执行知识库同步";
+            log.warn("启动知识库 probe 失败: {}", lastFailureMessage);
+            setTaskType(KnowledgeRepoMaintenanceTaskType.FAILED);
+            return;
+        }
+        if (syncService.needsEmbeddingFullRebuild()) {
+            runStartupFullRebuildIfNeeded();
+            return;
+        }
+        log.info("应用启动知识库初始化：增量同步");
+        syncService.initializeHashCache();
+        syncService.executeIncrementalSync(() -> !isExclusiveSyncActive() && !Thread.currentThread().isInterrupted());
+    }
+
+    private void runStartupFullRebuildIfNeeded() {
+        long generation = claimExclusiveGeneration();
+        exclusiveGate.set(true);
+        fullRebuildRunning.set(true);
+        log.warn("启动检测到 Embedding 与 Milvus 不一致，执行 exclusive 完全重建: generation={}", generation);
+        try {
+            KnowledgeRepoSyncGuard guard = () -> isExclusiveGenerationActive(generation)
+                    && !Thread.currentThread().isInterrupted();
+            if (!syncService.executeFullRebuild(guard)) {
+                if (!isExclusiveGenerationActive(generation)) {
+                    log.info("启动完全重建已被新代次取代: gen={}", generation);
+                    return;
+                }
+                if (currentTaskType != KnowledgeRepoMaintenanceTaskType.FAILED) {
+                    String probeError = embeddingService.getLastProbeError();
+                    lastFailureMessage = probeError != null && !probeError.isBlank()
+                            ? probeError
+                            : "完全重建未完整执行（可能已 drop collection），请确认 Embedding/Milvus 可用后重试";
+                    setTaskType(KnowledgeRepoMaintenanceTaskType.FAILED);
+                }
+            }
+        } finally {
+            fullRebuildRunning.set(false);
+            endExclusiveIfGeneration(generation);
+        }
+    }
+
+    private void startWatchIfEnabled() {
         if (currentTaskType != KnowledgeRepoMaintenanceTaskType.FAILED && properties.isWatchEnabled()) {
             syncService.startWatch(this::requestIncrementalSync);
         }

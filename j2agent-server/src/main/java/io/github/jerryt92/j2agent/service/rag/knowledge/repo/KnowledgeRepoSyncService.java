@@ -84,6 +84,36 @@ public class KnowledgeRepoSyncService {
     }
 
     /**
+     * 启动时判断是否需要 exclusive 完全重建（Embedding 维度或模型指纹与 Milvus 中已有数据不一致）。
+     */
+    public boolean needsEmbeddingFullRebuild() {
+        if (!embeddingService.isReady()) {
+            return false;
+        }
+        metadataService.reloadMetadata();
+        Integer expectedDimension = embeddingService.getDimension();
+        String expectedHash = embeddingService.getCheckEmbeddingHash();
+        for (String collectionName : collectKnowledgeCollectionNames()) {
+            if (!vectorDatabaseService.hasCollection(collectionName)) {
+                continue;
+            }
+            Integer schemaDimension = vectorDatabaseService.resolveCollectionEmbeddingDimension(collectionName);
+            if (schemaDimension != null && expectedDimension != null && !schemaDimension.equals(expectedDimension)) {
+                log.warn("检测到 collection {} schema 维度={} 与当前 Embedding 维度={} 不一致，需要完全重建",
+                        collectionName, schemaDimension, expectedDimension);
+                return true;
+            }
+            String storedHash = vectorDatabaseService.sampleStoredCheckEmbeddingHash(collectionName);
+            if (storedHash != null && expectedHash != null && !storedHash.equals(expectedHash)) {
+                log.warn("检测到 collection {} 存储的 check_embedding_hash 与当前 Embedding 不一致，需要完全重建",
+                        collectionName);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 执行增量同步（由协调器在持锁后调用）。
      */
     public void executeIncrementalSync(KnowledgeRepoSyncGuard guard) {
