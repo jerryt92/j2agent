@@ -77,6 +77,10 @@ public abstract class AiAgent {
         return 100;
     }
 
+    public String getAgentEmoji() {
+        return "🤖";
+    }
+
     /**
      * Agent 级深度思考默认策略；单轮可被 {@link io.github.jerryt92.j2agent.model.ChatRequestDto#getThinkingMode()} 覆盖。
      *
@@ -369,8 +373,8 @@ public abstract class AiAgent {
 
     private String resolvePluginPath() {
         PluginProperties effective = resolvePluginProperties();
-        if (effective != null && StringUtils.hasText(effective.getPath())) {
-            return effective.getPath();
+        if (effective != null && StringUtils.hasText(effective.resolvePath())) {
+            return effective.resolvePath();
         }
         return environment != null ? environment.getProperty("j2agent.plugin.path") : null;
     }

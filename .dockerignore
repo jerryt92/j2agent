@@ -3,3 +3,4 @@
 .cursor
 logs
 **/.DS_Store
+docker/volumes/

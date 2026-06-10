@@ -549,6 +549,79 @@ paths:
             application/json:
               schema:
                 $ref: './openapi-model.yaml#/components/schemas/AgentPluginStatusDto'
+  /v1/rest/j2agent/plugins/agents/install:
+    post:
+      tags:
+        - AgentPlugin
+      summary: 安装 Agent 插件包
+      description: 上传 tar.gz 插件包，解压到 agents 目录并自动重载；agentId 或目录冲突时需 replace=true 确认替换
+      operationId: installAgentPackage
+      parameters:
+        - name: replace
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: 是否替换已存在的同目录或同 agentId 插件
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [ file ]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Agent 插件 tar.gz 包
+      responses:
+        '200':
+          description: 安装成功
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/AgentInstallResult'
+        '400':
+          description: 包格式非法、内置 agentId 冲突或重载失败
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/AgentInstallResult'
+        '409':
+          description: 与已安装插件冲突且未确认替换
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/AgentInstallResult'
+  /v1/rest/j2agent/plugins/agents/{agentDir}:
+    delete:
+      tags:
+        - AgentPlugin
+      summary: 删除 Agent 插件包
+      description: 删除指定安装目录并自动重载
+      operationId: deleteAgentPackage
+      parameters:
+        - name: agentDir
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 安装目录名
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/AgentReloadResult'
+        '400':
+          description: 删除或重载失败
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/AgentReloadResult'
   /v1/rest/j2agent/agents/reload:
     post:
       tags:

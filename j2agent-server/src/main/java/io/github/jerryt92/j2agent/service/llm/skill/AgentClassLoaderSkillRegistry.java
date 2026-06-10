@@ -500,8 +500,8 @@ public class AgentClassLoaderSkillRegistry extends AbstractSkillRegistry {
         }
 
         private static String resolvePluginPath(PluginProperties pluginProperties, String pluginPathOverride) {
-            if (pluginProperties != null && StringUtils.hasText(pluginProperties.getPath())) {
-                return pluginProperties.getPath();
+            if (pluginProperties != null && StringUtils.hasText(pluginProperties.resolvePath())) {
+                return pluginProperties.resolvePath();
             }
             return pluginPathOverride;
         }
