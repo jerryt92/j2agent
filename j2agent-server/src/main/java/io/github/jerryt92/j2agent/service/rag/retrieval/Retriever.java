@@ -6,7 +6,6 @@ import io.github.jerryt92.j2agent.model.KnowledgeRetrieveItemDto;
 import io.github.jerryt92.j2agent.model.Translator;
 import io.github.jerryt92.j2agent.service.PropertiesService;
 import io.github.jerryt92.j2agent.service.embedding.EmbeddingService;
-import io.github.jerryt92.j2agent.service.rag.knowledge.repo.KnowledgeRepoMaintenanceCoordinator;
 import io.github.jerryt92.j2agent.service.rag.vdb.VectorDatabaseService;
 import io.github.jerryt92.j2agent.utils.MathCalculatorUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -41,7 +40,6 @@ public class Retriever {
     private final VectorDatabaseService vectorDatabaseService;
     private final PropertiesService propertiesService;
     private final QueryChunker queryChunker;
-    private final KnowledgeRepoMaintenanceCoordinator maintenanceCoordinator;
 
     /**
      * RAG 检索结果状态：区分正常、空命中与向量库失败降级。
@@ -55,13 +53,11 @@ public class Retriever {
     public Retriever(EmbeddingService embeddingService,
                      VectorDatabaseService vectorDatabaseService,
                      PropertiesService propertiesService,
-                     QueryChunker queryChunker,
-                     KnowledgeRepoMaintenanceCoordinator maintenanceCoordinator) {
+                     QueryChunker queryChunker) {
         this.embeddingService = embeddingService;
         this.vectorDatabaseService = vectorDatabaseService;
         this.propertiesService = propertiesService;
         this.queryChunker = queryChunker;
-        this.maintenanceCoordinator = maintenanceCoordinator;
     }
 
     /**
@@ -342,10 +338,6 @@ public class Retriever {
         if (StringUtils.isBlank(collection)) {
             return new RagChunksResult(Collections.emptyList(), RetrievalStatus.EMPTY, null);
         }
-        if (maintenanceCoordinator.isExclusiveSyncActive()) {
-            return new RagChunksResult(Collections.emptyList(), RetrievalStatus.FAILED,
-                    "知识库维护重建进行中，检索暂时不可用");
-        }
         RetrieverParams params = RetrieverParams.from(propertiesService);
         SearchOutcome outcome = searchAndNormalize(
                 queryText, params.metricType(), params.topK(), collection, partitionNames, "RAG检索");
@@ -367,10 +359,6 @@ public class Retriever {
     public List<KnowledgeRetrieveItemDto> retrieveKnowledge(String queryText, Integer topK, String collection, List<String> partitionNames) {
         List<KnowledgeRetrieveItemDto> retrieveResult = new ArrayList<>();
         if (StringUtils.isBlank(queryText) || StringUtils.isBlank(collection)) {
-            return retrieveResult;
-        }
-        if (maintenanceCoordinator.isExclusiveSyncActive()) {
-            log.warn("知识库维护重建进行中，命中测试返回空结果: collection={}", collection);
             return retrieveResult;
         }
         RetrieverParams params = RetrieverParams.from(propertiesService);
@@ -463,6 +451,13 @@ public class Retriever {
             List<EmbeddingModel.EmbeddingsQueryItem> hits = vectorDatabaseService.hybridRetrieval(
                     collection, queryText, vector, topK, metricTypeName, weights[0], weights[1], partitionNames);
             return SearchExecutionResult.success(hits == null ? Collections.emptyList() : hits);
+        } catch (IllegalStateException e) {
+            if (isDimensionMismatchException(e)) {
+                log.warn("知识库检索跳过（向量维度与 collection 不一致，可能处于重建窗口）: stage={}, collection={}, reason={}",
+                        stage, collection, e.getMessage());
+                return SearchExecutionResult.success(Collections.emptyList());
+            }
+            throw e;
         } catch (RuntimeException e) {
             if (isMilvusRetrievalException(e)) {
                 String failureMessage = "知识库向量检索失败（Milvus 不可用）";
@@ -472,6 +467,11 @@ public class Retriever {
             }
             throw e;
         }
+    }
+
+    private static boolean isDimensionMismatchException(IllegalStateException exception) {
+        String message = exception.getMessage();
+        return message != null && message.contains("维度");
     }
 
     private boolean isMilvusRetrievalException(Throwable throwable) {
