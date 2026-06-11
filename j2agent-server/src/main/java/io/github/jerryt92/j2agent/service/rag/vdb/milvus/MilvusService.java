@@ -579,8 +579,8 @@ public class MilvusService implements VectorDatabaseService {
         }
         String escaped = escapeFilterString(search.trim());
         return MilvusSchemaDefinition.FIELD_TEXT + " like \"%" + escaped + "%\""
-                + " or " + MilvusSchemaDefinition.FIELD_QUESTION + " like \"%" + escaped + "%\""
-                + " or " + MilvusSchemaDefinition.FIELD_ANSWER + " like \"%" + escaped + "%\""
+                + " or " + MilvusSchemaDefinition.FIELD_HEADING_PATH + " like \"%" + escaped + "%\""
+                + " or " + MilvusSchemaDefinition.FIELD_TYPE + " like \"%" + escaped + "%\""
                 + " or " + MilvusSchemaDefinition.FIELD_SOURCE_FILE + " like \"%" + escaped + "%\"";
     }
 
@@ -733,8 +733,8 @@ public class MilvusService implements VectorDatabaseService {
                     .setText((String) searchResult.getEntity().get(MilvusSchemaDefinition.FIELD_TEXT))
                     .setTextChunkId(String.valueOf(searchResult.getEntity().get(MilvusSchemaDefinition.FIELD_TEXT_CHUNK_ID)))
                     .setSourceFile((String) searchResult.getEntity().get(MilvusSchemaDefinition.FIELD_SOURCE_FILE))
-                    .setQuestion((String) searchResult.getEntity().get(MilvusSchemaDefinition.FIELD_QUESTION))
-                    .setAnswer((String) searchResult.getEntity().get(MilvusSchemaDefinition.FIELD_ANSWER));
+                    .setType((String) searchResult.getEntity().get(MilvusSchemaDefinition.FIELD_TYPE))
+                    .setHeadingPath((String) searchResult.getEntity().get(MilvusSchemaDefinition.FIELD_HEADING_PATH));
             if (score != null) {
                 if (channel == ScoreChannel.DENSE) {
                     embeddingsQueryItem.setDenseScore(score).setHybridScore(score);
@@ -763,8 +763,8 @@ public class MilvusService implements VectorDatabaseService {
                     .setEmbeddingProvider(toString(entity.get(MilvusSchemaDefinition.FIELD_EMBEDDING_PROVIDER)))
                     .setText(toString(entity.get(MilvusSchemaDefinition.FIELD_TEXT)))
                     .setSourceFile(toString(entity.get(MilvusSchemaDefinition.FIELD_SOURCE_FILE)))
-                    .setQuestion(toString(entity.get(MilvusSchemaDefinition.FIELD_QUESTION)))
-                    .setAnswer(toString(entity.get(MilvusSchemaDefinition.FIELD_ANSWER)));
+                    .setType(toString(entity.get(MilvusSchemaDefinition.FIELD_TYPE)))
+                    .setHeadingPath(toString(entity.get(MilvusSchemaDefinition.FIELD_HEADING_PATH)));
             embeddingsQueryItems.add(embeddingsQueryItem);
         }
         return embeddingsQueryItems;
@@ -794,8 +794,8 @@ public class MilvusService implements VectorDatabaseService {
                     .setText((String) searchResult.getEntity().get(MilvusSchemaDefinition.FIELD_TEXT))
                     .setTextChunkId(String.valueOf(searchResult.getEntity().get(MilvusSchemaDefinition.FIELD_TEXT_CHUNK_ID)))
                     .setSourceFile((String) searchResult.getEntity().get(MilvusSchemaDefinition.FIELD_SOURCE_FILE))
-                    .setQuestion((String) searchResult.getEntity().get(MilvusSchemaDefinition.FIELD_QUESTION))
-                    .setAnswer((String) searchResult.getEntity().get(MilvusSchemaDefinition.FIELD_ANSWER));
+                    .setType((String) searchResult.getEntity().get(MilvusSchemaDefinition.FIELD_TYPE))
+                    .setHeadingPath((String) searchResult.getEntity().get(MilvusSchemaDefinition.FIELD_HEADING_PATH));
             embeddingsQueryItems.add(embeddingsQueryItem);
         }
         return embeddingsQueryItems;

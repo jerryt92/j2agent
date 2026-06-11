@@ -19,8 +19,7 @@ public final class MilvusSchemaDefinition {
     public static final String FIELD_EMBEDDING_PROVIDER = "embedding_provider";
     public static final String FIELD_CHECK_EMBEDDING_HASH = "check_embedding_hash";
     public static final String FIELD_TEXT = "text";
-    public static final String FIELD_QUESTION = "question";
-    public static final String FIELD_ANSWER = "answer";
+    public static final String FIELD_TYPE = "type";
     public static final String FIELD_SOURCE_FILE = "source_file";
     public static final String FIELD_HEADING_PATH = "heading_path";
     public static final String FIELD_COLLECTION_TAG = "collection_tag";
@@ -39,8 +38,7 @@ public final class MilvusSchemaDefinition {
                 FieldDef.builder().name(FIELD_EMBEDDING_PROVIDER).dataType(DataType.VarChar).maxLength(128).description("嵌入提供方").build(),
                 FieldDef.builder().name(FIELD_CHECK_EMBEDDING_HASH).dataType(DataType.VarChar).maxLength(64).description("模型校验哈希").build(),
                 FieldDef.builder().name(FIELD_TEXT).dataType(DataType.VarChar).maxLength(8192).description("检索文本").enableAnalyzer(true).build(),
-                FieldDef.builder().name(FIELD_QUESTION).dataType(DataType.VarChar).maxLength(2048).description("问题").build(),
-                FieldDef.builder().name(FIELD_ANSWER).dataType(DataType.VarChar).maxLength(8192).description("答案").build(),
+                FieldDef.builder().name(FIELD_TYPE).dataType(DataType.VarChar).maxLength(32).description("分片类型 title/content_segment").build(),
                 FieldDef.builder().name(FIELD_SOURCE_FILE).dataType(DataType.VarChar).maxLength(2048).description("源文件路径").build(),
                 FieldDef.builder().name(FIELD_HEADING_PATH).dataType(DataType.VarChar).maxLength(2048).description("标题路径").build(),
                 FieldDef.builder().name(FIELD_COLLECTION_TAG).dataType(DataType.VarChar).maxLength(128).description("目录collection标记").build(),
@@ -60,8 +58,7 @@ public final class MilvusSchemaDefinition {
                 FIELD_EMBEDDING_MODEL,
                 FIELD_EMBEDDING_PROVIDER,
                 FIELD_TEXT,
-                FIELD_QUESTION,
-                FIELD_ANSWER,
+                FIELD_TYPE,
                 FIELD_SOURCE_FILE,
                 FIELD_HEADING_PATH
         );
@@ -83,4 +80,3 @@ public final class MilvusSchemaDefinition {
         private String description;
     }
 }
-

@@ -13,23 +13,19 @@ import java.util.List;
 @Accessors(chain = true)
 public class KnowledgeVectorBo {
     /**
-     * 分片主键。
+     * 分片主键（UUIDv7，每条 Milvus 向量独立）。
      */
     private String segmentId;
     /**
-     * 原始文本块ID（兼容旧接口字段）。
+     * 逻辑文本块 ID（UUIDv7，多条向量共享）。
      */
     private String textChunkId;
     /**
-     * 问题（标题链拼接）。
+     * 分片类型：title / content_segment。
      */
-    private String question;
+    private String type;
     /**
-     * 答案（正文）。
-     */
-    private String answer;
-    /**
-     * 检索文本（Q+A）。
+     * 检索文本（title 或 content_segment 窗口切片）。
      */
     private String text;
     /**
@@ -70,15 +66,9 @@ public class KnowledgeVectorBo {
     private Long updateTime;
 
     /**
-     * 生成默认检索文本。
+     * 返回 Milvus 检索/嵌入文本。
      */
     public String buildText() {
-        if (text != null && !text.isBlank()) {
-            return text;
-        }
-        String q = question == null ? "" : question.trim();
-        String a = answer == null ? "" : answer.trim();
-        return q + "\n" + a;
+        return text == null ? "" : text;
     }
 }
-

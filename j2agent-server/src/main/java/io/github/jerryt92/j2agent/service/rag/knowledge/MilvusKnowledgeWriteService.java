@@ -3,12 +3,15 @@ package io.github.jerryt92.j2agent.service.rag.knowledge;
 import io.github.jerryt92.j2agent.model.EmbeddingModel;
 import io.github.jerryt92.j2agent.service.embedding.EmbeddingService;
 import io.github.jerryt92.j2agent.service.rag.knowledge.bo.KnowledgeVectorBo;
+import io.github.jerryt92.j2agent.service.rag.knowledge.repo.ContentSegmentChunker;
 import io.github.jerryt92.j2agent.service.rag.knowledge.repo.KnowledgeRepoSyncGuard;
-import io.github.jerryt92.j2agent.service.rag.knowledge.repo.MarkdownQaParser;
+import io.github.jerryt92.j2agent.service.rag.knowledge.repo.KnowledgeTextChunkParser;
 import io.github.jerryt92.j2agent.service.rag.vdb.VectorDatabaseService;
 import io.github.jerryt92.j2agent.service.rag.vdb.milvus.MilvusSchemaDefinition;
+import io.github.jerryt92.j2agent.utils.UUIDv7Utils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.ListUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
@@ -23,11 +26,13 @@ import java.util.List;
 @Slf4j
 @Service
 public class MilvusKnowledgeWriteService {
-    private static final int MAX_QUESTION_LENGTH = maxLengthOf(MilvusSchemaDefinition.FIELD_QUESTION);
-    private static final int MAX_ANSWER_LENGTH = maxLengthOf(MilvusSchemaDefinition.FIELD_ANSWER);
     private static final int MAX_TEXT_LENGTH = maxLengthOf(MilvusSchemaDefinition.FIELD_TEXT);
+    private static final int MAX_HEADING_PATH_LENGTH = maxLengthOf(MilvusSchemaDefinition.FIELD_HEADING_PATH);
+
     private final EmbeddingService embeddingService;
     private final VectorDatabaseService vectorDatabaseService;
+    private final KnowledgeTextChunkService knowledgeTextChunkService;
+    private final ContentSegmentChunker contentSegmentChunker;
 
     /**
      * 表示当前批次向量化因 Embedding 配置/服务不可用而降级，供上层进行可恢复处理。
@@ -47,52 +52,90 @@ public class MilvusKnowledgeWriteService {
         }
     }
 
-    public MilvusKnowledgeWriteService(EmbeddingService embeddingService, VectorDatabaseService vectorDatabaseService) {
+    private record VectorSegmentDraft(String text, String type, String textChunkId, String headingPath) {
+    }
+
+    public MilvusKnowledgeWriteService(EmbeddingService embeddingService,
+                                       VectorDatabaseService vectorDatabaseService,
+                                       KnowledgeTextChunkService knowledgeTextChunkService,
+                                       ContentSegmentChunker contentSegmentChunker) {
         this.embeddingService = embeddingService;
         this.vectorDatabaseService = vectorDatabaseService;
+        this.knowledgeTextChunkService = knowledgeTextChunkService;
+        this.contentSegmentChunker = contentSegmentChunker;
     }
 
     /**
-     * 将 QA 分片转换为向量后写入 Milvus。
+     * 将逻辑文本块写入 MySQL 并展开为多向量后 upsert 到 Milvus。
      *
-     * @param partitionNames info.json 中的 Milvus 分区名列表；空则写入默认分区。
+     * @return 写入的逻辑 text_chunk 条数
      */
-    public int upsertQaSegments(List<MarkdownQaParser.QaSegment> segments,
-                                 String sourceFile,
-                                 String fileSha256,
-                                 String collectionTag,
-                                 List<String> partitionNames) {
-        return upsertQaSegments(segments, sourceFile, fileSha256, collectionTag, partitionNames, null);
+    public int upsertTextChunks(List<KnowledgeTextChunkParser.TextChunk> chunks,
+                                String sourceFile,
+                                String fileSha256,
+                                String collectionTag,
+                                List<String> partitionNames) {
+        return upsertTextChunks(chunks, sourceFile, fileSha256, collectionTag, partitionNames, null);
     }
 
-    public int upsertQaSegments(List<MarkdownQaParser.QaSegment> segments,
-                                 String sourceFile,
-                                 String fileSha256,
-                                 String collectionTag,
-                                 List<String> partitionNames,
-                                 KnowledgeRepoSyncGuard guard) {
-        if (segments == null || segments.isEmpty()) {
+    public int upsertTextChunks(List<KnowledgeTextChunkParser.TextChunk> chunks,
+                                String sourceFile,
+                                String fileSha256,
+                                String collectionTag,
+                                List<String> partitionNames,
+                                KnowledgeRepoSyncGuard guard) {
+        if (chunks == null || chunks.isEmpty()) {
             return 0;
         }
-        List<MarkdownQaParser.QaSegment> validSegments = filterValidSegments(segments, sourceFile, collectionTag);
-        if (validSegments.isEmpty()) {
-            log.warn("Milvus 知识写入跳过: 所有分片均不满足字段长度限制, collection={}, sourceFile={}, 原始分片数={}",
-                    collectionTag, sourceFile, segments.size());
-            return 0;
+        knowledgeTextChunkService.batchUpsert(chunks, sourceFile, fileSha256, collectionTag);
+        List<VectorSegmentDraft> drafts = expandVectorDrafts(chunks);
+        List<VectorSegmentDraft> validDrafts = filterValidDrafts(drafts, sourceFile, collectionTag);
+        if (validDrafts.isEmpty()) {
+            log.warn("Milvus 知识写入跳过: 所有向量分片均不满足字段长度限制, collection={}, sourceFile={}, textChunk数={}",
+                    collectionTag, sourceFile, chunks.size());
+            return chunks.size();
         }
+        int batchSize = Math.max(1, embeddingService.resolveEmbeddingBatchSize());
+        List<List<VectorSegmentDraft>> batches = ListUtils.partition(validDrafts, batchSize);
         int totalUpserted = 0;
-        int batchSize = embeddingService.resolveEmbeddingBatchSize();
-        List<List<MarkdownQaParser.QaSegment>> batches = ListUtils.partition(validSegments, batchSize);
         for (int batchIndex = 0; batchIndex < batches.size(); batchIndex++) {
             ensureUpsertMayContinue(guard, sourceFile);
-            List<MarkdownQaParser.QaSegment> batch = batches.get(batchIndex);
+            List<VectorSegmentDraft> batch = batches.get(batchIndex);
             int batchNumber = batchIndex + 1;
             List<KnowledgeVectorBo> vectors = embedBatch(batch, sourceFile, fileSha256, collectionTag, batchNumber, batches.size());
             ensureUpsertMayContinue(guard, sourceFile);
             vectorDatabaseService.putData(collectionTag, vectors, partitionNames);
             totalUpserted += vectors.size();
         }
-        return totalUpserted;
+        log.debug("知识库写入完成: collection={}, sourceFile={}, textChunks={}, milvusVectors={}",
+                collectionTag, sourceFile, chunks.size(), totalUpserted);
+        return chunks.size();
+    }
+
+    private List<VectorSegmentDraft> expandVectorDrafts(List<KnowledgeTextChunkParser.TextChunk> chunks) {
+        List<VectorSegmentDraft> drafts = new ArrayList<>();
+        for (KnowledgeTextChunkParser.TextChunk chunk : chunks) {
+            drafts.add(new VectorSegmentDraft(
+                    chunk.headingPath(),
+                    KnowledgeSegmentType.TITLE,
+                    chunk.textChunkId(),
+                    chunk.headingPath()
+            ));
+            if (!chunk.emptyBody()) {
+                for (String slice : contentSegmentChunker.chunk(chunk.textChunk())) {
+                    if (StringUtils.isBlank(slice)) {
+                        continue;
+                    }
+                    drafts.add(new VectorSegmentDraft(
+                            slice,
+                            KnowledgeSegmentType.CONTENT_SEGMENT,
+                            chunk.textChunkId(),
+                            chunk.headingPath()
+                    ));
+                }
+            }
+        }
+        return drafts;
     }
 
     private void ensureUpsertMayContinue(KnowledgeRepoSyncGuard guard, String sourceFile) {
@@ -104,16 +147,13 @@ public class MilvusKnowledgeWriteService {
         }
     }
 
-    /**
-     * 将单批 QA 分片向量化并转换为 Milvus 写入对象。
-     */
-    private List<KnowledgeVectorBo> embedBatch(List<MarkdownQaParser.QaSegment> segments,
+    private List<KnowledgeVectorBo> embedBatch(List<VectorSegmentDraft> drafts,
                                                String sourceFile,
                                                String fileSha256,
                                                String collectionTag,
                                                int batchNumber,
                                                int totalBatches) {
-        List<String> inputTexts = segments.stream().map(this::buildText).toList();
+        List<String> inputTexts = drafts.stream().map(VectorSegmentDraft::text).toList();
         EmbeddingModel.EmbeddingsResponse embeddingsResponse;
         try {
             embeddingsResponse = embeddingService.embed(
@@ -123,40 +163,39 @@ public class MilvusKnowledgeWriteService {
             throw new EmbeddingUnavailableException("Embedding 不可用，跳过本批次向量化: " + sourceFile, e);
         }
         if (embeddingsResponse == null || embeddingsResponse.getData() == null) {
-            log.error("QA 分片向量化失败: collection={}, sourceFile={}, batch={}/{}, 请求条数={}, 返回为空",
-                    collectionTag, sourceFile, batchNumber, totalBatches, segments.size());
-            throw new IllegalStateException("QA 分片向量化失败，返回为空: " + sourceFile);
+            log.error("知识向量分片向量化失败: collection={}, sourceFile={}, batch={}/{}, 请求条数={}, 返回为空",
+                    collectionTag, sourceFile, batchNumber, totalBatches, drafts.size());
+            throw new IllegalStateException("知识向量分片向量化失败，返回为空: " + sourceFile);
         }
-        if (embeddingsResponse.getData().size() != segments.size()) {
-            log.error("QA 分片向量化数量不匹配: collection={}, sourceFile={}, batch={}/{}, 请求条数={}, 返回条数={}",
-                    collectionTag, sourceFile, batchNumber, totalBatches, segments.size(), embeddingsResponse.getData().size());
-            throw new IllegalStateException("QA 分片向量化数量不匹配: " + sourceFile);
+        if (embeddingsResponse.getData().size() != drafts.size()) {
+            log.error("知识向量分片向量化数量不匹配: collection={}, sourceFile={}, batch={}/{}, 请求条数={}, 返回条数={}",
+                    collectionTag, sourceFile, batchNumber, totalBatches, drafts.size(), embeddingsResponse.getData().size());
+            throw new IllegalStateException("知识向量分片向量化数量不匹配: " + sourceFile);
         }
         List<KnowledgeVectorBo> vectors = new ArrayList<>();
-        for (int i = 0; i < segments.size(); i++) {
-            MarkdownQaParser.QaSegment segment = segments.get(i);
+        for (int i = 0; i < drafts.size(); i++) {
+            VectorSegmentDraft draft = drafts.get(i);
             EmbeddingModel.EmbeddingsItem embeddingItem = embeddingsResponse.getData().get(i);
             if (embeddingItem.getEmbeddings() == null || embeddingItem.getEmbeddings().length == 0) {
-                log.error("QA 分片向量为空: collection={}, sourceFile={}, batch={}/{}, headingPath={}",
-                        collectionTag, sourceFile, batchNumber, totalBatches, segment.headingPath());
-                throw new IllegalStateException("QA 分片向量为空: " + sourceFile);
+                log.error("知识向量分片向量为空: collection={}, sourceFile={}, batch={}/{}, headingPath={}, type={}",
+                        collectionTag, sourceFile, batchNumber, totalBatches, draft.headingPath(), draft.type());
+                throw new IllegalStateException("知识向量分片向量为空: " + sourceFile);
             }
             List<Float> vector = new ArrayList<>(embeddingItem.getEmbeddings().length);
             for (float value : embeddingItem.getEmbeddings()) {
                 vector.add(value);
             }
             vectors.add(new KnowledgeVectorBo()
-                    .setSegmentId(segment.segmentId())
-                    .setTextChunkId(segment.segmentId())
-                    .setQuestion(segment.question())
-                    .setAnswer(segment.answer())
-                    .setText(segment.question() + "\n" + segment.answer())
+                    .setSegmentId(UUIDv7Utils.randomUUIDv7())
+                    .setTextChunkId(draft.textChunkId())
+                    .setType(draft.type())
+                    .setText(draft.text())
                     .setEmbeddingModel(embeddingItem.getEmbeddingModel())
                     .setEmbeddingProvider(embeddingItem.getEmbeddingProvider())
                     .setCheckEmbeddingHash(embeddingItem.getCheckEmbeddingHash())
                     .setEmbedding(vector)
                     .setSourceFile(sourceFile)
-                    .setHeadingPath(segment.headingPath())
+                    .setHeadingPath(draft.headingPath())
                     .setCollectionTag(collectionTag)
                     .setFileSha256(fileSha256)
                     .setUpdateTime(System.currentTimeMillis()));
@@ -164,46 +203,28 @@ public class MilvusKnowledgeWriteService {
         return vectors;
     }
 
-    /**
-     * 过滤不满足 Milvus 字段长度限制的分片，避免单条坏数据阻断整批写入。
-     */
-    private List<MarkdownQaParser.QaSegment> filterValidSegments(List<MarkdownQaParser.QaSegment> segments,
-                                                                 String sourceFile,
-                                                                 String collectionTag) {
-        List<MarkdownQaParser.QaSegment> validSegments = new ArrayList<>();
-        for (MarkdownQaParser.QaSegment segment : segments) {
-            String text = buildText(segment);
-            int questionLength = byteLengthOf(segment.question());
-            int answerLength = byteLengthOf(segment.answer());
-            int textLength = byteLengthOf(text);
-            if (questionLength > MAX_QUESTION_LENGTH || answerLength > MAX_ANSWER_LENGTH || textLength > MAX_TEXT_LENGTH) {
-                log.warn("知识库分片跳过: 字段 UTF-8 字节长度超过 Milvus 限制, collection={}, sourceFile={}, headingPath={}, questionBytes={}/{}, answerBytes={}/{}, textBytes={}/{}",
-                        collectionTag, sourceFile, segment.headingPath(), questionLength, MAX_QUESTION_LENGTH,
-                        answerLength, MAX_ANSWER_LENGTH, textLength, MAX_TEXT_LENGTH);
+    private List<VectorSegmentDraft> filterValidDrafts(List<VectorSegmentDraft> drafts,
+                                                       String sourceFile,
+                                                       String collectionTag) {
+        List<VectorSegmentDraft> validDrafts = new ArrayList<>();
+        for (VectorSegmentDraft draft : drafts) {
+            int textLength = byteLengthOf(draft.text());
+            int headingLength = byteLengthOf(draft.headingPath());
+            if (textLength > MAX_TEXT_LENGTH || headingLength > MAX_HEADING_PATH_LENGTH) {
+                log.warn("知识库向量分片跳过: 字段 UTF-8 字节长度超过 Milvus 限制, collection={}, sourceFile={}, headingPath={}, type={}, textBytes={}/{}, headingBytes={}/{}",
+                        collectionTag, sourceFile, draft.headingPath(), draft.type(), textLength, MAX_TEXT_LENGTH,
+                        headingLength, MAX_HEADING_PATH_LENGTH);
                 continue;
             }
-            validSegments.add(segment);
+            validDrafts.add(draft);
         }
-        return validSegments;
+        return validDrafts;
     }
 
-    /**
-     * 构造 Milvus 检索文本。
-     */
-    private String buildText(MarkdownQaParser.QaSegment segment) {
-        return segment.question() + "\n" + segment.answer();
-    }
-
-    /**
-     * 计算 UTF-8 字节长度，Milvus VarChar 长度限制按字节生效。
-     */
     private int byteLengthOf(String value) {
         return value == null ? 0 : value.getBytes(StandardCharsets.UTF_8).length;
     }
 
-    /**
-     * 从 Milvus schema 定义中读取字段长度限制。
-     */
     private static int maxLengthOf(String fieldName) {
         return MilvusSchemaDefinition.defaultFields(0).stream()
                 .filter(field -> fieldName.equals(field.getName()))
@@ -213,31 +234,22 @@ public class MilvusKnowledgeWriteService {
     }
 
     /**
-     * 删除指定 collection 下指定源文件的全部分片。
+     * 删除指定 collection 下指定源文件的全部分片（Milvus + MySQL）。
      */
     public void deleteBySourceFile(String collectionName, String sourceFile) {
         vectorDatabaseService.deleteBySourceFile(collectionName, sourceFile);
+        knowledgeTextChunkService.deleteBySourceFile(sourceFile);
     }
 
-    /**
-     * 删除指定物理 collection（含 drop 后 absent 等待）。
-     */
     public void dropCollection(String collectionName) {
         vectorDatabaseService.dropCollection(collectionName);
     }
 
-    /**
-     * 判断指定物理 collection 是否存在。
-     */
     public boolean hasCollection(String collectionName) {
         return vectorDatabaseService.hasCollection(collectionName);
     }
 
-    /**
-     * 删除 Milvus 实例中的全部 collection，供完全重建使用。
-     */
     public void dropAllCollections() {
         vectorDatabaseService.dropAllCollections();
     }
 }
-

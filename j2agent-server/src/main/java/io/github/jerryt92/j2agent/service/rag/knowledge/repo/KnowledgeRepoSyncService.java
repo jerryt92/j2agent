@@ -3,6 +3,7 @@ package io.github.jerryt92.j2agent.service.rag.knowledge.repo;
 import io.github.jerryt92.j2agent.config.rag.VectorDatabaseInit;
 import io.github.jerryt92.j2agent.service.embedding.EmbeddingService;
 import io.github.jerryt92.j2agent.service.rag.knowledge.MilvusKnowledgeWriteService;
+import io.github.jerryt92.j2agent.service.rag.knowledge.KnowledgeTextChunkService;
 import io.github.jerryt92.j2agent.service.rag.vdb.VectorDatabaseService;
 import io.github.jerryt92.j2agent.utils.HashUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -47,12 +48,13 @@ public class KnowledgeRepoSyncService {
 
     private final KnowledgeRepoMetadataService metadataService;
     private final KnowledgeRepoHashTreeService hashTreeService;
-    private final MarkdownQaParser markdownQaParser;
+    private final KnowledgeTextChunkParser knowledgeTextChunkParser;
     private final KnowledgeMarkdownImageRewriter knowledgeMarkdownImageRewriter;
     private final MilvusKnowledgeWriteService milvusKnowledgeWriteService;
     private final EmbeddingService embeddingService;
     private final VectorDatabaseService vectorDatabaseService;
     private final VectorDatabaseInit vectorDatabaseInit;
+    private final KnowledgeTextChunkService knowledgeTextChunkService;
     private final KnowledgeRepoHashCache hashCache = new KnowledgeRepoHashCache();
     private final Set<Path> watchedDirectories = ConcurrentHashMap.newKeySet();
     private WatchService watchService;
@@ -60,20 +62,22 @@ public class KnowledgeRepoSyncService {
 
     public KnowledgeRepoSyncService(KnowledgeRepoMetadataService metadataService,
                                     KnowledgeRepoHashTreeService hashTreeService,
-                                    MarkdownQaParser markdownQaParser,
+                                    KnowledgeTextChunkParser knowledgeTextChunkParser,
                                     KnowledgeMarkdownImageRewriter knowledgeMarkdownImageRewriter,
                                     MilvusKnowledgeWriteService milvusKnowledgeWriteService,
                                     EmbeddingService embeddingService,
                                     VectorDatabaseService vectorDatabaseService,
-                                    VectorDatabaseInit vectorDatabaseInit) {
+                                    VectorDatabaseInit vectorDatabaseInit,
+                                    KnowledgeTextChunkService knowledgeTextChunkService) {
         this.metadataService = metadataService;
         this.hashTreeService = hashTreeService;
-        this.markdownQaParser = markdownQaParser;
+        this.knowledgeTextChunkParser = knowledgeTextChunkParser;
         this.knowledgeMarkdownImageRewriter = knowledgeMarkdownImageRewriter;
         this.milvusKnowledgeWriteService = milvusKnowledgeWriteService;
         this.embeddingService = embeddingService;
         this.vectorDatabaseService = vectorDatabaseService;
         this.vectorDatabaseInit = vectorDatabaseInit;
+        this.knowledgeTextChunkService = knowledgeTextChunkService;
     }
 
     /**
@@ -178,6 +182,7 @@ public class KnowledgeRepoSyncService {
         log.warn("知识库完全重建准备开始：将 drop 知识库绑定 collections={}", knowledgeCollections);
         dropKnowledgeCollections(knowledgeCollections);
         hashTreeService.deleteAll();
+        knowledgeTextChunkService.deleteAll();
         hashCache.replaceAll(Map.of());
 
         if (!guard.shouldContinue()) {
@@ -298,15 +303,15 @@ public class KnowledgeRepoSyncService {
             int minHeadingLevel = metadataService.resolveMinHeadingLevel(filePath);
             boolean filenameAsTitle = metadataService.resolveFilenameAsTitle(filePath);
             String filenameTitle = resolveFilenameTitle(relativePath);
-            List<MarkdownQaParser.QaSegment> segments = markdownQaParser.parse(
+            List<KnowledgeTextChunkParser.TextChunk> chunks = knowledgeTextChunkParser.parse(
                     relativePath, documentContent, minHeadingLevel, filenameAsTitle, filenameTitle);
-            segments = knowledgeMarkdownImageRewriter.rewriteSegments(relativePath, segments);
-            if (segments.isEmpty()) {
-                log.warn("知识库文档未产生分片（Markdown 需存在 #/##/### 标题，AsciiDoc 需存在 ==/===/==== 标题，且标题下有非空正文；或启用 filename_as_title 且全文非空）: path={}, collection={}, minHeadingLevel={}, filenameAsTitle={}",
+            chunks = knowledgeMarkdownImageRewriter.rewriteChunks(relativePath, chunks);
+            if (chunks.isEmpty()) {
+                log.warn("知识库文档未产生分片（Markdown 需存在 #/##/### 标题，AsciiDoc 需存在 =/==/=== 标题；或启用 filename_as_title 且全文非空）: path={}, collection={}, minHeadingLevel={}, filenameAsTitle={}",
                         relativePath, fileState.collectionName(), minHeadingLevel, filenameAsTitle);
             }
-            int upsertedCount = milvusKnowledgeWriteService.upsertQaSegments(
-                    segments, relativePath, fileState.fileSha256(), fileState.collectionName(), fileState.partitionNames(), guard);
+            int upsertedCount = milvusKnowledgeWriteService.upsertTextChunks(
+                    chunks, relativePath, fileState.fileSha256(), fileState.collectionName(), fileState.partitionNames(), guard);
             long fileSizeBytes = Files.size(filePath);
             hashTreeService.upsertActive(
                     Path.of(relativePath),

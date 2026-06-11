@@ -46,7 +46,7 @@ public abstract class AbstractCollectionKbRetriever implements DocumentRetriever
 
     /**
      * Spring AI 标准检索入口：优先读取 Query 文本，缺失时回退到历史中的最后一条用户消息。
-     * <p>生成的 {@link Document} 正文为 {@link EmbeddingModel.EmbeddingsQueryItem#getAnswer()}，供排查时与接口返回的 {@code textChunk} 对齐（勿仅用 {@code outline}）。</p>
+     * <p>生成的 {@link Document} 正文为 MySQL 回填的完整 {@code textChunk}（勿仅用 Milvus 窗口切片或 {@code outline}）。</p>
      */
     @Override
     public List<Document> retrieve(Query query) {
@@ -56,9 +56,11 @@ public abstract class AbstractCollectionKbRetriever implements DocumentRetriever
         }
         String queryText = Retriever.resolveQueryText(query);
         if (StringUtils.isBlank(queryText)) {
+            log.info("RAG 对话检索跳过: collection={}, reason=blank queryText", boundCollection());
             return Collections.emptyList();
         }
         if (isReactToolLoopQuery(query)) {
+            log.info("RAG 对话检索跳过: collection={}, reason=react tool loop", boundCollection());
             return Collections.emptyList();
         }
         Retriever.RagChunksResult ragChunksResult = retriever.retrieveRagChunksResult(queryText, boundCollection(), boundPartitions());
@@ -67,10 +69,13 @@ public abstract class AbstractCollectionKbRetriever implements DocumentRetriever
             return List.of(buildFallbackDocument());
         }
         List<EmbeddingModel.EmbeddingsQueryItem> embeddingsQueryItems = ragChunksResult.items();
-        if (embeddingsQueryItems.isEmpty()) {
-            log.info("RAG 对话检索: collection={}, 分片命中数=0", boundCollection());
-            return Collections.emptyList();
-        }
+        List<Document> documents = buildDocuments(embeddingsQueryItems);
+        log.info("RAG 对话检索: collection={}, status={}, 分片命中数={}, 生成Document数={}",
+                boundCollection(), ragChunksResult.status(), embeddingsQueryItems.size(), documents.size());
+        return documents;
+    }
+
+    private List<Document> buildDocuments(List<EmbeddingModel.EmbeddingsQueryItem> embeddingsQueryItems) {
         List<Document> documents = new ArrayList<>();
         int ordinal = 1;
         for (EmbeddingModel.EmbeddingsQueryItem item : embeddingsQueryItems) {
@@ -78,14 +83,13 @@ public abstract class AbstractCollectionKbRetriever implements DocumentRetriever
             metadata.put("textChunkId", item.getTextChunkId());
             metadata.put("sourceFile", item.getSourceFile());
             metadata.put("chunkOrdinal", ordinal++);
+            String documentText = StringUtils.isNotBlank(item.getTextChunk()) ? item.getTextChunk() : item.getText();
             documents.add(Document.builder()
-                    .text(item.getText())
+                    .text(documentText)
                     .metadata(metadata)
                     .score((double) item.getScore())
                     .build());
         }
-        log.info("RAG 对话检索: collection={}, 分片命中数={}, 生成Document数={}",
-                boundCollection(), embeddingsQueryItems.size(), documents.size());
         return documents;
     }
 
