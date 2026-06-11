@@ -148,6 +148,7 @@ public class ChatService {
                 }
             };
             final String turnConversationId = buildConversationId(userId, contextId, resolvedAgentId);
+            StreamedAssistantPersistence.enable(turnConversationId);
             conversationIdRef.set(turnConversationId);
             int index = request.getMessages().size() - 1;
             StringBuilder streamedContent = new StringBuilder();
@@ -155,8 +156,8 @@ public class ChatService {
             Object streamedTextLock = new Object();
             ReasoningSnapshotTracker reasoningTracker = new ReasoningSnapshotTracker();
             ThinkingStreamSplitter thinkingStreamSplitter = new ThinkingStreamSplitter();
-            /** 中断/错误时仅补偿落库未完成 assistant 一次，避免与 Advisor 正常 after() 重复 */
-            AtomicBoolean interruptAssistantFlushed = new AtomicBoolean(false);
+            /** 正常结束或中断时，以 streamedContent/streamedReasoning 落库 assistant 一次 */
+            AtomicBoolean streamedAssistantFlushed = new AtomicBoolean(false);
             ToolEventEmitter toolEventEmitter = new ToolEventEmitter(
                     contextId,
                     turnId,
@@ -193,7 +194,7 @@ public class ChatService {
                     turnConversationId,
                     finalAttachments,
                     toolEventEmitter);
-            // 会话记忆主要由 ChatClient Advisor 写入；关闭/异常时补偿未写完的流式 assistant
+            // 纯文本 assistant 由 streamedContent/streamedReasoning 落库；Advisor 仅写入 tool_calls 等结构化消息
             AiAgent aiAgent = aiAgentForConversation;
             AgentThinkingOverride effectiveThinking = ThinkingOverrideResolver.resolve(request, aiAgent);
             ThinkingOverrideRegistry.bind(turnConversationId, effectiveThinking);
@@ -261,9 +262,15 @@ public class ChatService {
                         }
                     }
                 } finally {
-                    flushTurnTrace.run();
-                    runOriginalCompleteCall(originalCompleteCall);
-                    releaseActiveTurn.run();
+                    try {
+                        persistStreamedAssistant(agentChatMemory, turnConversationId, streamedContent,
+                                streamedReasoning, streamedTextLock, streamedAssistantFlushed, false);
+                    } finally {
+                        StreamedAssistantPersistence.disable(turnConversationId);
+                        flushTurnTrace.run();
+                        runOriginalCompleteCall(originalCompleteCall);
+                        releaseActiveTurn.run();
+                    }
                 }
             };
             chatChatCallback.errorCall = t -> {
@@ -297,8 +304,9 @@ public class ChatService {
                         t,
                         () -> {
                             unbindThinkingOverride.run();
-                            flushPartialAssistantOnInterrupt(agentChatMemory, turnConversationId, streamedContent,
-                                    streamedReasoning, streamedTextLock, interruptAssistantFlushed, true);
+                            persistStreamedAssistant(agentChatMemory, turnConversationId, streamedContent,
+                                    streamedReasoning, streamedTextLock, streamedAssistantFlushed, true);
+                            StreamedAssistantPersistence.disable(turnConversationId);
                         },
                         flushTurnTrace,
                         releaseActiveTurn);
@@ -378,6 +386,11 @@ public class ChatService {
                         }
                         String answerDelta = parts.answerDelta();
                         String reasoningDelta = parts.reasoningDelta();
+                        if (StringUtils.isNotBlank(answerDelta)
+                                && StringUtils.isNotBlank(reasoningDelta)
+                                && answerDelta.equals(reasoningDelta)) {
+                            answerDelta = null;
+                        }
                         if (!StringUtils.isNotBlank(answerDelta) && !StringUtils.isNotBlank(reasoningDelta)) {
                             return;
                         }
@@ -417,8 +430,9 @@ public class ChatService {
                         return;
                     }
                     unbindThinkingOverride.run();
-                    flushPartialAssistantOnInterrupt(agentChatMemory, turnConversationId, streamedContent,
-                            streamedReasoning, streamedTextLock, interruptAssistantFlushed, true);
+                    persistStreamedAssistant(agentChatMemory, turnConversationId, streamedContent,
+                            streamedReasoning, streamedTextLock, streamedAssistantFlushed, true);
+                    StreamedAssistantPersistence.disable(turnConversationId);
                     // 关闭上游流，停止继续接收增量 token
                     if (!disposable.isDisposed()) {
                         disposable.dispose();
@@ -451,6 +465,7 @@ public class ChatService {
             log.error("handleChat failed, contextId={}, detail={}", contextId, LlmProviderErrorFormatter.formatForLog(t), t);
             if (conversationIdRef.get() != null) {
                 ThinkingOverrideRegistry.unbind(conversationIdRef.get());
+                StreamedAssistantPersistence.disable(conversationIdRef.get());
             }
             Runnable releaseActiveTurnOnFailure = () -> {
                 String resolvedAgentId = resolvedAgentIdRef.get();
@@ -569,15 +584,14 @@ public class ChatService {
     }
 
     /**
-     * WebSocket 断开或流错误时，将已流式输出但未触发记忆 Advisor {@code after()} 的 assistant 补偿写入。
-     * 同时落库最终回答（{@code content}）与深度思考（{@code reasoningContent} properties）。
+     * 将本轮流式累加的 {@code streamedContent}/{@code streamedReasoning} 写入记忆（正常结束或中断补偿，幂等一次）。
      */
-    void flushPartialAssistantOnInterrupt(ChatMemory chatMemory, String conversationId,
-                                          StringBuilder streamedContent,
-                                          StringBuilder streamedReasoning,
-                                          Object streamedTextLock,
-                                          AtomicBoolean once,
-                                          boolean addEllipsis) {
+    void persistStreamedAssistant(ChatMemory chatMemory, String conversationId,
+                                  StringBuilder streamedContent,
+                                  StringBuilder streamedReasoning,
+                                  Object streamedTextLock,
+                                  AtomicBoolean once,
+                                  boolean addEllipsis) {
         if (!once.compareAndSet(false, true)) {
             return;
         }
@@ -590,13 +604,13 @@ public class ChatService {
         if (content.isEmpty() && reasoning.isEmpty()) {
             return;
         }
-        chatMemory.add(conversationId, List.of(buildInterruptedAssistantMessage(content, reasoning, addEllipsis)));
+        chatMemory.add(conversationId, List.of(buildStreamedAssistantMessage(content, reasoning, addEllipsis)));
     }
 
     /**
-     * 构造中断补偿用的 assistant 消息，与 {@link ChatMemoryMessageCodec} 编码路径对齐。
+     * 构造流式落库用的 assistant 消息，与 {@link ChatMemoryMessageCodec} 编码路径对齐。
      */
-    static AssistantMessage buildInterruptedAssistantMessage(String content, String reasoning, boolean addEllipsis) {
+    static AssistantMessage buildStreamedAssistantMessage(String content, String reasoning, boolean addEllipsis) {
         String finalContent = content != null ? content : "";
         if (addEllipsis && StringUtils.isNotBlank(finalContent)) {
             finalContent = finalContent + "...";

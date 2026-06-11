@@ -1,7 +1,9 @@
 package io.github.jerryt92.j2agent.service.llm.advisor;
 
+import io.github.jerryt92.j2agent.service.llm.StreamedAssistantPersistence;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunContext;
 import io.github.jerryt92.j2agent.service.llm.memory.ConversationIdCodec;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClientMessageAggregator;
 import org.springframework.ai.chat.client.ChatClientRequest;
@@ -230,11 +232,35 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
                 log.warn("ChatMemory conversationId unresolved in after(); skip persisting assistant messages");
                 return chatClientResponse;
             }
-            this.chatMemory.add(conversationId, assistantMessages);
+            List<Message> toPersist = filterAssistantMessagesForPersistence(conversationId, assistantMessages);
+            if (!toPersist.isEmpty()) {
+                this.chatMemory.add(conversationId, toPersist);
+            }
         } finally {
             ACTIVE_CONVERSATION_ID.remove();
         }
         return chatClientResponse;
+    }
+
+    /**
+     * WebSocket 流式回合：纯文本 assistant 由 {@link io.github.jerryt92.j2agent.service.llm.ChatService}
+     * 按 streamedContent/streamedReasoning 落库；此处仅保留 tool_calls 等结构化 assistant。
+     */
+    private static List<Message> filterAssistantMessagesForPersistence(String conversationId,
+                                                                       List<Message> assistantMessages) {
+        if (!StreamedAssistantPersistence.shouldSkipAdvisorTextAssistant(conversationId)) {
+            return assistantMessages;
+        }
+        List<Message> toPersist = new ArrayList<>();
+        for (Message message : assistantMessages) {
+            if (message instanceof AssistantMessage assistantMessage
+                    && !assistantMessage.hasToolCalls()
+                    && StringUtils.hasText(assistantMessage.getText())) {
+                continue;
+            }
+            toPersist.add(message);
+        }
+        return toPersist;
     }
 
     @Override
