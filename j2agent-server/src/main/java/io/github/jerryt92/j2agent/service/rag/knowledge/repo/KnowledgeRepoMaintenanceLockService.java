@@ -96,9 +96,6 @@ public class KnowledgeRepoMaintenanceLockService {
         }
     }
 
-    /**
-     * Redis 锁不可用。
-     */
     public static class KnowledgeRepoMaintenanceLockException extends RuntimeException {
         public KnowledgeRepoMaintenanceLockException(String message, Throwable cause) {
             super(message, cause);
