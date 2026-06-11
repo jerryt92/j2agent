@@ -56,9 +56,11 @@ public abstract class AbstractCollectionKbRetriever implements DocumentRetriever
         }
         String queryText = Retriever.resolveQueryText(query);
         if (StringUtils.isBlank(queryText)) {
+            log.info("RAG 对话检索跳过: collection={}, reason=blank queryText", boundCollection());
             return Collections.emptyList();
         }
         if (isReactToolLoopQuery(query)) {
+            log.info("RAG 对话检索跳过: collection={}, reason=react tool loop", boundCollection());
             return Collections.emptyList();
         }
         Retriever.RagChunksResult ragChunksResult = retriever.retrieveRagChunksResult(queryText, boundCollection(), boundPartitions());
@@ -67,6 +69,13 @@ public abstract class AbstractCollectionKbRetriever implements DocumentRetriever
             return List.of(buildFallbackDocument());
         }
         List<EmbeddingModel.EmbeddingsQueryItem> embeddingsQueryItems = ragChunksResult.items();
+        List<Document> documents = buildDocuments(embeddingsQueryItems);
+        log.info("RAG 对话检索: collection={}, status={}, 分片命中数={}, 生成Document数={}",
+                boundCollection(), ragChunksResult.status(), embeddingsQueryItems.size(), documents.size());
+        return documents;
+    }
+
+    private List<Document> buildDocuments(List<EmbeddingModel.EmbeddingsQueryItem> embeddingsQueryItems) {
         List<Document> documents = new ArrayList<>();
         int ordinal = 1;
         for (EmbeddingModel.EmbeddingsQueryItem item : embeddingsQueryItems) {
@@ -81,8 +90,6 @@ public abstract class AbstractCollectionKbRetriever implements DocumentRetriever
                     .score((double) item.getScore())
                     .build());
         }
-        log.info("RAG 对话检索: collection={}, 分片命中数={}, 生成Document数={}",
-                boundCollection(), embeddingsQueryItems.size(), documents.size());
         return documents;
     }
 
