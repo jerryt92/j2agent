@@ -266,8 +266,8 @@ public class KnowledgeRepoMaintenanceCoordinator {
                 log.info("启动知识库初始化跳过：未获取 Redis 维护锁");
             }
         } catch (KnowledgeRepoMaintenanceLockService.KnowledgeRepoMaintenanceLockException e) {
-            log.error("启动知识库初始化失败：Redis 锁不可用", e);
-            lastFailureMessage = "Redis 不可用，无法执行知识库同步";
+            log.error("启动知识库初始化失败：", e);
+            lastFailureMessage = "发生错误，无法执行知识库同步";
             setTaskType(KnowledgeRepoMaintenanceTaskType.FAILED);
         }
         if (currentTaskType != KnowledgeRepoMaintenanceTaskType.FAILED) {
@@ -371,9 +371,9 @@ public class KnowledgeRepoMaintenanceCoordinator {
             }
             setTaskType(KnowledgeRepoMaintenanceTaskType.IDLE);
         } catch (KnowledgeRepoMaintenanceLockService.KnowledgeRepoMaintenanceLockException e) {
-            log.error("增量同步失败：Redis 锁不可用, trigger={}", trigger, e);
+            log.error("增量同步失败, trigger={}", trigger, e);
             if (failIfLockBusy) {
-                lastFailureMessage = "Redis 不可用，无法执行知识库同步";
+                lastFailureMessage = "发生错误，无法执行知识库同步";
                 setTaskType(KnowledgeRepoMaintenanceTaskType.FAILED);
             } else {
                 setTaskType(KnowledgeRepoMaintenanceTaskType.IDLE);
@@ -454,8 +454,8 @@ public class KnowledgeRepoMaintenanceCoordinator {
                 log.info("完全重建已被新代次取代: gen={}", generation);
                 return;
             }
-            log.error("完全重建失败：Redis 锁不可用, gen={}", generation, e);
-            lastFailureMessage = "Redis 不可用，无法执行完全重建";
+            log.error("完全重建失败, gen={}", generation, e);
+            lastFailureMessage = "发生错误，无法执行完全重建";
             setTaskType(KnowledgeRepoMaintenanceTaskType.FAILED);
         } finally {
             fullRebuildRunning.set(false);
