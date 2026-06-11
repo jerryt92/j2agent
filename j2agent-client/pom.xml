@@ -19,7 +19,6 @@
         <dependency>
             <groupId>io.github.jerryt92.j2agent</groupId>
             <artifactId>j2agent-model</artifactId>
-            <version>${project.parent.version}</version>
         </dependency>
         <dependency>
             <groupId>io.github.openfeign</groupId>
