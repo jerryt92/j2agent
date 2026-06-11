@@ -2,6 +2,7 @@ package io.github.jerryt92.j2agent.service.rag.knowledge.repo;
 
 import io.github.jerryt92.j2agent.config.rag.VectorDatabaseInit;
 import io.github.jerryt92.j2agent.service.embedding.EmbeddingService;
+import io.github.jerryt92.j2agent.service.rag.knowledge.KnowledgeTextChunkService;
 import io.github.jerryt92.j2agent.service.rag.knowledge.MilvusKnowledgeWriteService;
 import io.github.jerryt92.j2agent.service.rag.vdb.VectorDatabaseService;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,7 @@ class KnowledgeRepoSyncServiceFullRebuildTest {
     @Mock
     private KnowledgeRepoHashTreeService hashTreeService;
     @Mock
-    private MarkdownQaParser markdownQaParser;
+    private KnowledgeTextChunkParser knowledgeTextChunkParser;
     @Mock
     private KnowledgeMarkdownImageRewriter knowledgeMarkdownImageRewriter;
     @Mock
@@ -41,6 +42,8 @@ class KnowledgeRepoSyncServiceFullRebuildTest {
     private VectorDatabaseService vectorDatabaseService;
     @Mock
     private VectorDatabaseInit vectorDatabaseInit;
+    @Mock
+    private KnowledgeTextChunkService knowledgeTextChunkService;
 
     @TempDir
     Path tempRepo;
@@ -59,20 +62,22 @@ class KnowledgeRepoSyncServiceFullRebuildTest {
         KnowledgeRepoSyncService syncService = new KnowledgeRepoSyncService(
                 metadataService,
                 hashTreeService,
-                markdownQaParser,
+                knowledgeTextChunkParser,
                 knowledgeMarkdownImageRewriter,
                 milvusKnowledgeWriteService,
                 embeddingService,
                 vectorDatabaseService,
-                vectorDatabaseInit);
+                vectorDatabaseInit,
+                knowledgeTextChunkService);
 
         assertTrue(syncService.executeFullRebuild(() -> true));
 
-        InOrder order = inOrder(milvusKnowledgeWriteService, hashTreeService, vectorDatabaseService, vectorDatabaseInit);
+        InOrder order = inOrder(milvusKnowledgeWriteService, hashTreeService, knowledgeTextChunkService, vectorDatabaseService, vectorDatabaseInit);
         order.verify(milvusKnowledgeWriteService).dropCollection("current_collection");
         order.verify(milvusKnowledgeWriteService).dropCollection("old_count_collection");
         order.verify(milvusKnowledgeWriteService).dropCollection("old_file_collection");
         order.verify(hashTreeService).deleteAll();
+        order.verify(knowledgeTextChunkService).deleteAll();
         order.verify(vectorDatabaseService).resetClient();
         order.verify(vectorDatabaseInit).probeAndConfigure();
         verify(milvusKnowledgeWriteService, never()).dropAllCollections();

@@ -46,7 +46,7 @@ public abstract class AbstractCollectionKbRetriever implements DocumentRetriever
 
     /**
      * Spring AI 标准检索入口：优先读取 Query 文本，缺失时回退到历史中的最后一条用户消息。
-     * <p>生成的 {@link Document} 正文为 {@link EmbeddingModel.EmbeddingsQueryItem#getAnswer()}，供排查时与接口返回的 {@code textChunk} 对齐（勿仅用 {@code outline}）。</p>
+     * <p>生成的 {@link Document} 正文为 MySQL 回填的完整 {@code textChunk}（勿仅用 Milvus 窗口切片或 {@code outline}）。</p>
      */
     @Override
     public List<Document> retrieve(Query query) {
@@ -78,8 +78,9 @@ public abstract class AbstractCollectionKbRetriever implements DocumentRetriever
             metadata.put("textChunkId", item.getTextChunkId());
             metadata.put("sourceFile", item.getSourceFile());
             metadata.put("chunkOrdinal", ordinal++);
+            String documentText = StringUtils.isNotBlank(item.getTextChunk()) ? item.getTextChunk() : item.getText();
             documents.add(Document.builder()
-                    .text(item.getText())
+                    .text(documentText)
                     .metadata(metadata)
                     .score((double) item.getScore())
                     .build());

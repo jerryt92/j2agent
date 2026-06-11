@@ -1,11 +1,13 @@
 package io.github.jerryt92.j2agent.service.rag.retrieval;
 
-import io.github.jerryt92.j2agent.service.rag.inf.AbstractCollectionKbRetriever;
 import io.github.jerryt92.j2agent.model.EmbeddingModel;
 import io.github.jerryt92.j2agent.model.KnowledgeRetrieveItemDto;
 import io.github.jerryt92.j2agent.model.Translator;
+import io.github.jerryt92.j2agent.model.po.KnowledgeTextChunkPo;
 import io.github.jerryt92.j2agent.service.PropertiesService;
 import io.github.jerryt92.j2agent.service.embedding.EmbeddingService;
+import io.github.jerryt92.j2agent.service.rag.inf.AbstractCollectionKbRetriever;
+import io.github.jerryt92.j2agent.service.rag.knowledge.KnowledgeTextChunkService;
 import io.github.jerryt92.j2agent.service.rag.vdb.VectorDatabaseService;
 import io.github.jerryt92.j2agent.utils.MathCalculatorUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -19,10 +21,10 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.concurrent.CompletionException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletionException;
 
 /**
  * 通用检索引擎：负责检索参数解析、混合检索调用与分数归一化。
@@ -40,6 +42,7 @@ public class Retriever {
     private final VectorDatabaseService vectorDatabaseService;
     private final PropertiesService propertiesService;
     private final QueryChunker queryChunker;
+    private final KnowledgeTextChunkService knowledgeTextChunkService;
 
     /**
      * RAG 检索结果状态：区分正常、空命中与向量库失败降级。
@@ -53,11 +56,13 @@ public class Retriever {
     public Retriever(EmbeddingService embeddingService,
                      VectorDatabaseService vectorDatabaseService,
                      PropertiesService propertiesService,
-                     QueryChunker queryChunker) {
+                     QueryChunker queryChunker,
+                     KnowledgeTextChunkService knowledgeTextChunkService) {
         this.embeddingService = embeddingService;
         this.vectorDatabaseService = vectorDatabaseService;
         this.propertiesService = propertiesService;
         this.queryChunker = queryChunker;
+        this.knowledgeTextChunkService = knowledgeTextChunkService;
     }
 
     /**
@@ -81,28 +86,6 @@ public class Retriever {
             }
         }
         return null;
-    }
-
-    /**
-     * 基于指定 collection 与分区执行相似度检索并做归一化与阈值过滤。
-     */
-    public List<EmbeddingModel.EmbeddingsQueryItem> similarityRetrieval(String queryText,
-                                                                        KnowledgeRetrieveItemDto.MetricTypeEnum metricType,
-                                                                        int topK,
-                                                                        String metricScoreCompareExpr,
-                                                                        String collection,
-                                                                        List<String> partitionNames) {
-        SearchOutcome outcome = searchAndNormalize(queryText, metricType, topK, collection, partitionNames, "RAG检索");
-        List<EmbeddingModel.EmbeddingsQueryItem> result = new ArrayList<>();
-        for (EmbeddingModel.EmbeddingsQueryItem item : outcome.items()) {
-            String calculateExpressionResult = MathCalculatorUtil.calculateExpression(item.getScore() + metricScoreCompareExpr);
-            if (StringUtils.isBlank(metricScoreCompareExpr) || "true".equals(calculateExpressionResult)) {
-                result.add(item);
-            }
-        }
-        log.info("RAG检索结果: collection={}, 向量库命中数={}, 阈值过滤后条数={}, queryChunks={}",
-                collection, outcome.rawHitCount(), result.size(), outcome.queryChunks());
-        return result;
     }
 
     /**
@@ -144,6 +127,7 @@ public class Retriever {
             log.warn("{}: 查询向量化或混合检索无结果, collection={}", logPrefix, collection);
             return new SearchOutcome(Collections.emptyList(), 0, queryChunks, RetrievalStatus.EMPTY, null);
         }
+        hydrateTextChunks(rawHits);
         boolean multiChunk = queryChunks > 1;
         SearchExecutionResult normalizeResult = normalizeHitScores(rawHits, metricType, weights, collection, effectivePartitions, multiChunk, chunks.getFirst(), metricTypeName);
         if (normalizeResult.failed()) {
@@ -167,8 +151,12 @@ public class Retriever {
         if (embed == null || embed.getData() == null || embed.getData().isEmpty()) {
             return SearchExecutionResult.success(Collections.emptyList());
         }
-        return safeHybridRetrieval(collection, chunkText, embed.getData().getFirst().getEmbeddings(),
+        SearchExecutionResult chunkResult = safeHybridRetrieval(collection, chunkText, embed.getData().getFirst().getEmbeddings(),
                 topK, metricTypeName, weights, partitionNames, "singleChunk");
+        if (chunkResult.failed() || chunkResult.items() == null) {
+            return chunkResult;
+        }
+        return SearchExecutionResult.success(mergeChunkHits(chunkResult.items(), topK, weights[0], weights[1]));
     }
 
     private SearchExecutionResult hybridSearchMultiChunk(List<String> chunks,
@@ -203,7 +191,7 @@ public class Retriever {
     }
 
     /**
-     * 按 segment 去重，保留原始混合分最高的一条，再取 topK。
+     * 按 text_chunk_id 去重，保留原始混合分最高的一条，再取 topK。
      */
     private List<EmbeddingModel.EmbeddingsQueryItem> mergeChunkHits(List<EmbeddingModel.EmbeddingsQueryItem> hits,
                                                                     int topK,
@@ -231,14 +219,39 @@ public class Retriever {
     }
 
     private static String dedupeKey(EmbeddingModel.EmbeddingsQueryItem item) {
-        if (StringUtils.isNotBlank(item.getHash())) {
-            return item.getHash();
-        }
         if (StringUtils.isNotBlank(item.getTextChunkId())) {
             return item.getTextChunkId();
         }
+        if (StringUtils.isNotBlank(item.getHash())) {
+            return item.getHash();
+        }
         return (item.getSourceFile() != null ? item.getSourceFile() : "")
-                + "|" + (item.getQuestion() != null ? item.getQuestion() : "");
+                + "|" + (item.getHeadingPath() != null ? item.getHeadingPath() : "");
+    }
+
+    private void hydrateTextChunks(List<EmbeddingModel.EmbeddingsQueryItem> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        List<String> textChunkIds = items.stream()
+                .map(EmbeddingModel.EmbeddingsQueryItem::getTextChunkId)
+                .filter(StringUtils::isNotBlank)
+                .distinct()
+                .toList();
+        if (textChunkIds.isEmpty()) {
+            return;
+        }
+        Map<String, KnowledgeTextChunkPo> chunkMap = knowledgeTextChunkService.getByIds(textChunkIds);
+        for (EmbeddingModel.EmbeddingsQueryItem item : items) {
+            KnowledgeTextChunkPo po = chunkMap.get(item.getTextChunkId());
+            if (po == null) {
+                continue;
+            }
+            item.setTextChunk(po.getTextChunk());
+            if (StringUtils.isBlank(item.getHeadingPath())) {
+                item.setHeadingPath(po.getHeadingPath());
+            }
+        }
     }
 
     private static float rawHybridScore(EmbeddingModel.EmbeddingsQueryItem item, float denseWeight, float sparseWeight) {
@@ -303,7 +316,8 @@ public class Retriever {
                                   String failureMessage) {
     }
 
-    private record SearchExecutionResult(List<EmbeddingModel.EmbeddingsQueryItem> items, boolean failed, String failureMessage) {
+    private record SearchExecutionResult(List<EmbeddingModel.EmbeddingsQueryItem> items, boolean failed,
+                                         String failureMessage) {
         private static SearchExecutionResult success(List<EmbeddingModel.EmbeddingsQueryItem> items) {
             return new SearchExecutionResult(items == null ? Collections.emptyList() : items, false, null);
         }
@@ -397,8 +411,8 @@ public class Retriever {
             return fallbackText;
         }
         EmbeddingModel.EmbeddingsQueryItem firstItem = embeddingsQueryItems.get(0);
-        if (firstItem != null && StringUtils.isNotBlank(firstItem.getAnswer())) {
-            return firstItem.getAnswer();
+        if (firstItem != null && StringUtils.isNotBlank(firstItem.getTextChunk())) {
+            return firstItem.getTextChunk();
         }
         if (firstItem != null && StringUtils.isNotBlank(firstItem.getText())) {
             return firstItem.getText();

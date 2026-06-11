@@ -72,8 +72,7 @@ public final class Translator {
         jsonObject.addProperty(MilvusSchemaDefinition.FIELD_EMBEDDING_PROVIDER, vectorBo.getEmbeddingProvider());
         jsonObject.addProperty(MilvusSchemaDefinition.FIELD_CHECK_EMBEDDING_HASH, vectorBo.getCheckEmbeddingHash());
         jsonObject.addProperty(MilvusSchemaDefinition.FIELD_TEXT, vectorBo.buildText());
-        jsonObject.addProperty(MilvusSchemaDefinition.FIELD_QUESTION, vectorBo.getQuestion());
-        jsonObject.addProperty(MilvusSchemaDefinition.FIELD_ANSWER, vectorBo.getAnswer());
+        jsonObject.addProperty(MilvusSchemaDefinition.FIELD_TYPE, vectorBo.getType());
         jsonObject.addProperty(MilvusSchemaDefinition.FIELD_SOURCE_FILE, vectorBo.getSourceFile());
         jsonObject.addProperty(MilvusSchemaDefinition.FIELD_HEADING_PATH, vectorBo.getHeadingPath());
         jsonObject.addProperty(MilvusSchemaDefinition.FIELD_COLLECTION_TAG, vectorBo.getCollectionTag());
@@ -99,13 +98,15 @@ public final class Translator {
         knowledgeRetrieveItemDto.setEmbeddingModel(embeddingsQueryItem.getEmbeddingModel());
         knowledgeRetrieveItemDto.setEmbeddingProvider(embeddingsQueryItem.getEmbeddingProvider());
         knowledgeRetrieveItemDto.setDimension(dimension);
-        knowledgeRetrieveItemDto.setOutline(embeddingsQueryItem.getQuestion() == null ? embeddingsQueryItem.getText() : embeddingsQueryItem.getQuestion());
+        knowledgeRetrieveItemDto.setOutline(StringUtils.isBlank(embeddingsQueryItem.getHeadingPath())
+                ? embeddingsQueryItem.getText()
+                : embeddingsQueryItem.getHeadingPath());
         knowledgeRetrieveItemDto.setMetricType(metricType);
         if (metricType != null) {
             knowledgeRetrieveItemDto.setDenseMetricType(KnowledgeRetrieveItemDto.DenseMetricTypeEnum.valueOf(metricType.name()));
         }
         knowledgeRetrieveItemDto.setSparseMetricType(KnowledgeRetrieveItemDto.SparseMetricTypeEnum.BM25);
-        knowledgeRetrieveItemDto.setTextChunk(embeddingsQueryItem.getAnswer());
+        knowledgeRetrieveItemDto.setTextChunk(embeddingsQueryItem.getTextChunk());
         knowledgeRetrieveItemDto.setTextChunkId(embeddingsQueryItem.getTextChunkId());
         knowledgeRetrieveItemDto.setSourceFile(embeddingsQueryItem.getSourceFile());
         knowledgeRetrieveItemDto.setIsFiltered(isFiltered);

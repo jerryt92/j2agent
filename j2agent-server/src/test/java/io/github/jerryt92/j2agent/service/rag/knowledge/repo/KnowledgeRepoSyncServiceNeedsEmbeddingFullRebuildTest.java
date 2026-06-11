@@ -2,6 +2,7 @@ package io.github.jerryt92.j2agent.service.rag.knowledge.repo;
 
 import io.github.jerryt92.j2agent.config.rag.VectorDatabaseInit;
 import io.github.jerryt92.j2agent.service.embedding.EmbeddingService;
+import io.github.jerryt92.j2agent.service.rag.knowledge.KnowledgeTextChunkService;
 import io.github.jerryt92.j2agent.service.rag.knowledge.MilvusKnowledgeWriteService;
 import io.github.jerryt92.j2agent.service.rag.vdb.VectorDatabaseService;
 import org.junit.jupiter.api.Test;
@@ -24,7 +25,7 @@ class KnowledgeRepoSyncServiceNeedsEmbeddingFullRebuildTest {
     @Mock
     private KnowledgeRepoHashTreeService hashTreeService;
     @Mock
-    private MarkdownQaParser markdownQaParser;
+    private KnowledgeTextChunkParser knowledgeTextChunkParser;
     @Mock
     private KnowledgeMarkdownImageRewriter knowledgeMarkdownImageRewriter;
     @Mock
@@ -35,6 +36,8 @@ class KnowledgeRepoSyncServiceNeedsEmbeddingFullRebuildTest {
     private VectorDatabaseService vectorDatabaseService;
     @Mock
     private VectorDatabaseInit vectorDatabaseInit;
+    @Mock
+    private KnowledgeTextChunkService knowledgeTextChunkService;
 
     @Test
     void needsEmbeddingFullRebuild_whenEmbeddingNotReady_returnsFalse() {
@@ -109,11 +112,12 @@ class KnowledgeRepoSyncServiceNeedsEmbeddingFullRebuildTest {
         return new KnowledgeRepoSyncService(
                 metadataService,
                 hashTreeService,
-                markdownQaParser,
+                knowledgeTextChunkParser,
                 knowledgeMarkdownImageRewriter,
                 milvusKnowledgeWriteService,
                 embeddingService,
                 vectorDatabaseService,
-                vectorDatabaseInit);
+                vectorDatabaseInit,
+                knowledgeTextChunkService);
     }
 }

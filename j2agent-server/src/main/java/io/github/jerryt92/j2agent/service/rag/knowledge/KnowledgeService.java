@@ -1,12 +1,11 @@
 package io.github.jerryt92.j2agent.service.rag.knowledge;
 
 import io.github.jerryt92.j2agent.mapper.KnowledgeSourceFileHashMapper;
-import io.github.jerryt92.j2agent.model.EmbeddingModel;
 import io.github.jerryt92.j2agent.model.KnowledgeCollectionListDto;
 import io.github.jerryt92.j2agent.model.KnowledgeDto;
 import io.github.jerryt92.j2agent.model.KnowledgeGetListDto;
+import io.github.jerryt92.j2agent.model.po.KnowledgeTextChunkPo;
 import io.github.jerryt92.j2agent.service.embedding.EmbeddingService;
-import io.github.jerryt92.j2agent.service.rag.vdb.VectorDatabaseService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -16,15 +15,15 @@ import java.util.List;
 @Slf4j
 @Service
 public class KnowledgeService {
-    private final VectorDatabaseService vectorDatabaseService;
     private final KnowledgeSourceFileHashMapper knowledgeSourceFileHashMapper;
+    private final KnowledgeTextChunkService knowledgeTextChunkService;
     private final EmbeddingService embeddingService;
 
-    public KnowledgeService(VectorDatabaseService vectorDatabaseService,
-                            KnowledgeSourceFileHashMapper knowledgeSourceFileHashMapper,
+    public KnowledgeService(KnowledgeSourceFileHashMapper knowledgeSourceFileHashMapper,
+                            KnowledgeTextChunkService knowledgeTextChunkService,
                             EmbeddingService embeddingService) {
-        this.vectorDatabaseService = vectorDatabaseService;
         this.knowledgeSourceFileHashMapper = knowledgeSourceFileHashMapper;
+        this.knowledgeTextChunkService = knowledgeTextChunkService;
         this.embeddingService = embeddingService;
     }
 
@@ -45,9 +44,7 @@ public class KnowledgeService {
     }
 
     /**
-     * 按 collection 从 Milvus 查询知识分片。
-     *
-     * @param partitionNames 可选，限定 Milvus 分区；null 或空表示全 collection。
+     * 按 collection 从 MySQL 查询逻辑文本块。
      */
     public KnowledgeGetListDto getKnowledge(Integer offset, Integer limit, String search, String collection, List<String> partitionNames) {
         KnowledgeGetListDto result = new KnowledgeGetListDto();
@@ -55,13 +52,11 @@ public class KnowledgeService {
             result.setData(List.of());
             return result;
         }
-        List<String> effective = partitionNames == null || partitionNames.isEmpty() ? null : partitionNames;
-        List<KnowledgeDto> data = vectorDatabaseService.queryKnowledge(
+        List<KnowledgeDto> data = knowledgeTextChunkService.listByCollection(
                         collection,
-                        offset == null ? 0 : offset,
-                        limit == null ? 10 : limit,
                         search,
-                        effective
+                        offset == null ? 0 : offset,
+                        limit == null ? 10 : limit
                 ).stream()
                 .map(this::toKnowledgeDto)
                 .toList();
@@ -69,16 +64,13 @@ public class KnowledgeService {
         return result;
     }
 
-    private KnowledgeDto toKnowledgeDto(EmbeddingModel.EmbeddingsQueryItem item) {
+    private KnowledgeDto toKnowledgeDto(KnowledgeTextChunkPo po) {
         KnowledgeDto knowledgeDto = new KnowledgeDto();
-        knowledgeDto.setTextChunkId(item.getTextChunkId());
-        knowledgeDto.setOutline(StringUtils.isBlank(item.getQuestion()) ? List.of() : List.of(item.getQuestion()));
-        knowledgeDto.setTextChunk(item.getAnswer());
-        knowledgeDto.setEmbeddingModel(item.getEmbeddingModel());
-        knowledgeDto.setEmbeddingProvider(item.getEmbeddingProvider());
+        knowledgeDto.setTextChunkId(po.getId());
+        knowledgeDto.setOutline(StringUtils.isBlank(po.getHeadingPath()) ? List.of() : List.of(po.getHeadingPath()));
+        knowledgeDto.setTextChunk(po.getTextChunk());
         knowledgeDto.setDimension(embeddingService.getDimension());
-        knowledgeDto.setDescription(item.getText());
-        knowledgeDto.setSourceFile(item.getSourceFile());
+        knowledgeDto.setSourceFile(po.getSourceFile());
         return knowledgeDto;
     }
 }

@@ -511,15 +511,15 @@ components:
       properties:
         textChunkId:
           type: string
-          description: 知识ID（文本块的SHA-1）
+          description: 逻辑文本块 ID（UUIDv7）
         outline:
           type: array
-          description: 知识概要（用于嵌入后检索的文本）
+          description: 标题链（heading_path）
           items:
             type: string
         textChunk:
           type: string
-          description: 文本块
+          description: 完整正文（MySQL LONGTEXT）
         embeddingModel:
           type: string
           description: 嵌入模型名称
@@ -557,15 +557,15 @@ components:
       properties:
         id:
           type: string
-          description: 知识ID（textChunk的SHA-1）
+          description: 逻辑文本块 ID（UUIDv7）
         outline:
           type: array
-          description: 知识概要（用于检索）
+          description: 标题链（heading_path）
           items:
             type: string
         textChunk:
           type: string
-          description: 文本块
+          description: 完整正文（MySQL LONGTEXT）
         description:
           type: string
           description: 描述

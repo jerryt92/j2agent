@@ -21,4 +21,12 @@ public class KnowledgeRepoProperties {
      * 是否开启目录监听。
      */
     private boolean watchEnabled = true;
+    /**
+     * 正文 content_segment 滑动窗口单段最大字符数。
+     */
+    private int contentSegmentChars;
+    /**
+     * 正文 content_segment 相邻段重叠字符数。
+     */
+    private int contentSegmentOverlapChars;
 }

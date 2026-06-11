@@ -55,10 +55,12 @@ public class EmbeddingModel {
         String text;
         // 文本块ID
         String textChunkId;
-        // 问题
-        String question;
-        // 答案
-        String answer;
+        // 分片类型 title / content_segment
+        String type;
+        // 标题链
+        String headingPath;
+        // MySQL 完整正文
+        String textChunk;
         // 源文件路径
         String sourceFile;
     }

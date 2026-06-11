@@ -86,6 +86,22 @@ CREATE TABLE api_provider_config
 CREATE INDEX idx_api_provider_type ON api_provider_config (api_type, provider_type);
 CREATE INDEX idx_api_provider_current ON api_provider_config (api_type, is_current);
 
+DROP TABLE IF EXISTS knowledge_text_chunk;
+CREATE TABLE knowledge_text_chunk
+(
+    id              varchar(32)   NOT NULL COMMENT 'text_chunk_id UUIDv7',
+    heading_path    varchar(2048) NOT NULL COMMENT '标题链',
+    text_chunk      longtext      NOT NULL COMMENT '标题下完整正文',
+    source_file     varchar(2048) NOT NULL COMMENT '源文件相对路径',
+    collection_name varchar(128)  NOT NULL COMMENT '目标 collection',
+    file_sha256     char(64)      NOT NULL COMMENT '源文件 sha256',
+    created_at      bigint        NOT NULL COMMENT '创建时间',
+    updated_at      bigint        NOT NULL COMMENT '更新时间',
+    PRIMARY KEY (id),
+    KEY idx_source_file (source_file(255)),
+    KEY idx_collection (collection_name)
+) COMMENT ='知识库逻辑文本块';
+
 DROP TABLE IF EXISTS knowledge_source_file_hash;
 CREATE TABLE knowledge_source_file_hash
 (

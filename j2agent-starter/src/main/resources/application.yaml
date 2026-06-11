@@ -137,6 +137,8 @@ j2agent:
       # 知识库仓库根目录
       root-path: ./docker/volumes/j2agent/knowledge-repo
       watch-enabled: true
+      content-segment-chars: 6000
+      content-segment-overlap-chars: 200
   # 回合结束后是否生成「建议追问」NOTICE（关 WebSocket 前发出）
   follow-up-suggestions:
     enabled: false
