@@ -1,5 +1,6 @@
 package io.github.jerryt92.j2agent.service.rag.retrieval;
 
+import io.github.jerryt92.j2agent.config.rag.KnowledgeRepoProperties;
 import io.github.jerryt92.j2agent.config.rag.RetrieveProperties;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
@@ -10,6 +11,7 @@ import java.util.List;
 
 /**
  * 将超长检索 query 切为若干段，每段不超过 Embedding 输入上限。
+ * <p>重叠字符数与入库共用 {@link KnowledgeRepoProperties#getContentSegmentOverlapChars()}。</p>
  */
 @Component
 public class QueryChunker {
@@ -17,9 +19,12 @@ public class QueryChunker {
     private static final int NEWLINE_BREAK_LOOKBACK = 200;
 
     private final RetrieveProperties retrieveProperties;
+    private final KnowledgeRepoProperties knowledgeRepoProperties;
 
-    public QueryChunker(RetrieveProperties retrieveProperties) {
+    public QueryChunker(RetrieveProperties retrieveProperties,
+                        KnowledgeRepoProperties knowledgeRepoProperties) {
         this.retrieveProperties = retrieveProperties;
+        this.knowledgeRepoProperties = knowledgeRepoProperties;
     }
 
     /**
@@ -36,7 +41,7 @@ public class QueryChunker {
         if (maxLen <= 0 || text.length() <= maxLen) {
             return List.of(text);
         }
-        int overlap = Math.max(0, retrieveProperties.getQueryChunkOverlapChars());
+        int overlap = Math.max(0, knowledgeRepoProperties.getContentSegmentOverlapChars());
         int maxChunks = Math.max(1, retrieveProperties.getMaxQueryChunks());
         List<String> chunks = new ArrayList<>();
         int pos = 0;

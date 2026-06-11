@@ -114,8 +114,10 @@ j2agent:
       # 知识库仓库根目录
       root-path: /opt/j2agent/volume/knowledge-repo
       watch-enabled: true
+      # 入库 content_segment 单段最大字符数
       content-segment-chars: 6000
-      content-segment-overlap-chars: 200
+      # 入库 content_segment 与超长 query 切分的相邻段重叠字符数（0 表示无重叠）
+      content-segment-overlap-chars: 50
   # 回合结束后是否生成「建议追问」NOTICE（关 WebSocket 前发出）
   follow-up-suggestions:
     enabled: false
@@ -131,7 +133,6 @@ j2agent:
     key-fallback-ttl-hours: 24
   retrieve:
     max-embedding-input-chars: 8192
-    query-chunk-overlap-chars: 50
     max-query-chunks: 5
   # 智能体插件配置
   plugin:

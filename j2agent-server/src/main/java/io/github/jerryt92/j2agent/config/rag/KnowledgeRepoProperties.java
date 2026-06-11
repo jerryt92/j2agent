@@ -22,11 +22,13 @@ public class KnowledgeRepoProperties {
      */
     private boolean watchEnabled = true;
     /**
-     * 正文 content_segment 滑动窗口单段最大字符数。
+     * 入库 content_segment 单段最大字符数；超长 query 切分窗口宽度与之对齐时使用同一语义。
+     * 须在 {@code application.yaml} 的 {@code j2agent.knowledge.repo} 下配置。
      */
     private int contentSegmentChars;
     /**
-     * 正文 content_segment 相邻段重叠字符数。
+     * 入库 content_segment 与超长 query 切分的相邻段重叠字符数；为 0 时无重叠。
+     * 须在 {@code application.yaml} 的 {@code j2agent.knowledge.repo} 下配置。
      */
     private int contentSegmentOverlapChars;
 }

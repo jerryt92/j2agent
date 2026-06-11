@@ -8,7 +8,9 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 将逻辑 text_chunk 正文按滑动窗口切分为 content_segment 嵌入片段。
+ * 将逻辑 text_chunk 正文按 {@link KnowledgeRepoProperties} 配置的窗口切分为 content_segment 嵌入片段。
+ * <p>参数：{@code content-segment-chars}、{@code content-segment-overlap-chars}；
+ * {@code overlap=0} 时下一段从前一段 {@code end} 继续。</p>
  */
 @Component
 public class ContentSegmentChunker {
@@ -22,7 +24,7 @@ public class ContentSegmentChunker {
     }
 
     /**
-     * 若未超长则返回单元素列表；否则按配置切分（含重叠，覆盖全文）。
+     * 若未超长则返回单元素列表；否则按配置的窗口宽度与重叠切分，覆盖全文。
      */
     public List<String> chunk(String text) {
         if (text == null) {

@@ -67,10 +67,6 @@ public abstract class AbstractCollectionKbRetriever implements DocumentRetriever
             return List.of(buildFallbackDocument());
         }
         List<EmbeddingModel.EmbeddingsQueryItem> embeddingsQueryItems = ragChunksResult.items();
-        if (embeddingsQueryItems.isEmpty()) {
-            log.info("RAG 对话检索: collection={}, 分片命中数=0", boundCollection());
-            return Collections.emptyList();
-        }
         List<Document> documents = new ArrayList<>();
         int ordinal = 1;
         for (EmbeddingModel.EmbeddingsQueryItem item : embeddingsQueryItems) {

@@ -18,11 +18,6 @@ public class RetrieveProperties {
     private int maxEmbeddingInputChars = 7500;
 
     /**
-     * 超长 query 切分时的重叠字符数，减轻句边界切断影响。
-     */
-    private int queryChunkOverlapChars = 200;
-
-    /**
      * 超长 query 最多切分几段；超出时首 N-1 段从头滑动，末段取全文尾部。
      */
     private int maxQueryChunks = 4;
