@@ -33,10 +33,10 @@ public final class LlmActiveConfig {
     /** 采样温度，0~2 */
     private Double temperature;
 
-    /** 深度思考模式：provider_default / on / off；仅 Anthropic、Ollama 生效 */
+    /** 深度思考模式：provider_default / on / off；仅 Anthropic、LM Studio、Ollama 生效 */
     private String thinkingMode;
 
-    /** Anthropic 思考 token 预算（thinkingMode=on）；可选，未填时用 {@link LlmThinkingSupport#ANTHROPIC_DEFAULT_THINKING_BUDGET} */
+    /** Anthropic thinking.budget_tokens 或 LM Studio reasoning_tokens（thinkingMode=on）；未填时用 {@link LlmThinkingSupport#DEFAULT_THINKING_BUDGET} */
     private Integer thinkingBudgetTokens;
 
     public String getProviderType() {

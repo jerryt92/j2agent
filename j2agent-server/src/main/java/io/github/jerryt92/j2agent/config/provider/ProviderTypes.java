@@ -17,8 +17,9 @@ public final class ProviderTypes {
     public static final String LLM_VLLM = "vllm";
     public static final String LLM_ANTHROPIC = "anthropic";
     public static final String LLM_OLLAMA = "ollama";
+    public static final String LLM_LM_STUDIO = "lm-studio";
     public static final Set<String> SUPPORTED_LLM_PROVIDERS =
-            Set.of(LLM_OPEN_AI, LLM_VLLM, LLM_ANTHROPIC, LLM_OLLAMA);
+            Set.of(LLM_OPEN_AI, LLM_VLLM, LLM_ANTHROPIC, LLM_OLLAMA, LLM_LM_STUDIO);
 
     /** Embedding provider_type 取值 */
     public static final String EMB_OPEN_AI = "open-ai";

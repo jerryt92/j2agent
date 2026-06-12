@@ -18,7 +18,7 @@ public enum AgentThinkingOverride {
     /** 覆盖为提供商默认：不向模型显式下发 thinking/think 参数 */
     PROVIDER_DEFAULT,
 
-    /** 覆盖为 on：开启深度思考（Anthropic 的 token 预算仍取自提供商配置或默认 10240） */
+    /** 覆盖为 on：开启深度思考（token 预算仍取自提供商配置或默认 4096） */
     ON,
 
     /** 覆盖为 off：显式关闭深度思考 */

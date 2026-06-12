@@ -22,12 +22,15 @@ import org.springframework.web.reactive.function.client.WebClient;
 /**
  * 根据 {@link LlmActiveConfig} 装配 Spring AI 的 {@link ChatModel}。
  *
- * <p>支持 OpenAI 兼容、vLLM（OpenAI 兼容协议）、Anthropic、Ollama 四种 provider。
+ * <p>支持 OpenAI 兼容、vLLM（OpenAI 兼容协议）、Anthropic、Ollama、LM Studio 五种 provider。
  */
 public final class LlmBackedChatModelFactory {
 
-    /** vLLM 默认的 chat completions path（OpenAI 兼容协议） */
+    /** vLLM / LM Studio 默认的 chat completions path（OpenAI 兼容协议） */
     private static final String VLLM_DEFAULT_COMPLETIONS_PATH = "/v1/chat/completions";
+
+    /** LM Studio 默认服务地址 */
+    private static final String LM_STUDIO_DEFAULT_BASE_URL = "http://127.0.0.1:1234";
 
     private LlmBackedChatModelFactory() {
     }
@@ -54,6 +57,7 @@ public final class LlmBackedChatModelFactory {
             case ProviderTypes.LLM_VLLM -> buildOpenAi(config, true);
             case ProviderTypes.LLM_ANTHROPIC -> buildAnthropic(config, thinkingOverride);
             case ProviderTypes.LLM_OLLAMA -> buildOllama(config, thinkingOverride);
+            case ProviderTypes.LLM_LM_STUDIO -> buildLmStudio(config, thinkingOverride);
             default -> throw new IllegalStateException("不支持的 LLM provider: " + provider);
         };
     }
@@ -80,6 +84,31 @@ public final class LlmBackedChatModelFactory {
         if (cfg.getTemperature() != null) {
             optionsBuilder.temperature(cfg.getTemperature());
         }
+        return OpenAiChatModel.builder()
+                .openAiApi(apiBuilder.build())
+                .defaultOptions(optionsBuilder.build())
+                .build();
+    }
+
+    /**
+     * LM Studio OpenAI 兼容 Chat API；{@code baseUrl} / {@code completionsPath} 未填时使用本地默认值。
+     */
+    public static OpenAiChatModel buildLmStudio(LlmActiveConfig cfg, AgentThinkingOverride thinkingOverride) {
+        String baseUrl = StringUtils.isNotBlank(cfg.getBaseUrl()) ? cfg.getBaseUrl() : LM_STUDIO_DEFAULT_BASE_URL;
+        String completionsPath = StringUtils.isNotBlank(cfg.getCompletionsPath())
+                ? cfg.getCompletionsPath()
+                : VLLM_DEFAULT_COMPLETIONS_PATH;
+        OpenAiApi.Builder apiBuilder = OpenAiApi.builder()
+                .baseUrl(baseUrl)
+                .apiKey(cfg.getApiKey() == null ? "" : cfg.getApiKey())
+                .completionsPath(completionsPath)
+                .webClientBuilder(LlmReactiveHttpClientFactory.createWebClientBuilder("llm-lm-studio"));
+        OpenAiChatOptions.Builder optionsBuilder = OpenAiChatOptions.builder()
+                .model(cfg.getModelName());
+        if (cfg.getTemperature() != null) {
+            optionsBuilder.temperature(cfg.getTemperature());
+        }
+        LlmThinkingSupport.applyLmStudio(optionsBuilder, cfg, thinkingOverride);
         return OpenAiChatModel.builder()
                 .openAiApi(apiBuilder.build())
                 .defaultOptions(optionsBuilder.build())
