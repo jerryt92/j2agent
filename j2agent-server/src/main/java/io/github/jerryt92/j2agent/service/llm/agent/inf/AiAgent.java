@@ -298,6 +298,14 @@ public abstract class AiAgent {
     }
 
     /**
+     * 是否向前端展示 RAG 命中的知识库文件来源（实时 WebSocket PATCH + 历史回放 srcFile）。
+     * 默认关闭；{@code rag_infos} 仍正常落库，仅 UI 层按本开关过滤。
+     */
+    public boolean isRagSourceDisplayEnabled() {
+        return false;
+    }
+
+    /**
      * RAG 检索前 Query 预处理链（Multimodal → Compression → Rewrite）。
      * 子类返回空数组可关闭；默认走 {@link DefaultQueryTransformers}。
      */
@@ -457,7 +465,8 @@ public abstract class AiAgent {
             RetrievalAugmentationAdvisor ragAdvisor = ragAdvisorBuilder.build();
             chatClient = ChatClient.builder(chatModel)
                     .defaultAdvisors(memoryAdvisor,
-                            EmptyQuerySkippingRetrievalAugmentationAdvisor.wrap(ragAdvisor, ragSourceFileService))
+                            EmptyQuerySkippingRetrievalAugmentationAdvisor.wrap(
+                                    ragAdvisor, ragSourceFileService, isRagSourceDisplayEnabled()))
                     .build();
         }
         Builder builder = ReactAgent.builder()

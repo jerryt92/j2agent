@@ -53,22 +53,31 @@ public final class TurnRagSourceRegistry {
     }
 
     /**
-     * 首次有非空来源时推送 PATCH 并缓存 rag_infos JSON；后续调用幂等忽略。
+     * 首次有非空来源时缓存 rag_infos JSON 供落库；{@code displayToFrontend=true} 时额外推送 WebSocket PATCH。
+     * 后续调用幂等忽略。
      */
-    public static void publishSources(String conversationId, List<FileDto> srcFiles, List<RagInfoDto> ragInfos) {
+    public static void publishSources(String conversationId,
+                                      List<FileDto> srcFiles,
+                                      List<RagInfoDto> ragInfos,
+                                      boolean displayToFrontend) {
         if (conversationId == null || conversationId.isBlank() || srcFiles == null || srcFiles.isEmpty()) {
             return;
         }
         Holder holder = BY_CONVERSATION.get(conversationId);
         if (holder == null) {
-            log.warn("RAG 来源发布跳过: 未找到 conversationId={} 的回合注册", conversationId);
+            log.warn("RAG 来源采集跳过: 未找到 conversationId={} 的回合注册", conversationId);
             return;
         }
-        if (holder.published) {
+        if (holder.collected) {
             return;
         }
-        holder.published = true;
+        holder.collected = true;
         holder.ragInfosJson = JSON.toJSONString(ragInfos != null ? ragInfos : List.of());
+        if (!displayToFrontend) {
+            log.info("RAG 来源已采集（未推送前端）: conversationId={}, md文件数={}",
+                    conversationId, srcFiles.size());
+            return;
+        }
         ChatResponseDto payload = new ChatResponseDto();
         MessageDto message = new MessageDto();
         message.setRole(MessageDto.RoleEnum.ASSISTANT);
@@ -87,10 +96,11 @@ public final class TurnRagSourceRegistry {
                     payload
             ));
         }
+        log.info("RAG 来源已推送前端: conversationId={}, md文件数={}", conversationId, srcFiles.size());
     }
 
     /**
-     * 取出本回合 rag_infos JSON 供落库；未发布过来源时返回 null。
+     * 取出本回合 rag_infos JSON 供落库；未采集过来源时返回 null。
      */
     public static String drainRagInfosJson(String conversationId) {
         if (conversationId == null || conversationId.isBlank()) {
@@ -117,7 +127,7 @@ public final class TurnRagSourceRegistry {
         private AtomicLong seq;
         private AgentTurnStateMachine stateMachine;
         private int assistantMessageIndex;
-        private boolean published;
+        private boolean collected;
         private String ragInfosJson;
     }
 }

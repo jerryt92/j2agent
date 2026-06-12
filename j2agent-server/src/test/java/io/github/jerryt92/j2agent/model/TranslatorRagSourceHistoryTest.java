@@ -15,6 +15,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class TranslatorRagSourceHistoryTest {
 
@@ -52,6 +53,27 @@ class TranslatorRagSourceHistoryTest {
         assertEquals("j2agent-docs/前端/md解析器/架构与流程.md",
                 messageDto.getSrcFile().getFirst().getRelativePath());
         assertFalse(messageDto.getSrcFile().getFirst().getUrl().contains("%2F"));
+    }
+
+    @Test
+    void shouldOmitSrcFileOnHistoryLoadWhenDisplayDisabled() {
+        FileDto fileDto = new FileDto()
+                .id(9)
+                .fullFileName("doc.md")
+                .url(CommonConstants.REPO_FILE_URL + "docs/doc.md");
+        String ragInfosJson = JSON.toJSONString(List.of(new RagInfoDto().srcFile(fileDto)));
+
+        ChatMemoryMessageCodec codec = new ChatMemoryMessageCodec(new com.fasterxml.jackson.databind.ObjectMapper());
+        Message decoded = codec.decode(2, "answer", null, ragInfosJson);
+
+        ChatContextBo contextBo = new ChatContextBo(
+                "ctx-1", "user-1", "chat_assistant", "title", 1, 1,
+                System.currentTimeMillis(), List.of(decoded));
+
+        ChatContextDto dto = Translator.translateToChatContextDto(contextBo, false);
+
+        assertEquals(1, dto.getMessages().size());
+        assertNull(dto.getMessages().getFirst().getSrcFile());
     }
 
     @Test

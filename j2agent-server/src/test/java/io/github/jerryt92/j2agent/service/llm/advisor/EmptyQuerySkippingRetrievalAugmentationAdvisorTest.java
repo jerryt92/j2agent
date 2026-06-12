@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -67,7 +68,7 @@ class EmptyQuerySkippingRetrievalAugmentationAdvisorTest {
                 .documentRetriever(retriever)
                 .build();
         EmptyQuerySkippingRetrievalAugmentationAdvisor advisor =
-                EmptyQuerySkippingRetrievalAugmentationAdvisor.wrap(ragAdvisor, ragSourceFileService);
+                EmptyQuerySkippingRetrievalAugmentationAdvisor.wrap(ragAdvisor, ragSourceFileService, true);
         AdvisorChain chain = mock(AdvisorChain.class);
 
         ChatClientRequest request = ChatClientRequest.builder()
@@ -101,7 +102,7 @@ class EmptyQuerySkippingRetrievalAugmentationAdvisorTest {
                 .documentRetriever(retriever)
                 .build();
         EmptyQuerySkippingRetrievalAugmentationAdvisor advisor =
-                EmptyQuerySkippingRetrievalAugmentationAdvisor.wrap(ragAdvisor, ragSourceFileService);
+                EmptyQuerySkippingRetrievalAugmentationAdvisor.wrap(ragAdvisor, ragSourceFileService, true);
         AdvisorChain chain = mock(AdvisorChain.class);
         Media media = Media.builder()
                 .mimeType(MediaType.IMAGE_PNG)
@@ -139,7 +140,7 @@ class EmptyQuerySkippingRetrievalAugmentationAdvisorTest {
                 .documentRetriever(retriever)
                 .build();
         EmptyQuerySkippingRetrievalAugmentationAdvisor advisor =
-                EmptyQuerySkippingRetrievalAugmentationAdvisor.wrap(ragAdvisor, ragSourceFileService);
+                EmptyQuerySkippingRetrievalAugmentationAdvisor.wrap(ragAdvisor, ragSourceFileService, true);
         AdvisorChain chain = mock(AdvisorChain.class);
         ChatClientResponse response = ChatClientResponse.builder()
                 .context(Map.of(EmptyQuerySkippingRetrievalAugmentationAdvisor.SKIP_RAG_CONTEXT_KEY, true))
@@ -162,7 +163,7 @@ class EmptyQuerySkippingRetrievalAugmentationAdvisorTest {
                 .documentRetriever(retriever)
                 .build();
         EmptyQuerySkippingRetrievalAugmentationAdvisor advisor =
-                EmptyQuerySkippingRetrievalAugmentationAdvisor.wrap(ragAdvisor, ragSourceFileService);
+                EmptyQuerySkippingRetrievalAugmentationAdvisor.wrap(ragAdvisor, ragSourceFileService, true);
         AdvisorChain chain = mock(AdvisorChain.class);
 
         List<AgentUiEventEnvelope> events = new ArrayList<>();
@@ -194,6 +195,47 @@ class EmptyQuerySkippingRetrievalAugmentationAdvisorTest {
         assertEquals(MessageDto.RoleEnum.ASSISTANT, message.getRole());
         assertEquals(1, message.getSrcFile().size());
         assertEquals("a.md", message.getSrcFile().getFirst().getFullFileName());
+        String ragInfosJson = TurnRagSourceRegistry.drainRagInfosJson(CONVERSATION_ID);
+        assertNotNull(ragInfosJson);
+        assertTrue(ragInfosJson.contains("a.md"));
+    }
+
+    @Test
+    void shouldNotPublishRagSourcesWhenDisplayDisabled() {
+        DocumentRetriever retriever = query -> List.of(
+                Document.builder()
+                        .text("chunk")
+                        .metadata(Map.of("sourceFile", "docs/a.md", "textChunkId", "chunk-1"))
+                        .build()
+        );
+        RetrievalAugmentationAdvisor ragAdvisor = RetrievalAugmentationAdvisor.builder()
+                .documentRetriever(retriever)
+                .build();
+        EmptyQuerySkippingRetrievalAugmentationAdvisor advisor =
+                EmptyQuerySkippingRetrievalAugmentationAdvisor.wrap(ragAdvisor, ragSourceFileService, false);
+        AdvisorChain chain = mock(AdvisorChain.class);
+
+        List<AgentUiEventEnvelope> events = new ArrayList<>();
+        TurnRagSourceRegistry.bind(
+                CONVERSATION_ID,
+                events::add,
+                new Object(),
+                "ctx-1",
+                "turn-1",
+                new AtomicLong(0L),
+                new AgentTurnStateMachine(),
+                1);
+
+        ChatClientRequest request = ChatClientRequest.builder()
+                .prompt(new Prompt(List.of(UserMessage.builder()
+                        .text("hello")
+                        .metadata(Map.of(ChatMemory.CONVERSATION_ID, CONVERSATION_ID))
+                        .build())))
+                .build();
+
+        advisor.before(request, chain);
+
+        assertTrue(events.isEmpty());
         String ragInfosJson = TurnRagSourceRegistry.drainRagInfosJson(CONVERSATION_ID);
         assertNotNull(ragInfosJson);
         assertTrue(ragInfosJson.contains("a.md"));

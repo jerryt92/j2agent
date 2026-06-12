@@ -31,16 +31,21 @@ public final class EmptyQuerySkippingRetrievalAugmentationAdvisor implements Bas
 
     private final RetrievalAugmentationAdvisor delegate;
     private final RagSourceFileService ragSourceFileService;
+    private final boolean ragSourceDisplayEnabled;
 
     private EmptyQuerySkippingRetrievalAugmentationAdvisor(RetrievalAugmentationAdvisor delegate,
-                                                           RagSourceFileService ragSourceFileService) {
+                                                           RagSourceFileService ragSourceFileService,
+                                                           boolean ragSourceDisplayEnabled) {
         this.delegate = delegate;
         this.ragSourceFileService = ragSourceFileService;
+        this.ragSourceDisplayEnabled = ragSourceDisplayEnabled;
     }
 
     public static EmptyQuerySkippingRetrievalAugmentationAdvisor wrap(RetrievalAugmentationAdvisor delegate,
-                                                                      RagSourceFileService ragSourceFileService) {
-        return new EmptyQuerySkippingRetrievalAugmentationAdvisor(delegate, ragSourceFileService);
+                                                                      RagSourceFileService ragSourceFileService,
+                                                                      boolean ragSourceDisplayEnabled) {
+        return new EmptyQuerySkippingRetrievalAugmentationAdvisor(
+                delegate, ragSourceFileService, ragSourceDisplayEnabled);
     }
 
     @Override
@@ -100,8 +105,8 @@ public final class EmptyQuerySkippingRetrievalAugmentationAdvisor implements Bas
             log.warn("RAG 来源发布跳过: 无法解析 conversationId");
             return;
         }
-        TurnRagSourceRegistry.publishSources(conversationId, resolved.srcFiles(), resolved.ragInfos());
-        log.info("RAG 来源已发布: conversationId={}, md文件数={}", conversationId, resolved.srcFiles().size());
+        TurnRagSourceRegistry.publishSources(
+                conversationId, resolved.srcFiles(), resolved.ragInfos(), ragSourceDisplayEnabled);
     }
 
     private static String resolveConversationId(ChatClientRequest request) {

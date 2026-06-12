@@ -333,6 +333,14 @@ public final class Translator {
     }
 
     public static ChatContextDto translateToChatContextDto(ChatContextBo chatContextBo) {
+        return translateToChatContextDto(chatContextBo, true);
+    }
+
+    /**
+     * @param ragSourceDisplayEnabled 为 {@code false} 时不向 DTO 填充 {@code srcFile}（库表 rag_infos 仍保留）
+     */
+    public static ChatContextDto translateToChatContextDto(ChatContextBo chatContextBo,
+                                                           boolean ragSourceDisplayEnabled) {
         ChatContextDto chatContextDto = new ChatContextDto();
         chatContextDto.setContextId(chatContextBo.getContextId());
         chatContextDto.setAgentId(chatContextBo.getAgentId());
@@ -367,9 +375,12 @@ public final class Translator {
                 String assistantText = am.getText() != null ? am.getText() : "";
                 messageDto.setContent(assistantText);
                 applyReasoningFromAssistant(am, messageDto);
-                applySrcFileFromAssistant(am, messageDto);
+                if (ragSourceDisplayEnabled) {
+                    applySrcFileFromAssistant(am, messageDto);
+                }
                 boolean hasReasoning = StringUtils.isNotBlank(messageDto.getReasoningContent());
-                boolean hasSrcFile = !CollectionUtils.isEmpty(messageDto.getSrcFile());
+                boolean hasSrcFile = ragSourceDisplayEnabled
+                        && !CollectionUtils.isEmpty(messageDto.getSrcFile());
                 // 含 tool_calls、持久化 JSON 形态、技能加载审计行、或历史空正文脏数据：均不展示空气泡（有来源时仍展示）
                 boolean hideToolRound = am.hasToolCalls()
                         || isAssistantToolPersistenceJson(assistantText)
