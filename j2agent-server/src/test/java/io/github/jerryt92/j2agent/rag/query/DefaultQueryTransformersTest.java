@@ -1,8 +1,7 @@
 package io.github.jerryt92.j2agent.service.rag.query;
 
+import io.github.jerryt92.j2agent.service.embedding.EmbeddingService;
 import io.github.jerryt92.j2agent.service.llm.LlmSyncService;
-import io.github.jerryt92.j2agent.service.rag.query.ConditionalQueryTransformer;
-import io.github.jerryt92.j2agent.service.rag.query.LoggingQueryTransformer;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
@@ -18,9 +17,11 @@ class DefaultQueryTransformersTest {
     @Test
     void shouldBuildFullChainByDefault() {
         LlmSyncService llmSyncService = mock(LlmSyncService.class);
+        EmbeddingService embeddingService = mock(EmbeddingService.class);
         ChatClient.Builder clientBuilder = ChatClient.builder(mock(ChatModel.class));
         when(llmSyncService.chatClientBuilder()).thenReturn(clientBuilder);
-        DefaultQueryTransformers factory = new DefaultQueryTransformers(llmSyncService);
+        when(embeddingService.isReady()).thenReturn(true);
+        DefaultQueryTransformers factory = new DefaultQueryTransformers(llmSyncService, embeddingService);
 
         QueryTransformer[] transformers = factory.build(null);
 
@@ -28,5 +29,17 @@ class DefaultQueryTransformersTest {
         assertTrue(transformers[0] instanceof LoggingQueryTransformer);
         assertTrue(transformers[1] instanceof ConditionalQueryTransformer);
         assertTrue(transformers[2] instanceof ConditionalQueryTransformer);
+    }
+
+    @Test
+    void shouldSkipChainWhenEmbeddingNotReady() {
+        LlmSyncService llmSyncService = mock(LlmSyncService.class);
+        EmbeddingService embeddingService = mock(EmbeddingService.class);
+        when(embeddingService.isReady()).thenReturn(false);
+        DefaultQueryTransformers factory = new DefaultQueryTransformers(llmSyncService, embeddingService);
+
+        QueryTransformer[] transformers = factory.build(null);
+
+        assertEquals(0, transformers.length);
     }
 }
