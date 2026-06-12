@@ -40,6 +40,8 @@ public class Retriever {
      */
     private static final int QUERY_PREVIEW_MAX_CHARS = 200;
 
+    private static final String DEFAULT_EMBEDDING_UNAVAILABLE = "Embedding 服务不可用";
+
     private final EmbeddingService embeddingService;
     private final VectorDatabaseService vectorDatabaseService;
     private final PropertiesService propertiesService;
@@ -103,6 +105,11 @@ public class Retriever {
         if (StringUtils.isBlank(queryText) || StringUtils.isBlank(collection)) {
             return new SearchOutcome(Collections.emptyList(), 0, 1, RetrievalStatus.EMPTY, null);
         }
+        if (!embeddingService.isReady()) {
+            String failureMessage = resolveEmbeddingUnavailableMessage();
+            log.warn("{}: Embedding 未就绪，检索快速失败: {}", logPrefix, failureMessage);
+            return new SearchOutcome(Collections.emptyList(), 0, 1, RetrievalStatus.FAILED, failureMessage);
+        }
         List<String> chunks = queryChunker.chunk(queryText);
         if (chunks.isEmpty()) {
             return new SearchOutcome(Collections.emptyList(), 0, 0, RetrievalStatus.EMPTY, null);
@@ -149,7 +156,11 @@ public class Retriever {
                                                        String metricTypeName,
                                                        float[] weights,
                                                        List<String> partitionNames) {
-        EmbeddingModel.EmbeddingsResponse embed = safeEmbed(new EmbeddingModel.EmbeddingsRequest().setInput(List.of(chunkText)));
+        EmbedResult embedResult = safeEmbed(new EmbeddingModel.EmbeddingsRequest().setInput(List.of(chunkText)));
+        if (embedResult.failed()) {
+            return SearchExecutionResult.failed(embedResult.failureMessage());
+        }
+        EmbeddingModel.EmbeddingsResponse embed = embedResult.response();
         if (embed == null || embed.getData() == null || embed.getData().isEmpty()) {
             return SearchExecutionResult.success(Collections.emptyList());
         }
@@ -167,7 +178,11 @@ public class Retriever {
                                                          String metricTypeName,
                                                          float[] weights,
                                                          List<String> partitionNames) {
-        EmbeddingModel.EmbeddingsResponse embed = safeEmbed(new EmbeddingModel.EmbeddingsRequest().setInput(chunks));
+        EmbedResult embedResult = safeEmbed(new EmbeddingModel.EmbeddingsRequest().setInput(chunks));
+        if (embedResult.failed()) {
+            return SearchExecutionResult.failed(embedResult.failureMessage());
+        }
+        EmbeddingModel.EmbeddingsResponse embed = embedResult.response();
         if (embed == null || embed.getData() == null || embed.getData().size() != chunks.size()) {
             log.warn("多段 query 向量化数量不匹配: chunks={}, returned={}",
                     chunks.size(), embed == null || embed.getData() == null ? 0 : embed.getData().size());
@@ -480,7 +495,11 @@ public class Retriever {
         }
         EmbeddingModel.EmbeddingsRequest embeddingsRequest = new EmbeddingModel.EmbeddingsRequest()
                 .setInput(Collections.singletonList(referenceText));
-        EmbeddingModel.EmbeddingsResponse embed = safeEmbed(embeddingsRequest);
+        EmbedResult embedResult = safeEmbed(embeddingsRequest);
+        if (embedResult.failed()) {
+            return ReferenceMaxScoresResult.success(new Float[]{null, null});
+        }
+        EmbeddingModel.EmbeddingsResponse embed = embedResult.response();
         if (embed == null || embed.getData() == null || embed.getData().isEmpty()) {
             return ReferenceMaxScoresResult.success(new Float[]{null, null});
         }
@@ -563,15 +582,36 @@ public class Retriever {
         return current == null ? "" : current.getMessage();
     }
 
+    private String resolveEmbeddingUnavailableMessage() {
+        String probeError = embeddingService.getLastProbeError();
+        return StringUtils.isNotBlank(probeError) ? probeError : DEFAULT_EMBEDDING_UNAVAILABLE;
+    }
+
     /**
-     * 对 Embedding 不可用场景做运行期降级，返回 null 由上游统一走空结果分支。
+     * 对 Embedding 不可用场景做运行期降级；失败时携带原因供上游标记 FAILED。
      */
-    private EmbeddingModel.EmbeddingsResponse safeEmbed(EmbeddingModel.EmbeddingsRequest request) {
+    private EmbedResult safeEmbed(EmbeddingModel.EmbeddingsRequest request) {
+        if (!embeddingService.isReady()) {
+            String message = resolveEmbeddingUnavailableMessage();
+            log.warn("Embedding 未就绪，跳过向量化请求: {}", message);
+            return EmbedResult.failed(message);
+        }
         try {
-            return embeddingService.embed(request);
+            return EmbedResult.success(embeddingService.embed(request));
         } catch (IllegalStateException | WebClientResponseException | WebClientRequestException e) {
-            log.warn("Embedding 不可用，检索降级为无向量结果: {}", e.getMessage());
-            return null;
+            String message = "Embedding 服务连接失败: " + e.getMessage();
+            log.warn("Embedding 不可用，检索失败: {}", message);
+            return EmbedResult.failed(message);
+        }
+    }
+
+    private record EmbedResult(EmbeddingModel.EmbeddingsResponse response, boolean failed, String failureMessage) {
+        private static EmbedResult success(EmbeddingModel.EmbeddingsResponse response) {
+            return new EmbedResult(response, false, null);
+        }
+
+        private static EmbedResult failed(String failureMessage) {
+            return new EmbedResult(null, true, failureMessage);
         }
     }
 
