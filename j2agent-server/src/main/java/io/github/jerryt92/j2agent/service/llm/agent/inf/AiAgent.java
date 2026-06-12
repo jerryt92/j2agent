@@ -231,6 +231,10 @@ public abstract class AiAgent {
                 .build();
         runnableConfig.context().put(AgentUiToolEventInterceptor.CONTEXT_KEY_TOOL_EVENT_EMITTER, context.toolEventEmitter());
         runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_CHAT_CONVERSATION_ID, context.conversationId());
+        runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_CONTEXT_ID, context.contextId());
+        runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_TURN_ID, context.turnId());
+        runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_USER_ID, context.userId());
+        runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_AGENT_ID, context.agentId());
         var userMessageBuilder = UserMessage.builder()
                 .text(context.text())
                 .metadata(Map.of(

@@ -1,5 +1,6 @@
 package io.github.jerryt92.j2agent.service.rag.query;
 
+import io.github.jerryt92.j2agent.logging.rag.QueryTransformAgentRunLog;
 import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
 import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentService;
 import io.github.jerryt92.j2agent.service.llm.LlmSyncService;
@@ -67,15 +68,23 @@ public final class MultimodalQueryTransformer implements QueryTransformer {
             return query;
         }
         String userText = QueryUserMessageSupport.resolveUserText(query, userMessage);
+        String userTextPreview = QueryTransformLogSupport.preview(userText);
         log.info("query transform [multimodal]: invoking vision model, userText={}, imageCount={}",
-                QueryTransformLogSupport.preview(userText), media.size());
+                userTextPreview, media.size());
+        QueryTransformAgentRunLog.info(query, "multimodal",
+                "action=visionInvoke,userText=" + userTextPreview + ",imageCount=" + media.size(),
+                "invoking vision model for query transform");
         String enriched = enrichWithVision(userText, media);
         if (!StringUtils.hasText(enriched)) {
             if (StringUtils.hasText(userText)) {
                 log.warn("query transform [multimodal]: vision model returned no retrieval text, fallback to user text");
+                QueryTransformAgentRunLog.warn(query, "multimodal", "action=fallbackUserText",
+                        "vision model returned no retrieval text, fallback to user text");
                 enriched = userText;
             } else {
                 log.warn("query transform [multimodal]: vision model failed or empty, skip retrieval for image-only input");
+                QueryTransformAgentRunLog.warn(query, "multimodal", "action=skipRetrieval",
+                        "vision model failed or empty, skip retrieval for image-only input");
                 Map<String, Object> skipContext = new HashMap<>();
                 skipContext.put(QueryTransformContextKeys.SKIP_RETRIEVAL, true);
                 return QueryUserMessageSupport.withTextAndContext(

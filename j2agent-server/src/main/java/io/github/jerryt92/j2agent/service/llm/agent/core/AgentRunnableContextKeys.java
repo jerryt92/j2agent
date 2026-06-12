@@ -13,4 +13,16 @@ public final class AgentRunnableContextKeys {
      */
     public static final String CONTEXT_KEY_CHAT_CONVERSATION_ID =
             AgentRunnableContextKeys.class.getName() + ".chatConversationId";
+
+    public static final String CONTEXT_KEY_CONTEXT_ID =
+            AgentRunnableContextKeys.class.getName() + ".contextId";
+
+    public static final String CONTEXT_KEY_TURN_ID =
+            AgentRunnableContextKeys.class.getName() + ".turnId";
+
+    public static final String CONTEXT_KEY_USER_ID =
+            AgentRunnableContextKeys.class.getName() + ".userId";
+
+    public static final String CONTEXT_KEY_AGENT_ID =
+            AgentRunnableContextKeys.class.getName() + ".agentId";
 }

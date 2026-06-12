@@ -6,16 +6,15 @@ import io.github.jerryt92.j2agent.service.file.StaticFileService;
 import io.github.jerryt92.j2agent.service.llm.ChatContextBo;
 import io.github.jerryt92.j2agent.service.llm.memory.ChatMemoryMessageCodec;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TranslatorRagSourceHistoryTest {
 

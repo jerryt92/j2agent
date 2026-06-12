@@ -6,6 +6,8 @@ import io.github.jerryt92.j2agent.model.Translator;
 import io.github.jerryt92.j2agent.model.po.KnowledgeTextChunkPo;
 import io.github.jerryt92.j2agent.service.PropertiesService;
 import io.github.jerryt92.j2agent.service.embedding.EmbeddingService;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
 import io.github.jerryt92.j2agent.service.rag.inf.AbstractCollectionKbRetriever;
 import io.github.jerryt92.j2agent.service.rag.knowledge.KnowledgeTextChunkService;
 import io.github.jerryt92.j2agent.service.rag.vdb.VectorDatabaseService;
@@ -96,7 +98,8 @@ public class Retriever {
                                              int topK,
                                              String collection,
                                              List<String> partitionNames,
-                                             String logPrefix) {
+                                             String logPrefix,
+                                             String conversationId) {
         if (StringUtils.isBlank(queryText) || StringUtils.isBlank(collection)) {
             return new SearchOutcome(Collections.emptyList(), 0, 1, RetrievalStatus.EMPTY, null);
         }
@@ -108,9 +111,8 @@ public class Retriever {
         List<String> effectivePartitions = partitionNames == null || partitionNames.isEmpty() ? null : partitionNames;
         String metricTypeName = metricType == null ? null : metricType.name();
         int queryChunks = chunks.size();
-        log.info("{}请求: collection={}, topK={}, metricType={}, denseWeight={}, sparseWeight={}, partitions={}, queryChars={}, queryChunks={}, queryPreview={}",
-                logPrefix, collection, topK, metricTypeName, weights[0], weights[1], effectivePartitions,
-                queryText.length(), queryChunks, previewForLog(queryText));
+        logSearchRequest(logPrefix, conversationId, collection, topK, metricTypeName, weights, effectivePartitions,
+                queryText, queryChunks);
 
         SearchExecutionResult executionResult;
         if (queryChunks == 1) {
@@ -124,7 +126,7 @@ public class Retriever {
             return new SearchOutcome(Collections.emptyList(), 0, queryChunks, RetrievalStatus.FAILED, executionResult.failureMessage());
         }
         if (rawHits == null || rawHits.isEmpty()) {
-            log.warn("{}: 查询向量化或混合检索无结果, collection={}", logPrefix, collection);
+            logSearchEmpty(logPrefix, conversationId, collection);
             return new SearchOutcome(Collections.emptyList(), 0, queryChunks, RetrievalStatus.EMPTY, null);
         }
         hydrateTextChunks(rawHits);
@@ -349,12 +351,22 @@ public class Retriever {
      * 返回带状态的 RAG 检索结果，供上游识别 Milvus 失败并注入降级提示。
      */
     public RagChunksResult retrieveRagChunksResult(String queryText, String collection, List<String> partitionNames) {
+        return retrieveRagChunksResult(queryText, collection, partitionNames, null);
+    }
+
+    /**
+     * 返回带状态的 RAG 检索结果；{@code conversationId} 非空时写入 agent-run 日志。
+     */
+    public RagChunksResult retrieveRagChunksResult(String queryText,
+                                                   String collection,
+                                                   List<String> partitionNames,
+                                                   String conversationId) {
         if (StringUtils.isBlank(collection)) {
             return new RagChunksResult(Collections.emptyList(), RetrievalStatus.EMPTY, null);
         }
         RetrieverParams params = RetrieverParams.from(propertiesService);
         SearchOutcome outcome = searchAndNormalize(
-                queryText, params.metricType(), params.topK(), collection, partitionNames, "RAG检索");
+                queryText, params.metricType(), params.topK(), collection, partitionNames, "RAG检索", conversationId);
         return new RagChunksResult(outcome.items(), outcome.status(), outcome.failureMessage());
     }
 
@@ -378,7 +390,7 @@ public class Retriever {
         RetrieverParams params = RetrieverParams.from(propertiesService);
         int safeTopK = topK == null ? params.topK() : topK;
         KnowledgeRetrieveItemDto.MetricTypeEnum metricType = params.metricType();
-        SearchOutcome outcome = searchAndNormalize(queryText, metricType, safeTopK, collection, partitionNames, "RAG知识检索");
+        SearchOutcome outcome = searchAndNormalize(queryText, metricType, safeTopK, collection, partitionNames, "RAG知识检索", null);
         for (EmbeddingModel.EmbeddingsQueryItem item : outcome.items()) {
             String calculateExpressionResult = MathCalculatorUtil.calculateExpression(item.getScore() + params.metricScoreCompareExpr());
             retrieveResult.add(Translator.translateToEmbeddingsQueryItemDto(
@@ -387,6 +399,45 @@ public class Retriever {
         log.info("RAG知识检索结果: collection={}, 向量库命中数={}, 返回DTO条数={}, queryChunks={}",
                 collection, outcome.rawHitCount(), retrieveResult.size(), outcome.queryChunks());
         return retrieveResult;
+    }
+
+    private void logSearchRequest(String logPrefix,
+                                  String conversationId,
+                                  String collection,
+                                  int topK,
+                                  String metricTypeName,
+                                  float[] weights,
+                                  List<String> effectivePartitions,
+                                  String queryText,
+                                  int queryChunks) {
+        if (conversationId != null) {
+            String ragSummary = "collection=" + collection
+                    + ",topK=" + topK
+                    + ",metricType=" + metricTypeName
+                    + ",denseWeight=" + weights[0]
+                    + ",sparseWeight=" + weights[1]
+                    + ",partitions=" + effectivePartitions
+                    + ",queryChars=" + queryText.length()
+                    + ",queryChunks=" + queryChunks
+                    + ",queryPreview=" + previewForLog(queryText);
+            AgentRunLogger.infoByConversationId(conversationId, AgentRunEventType.RAG_RETRIEVE,
+                    AgentRunLogger.kv("rag", ragSummary),
+                    "RAG search requested");
+            return;
+        }
+        log.info("{}请求: collection={}, topK={}, metricType={}, denseWeight={}, sparseWeight={}, partitions={}, queryChars={}, queryChunks={}, queryPreview={}",
+                logPrefix, collection, topK, metricTypeName, weights[0], weights[1], effectivePartitions,
+                queryText.length(), queryChunks, previewForLog(queryText));
+    }
+
+    private void logSearchEmpty(String logPrefix, String conversationId, String collection) {
+        if (conversationId != null) {
+            AgentRunLogger.warnByConversationId(conversationId, AgentRunEventType.RAG_RETRIEVE,
+                    AgentRunLogger.kv("rag", "collection=" + collection + ",status=EMPTY"),
+                    "RAG search returned no hits");
+            return;
+        }
+        log.warn("{}: 查询向量化或混合检索无结果, collection={}", logPrefix, collection);
     }
 
     /**

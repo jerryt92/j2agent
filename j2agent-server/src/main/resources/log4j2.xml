@@ -9,6 +9,7 @@
         <!-- 带行号显示,对日志输出的性能有影响,在控制台上点击可以直接定位到代码 -->
         <property name="consoleLogPattern">%d{yyyy-MM-dd HH:mm:ss.SSS} [%highlight{%-5p}][%t][%c{1.}.%M:%L] - %m%n</property>
         <property name="logFilePattern">%d{yyyy-MM-dd HH:mm:ss.SSS} [%-5p][%t][%C.%M:%L] - %m%n</property>
+        <property name="agentRunLogPattern">%d{yyyy-MM-dd HH:mm:ss.SSS} [%-5p][%t] %m%n</property>
         <!-- 日志默认切割的最小单位 -->
         <property name="fileSize">20MB</property>
         <!-- 日志默认输出级别 -->
@@ -40,11 +41,26 @@
                 <ThresholdFilter level="INFO" onMatch="ACCEPT" onMismatch="DENY"/>
             </Filters>
         </RollingFile>
+
+        <RollingFile name="AgentRunFile" fileName="${basePath}/agent-run.log" filePattern="${basePath}/%d{yyyy-MM}/agent-run-%d{yyyy-MM-dd}-%i.log.gz">
+            <PatternLayout pattern="${agentRunLogPattern}"/>
+            <Policies>
+                <TimeBasedTriggeringPolicy interval="1" modulate="true"/>
+                <SizeBasedTriggeringPolicy size="${fileSize}"/>
+            </Policies>
+            <DefaultRolloverStrategy max="10" />
+            <Filters>
+                <ThresholdFilter level="INFO" onMatch="ACCEPT" onMismatch="DENY"/>
+            </Filters>
+        </RollingFile>
     </appenders>
     <!--定义logger,只有定义了logger并引入的appender,appender才会生效-->
     <loggers>
         <!-- 打印sql语句，根据实际情况修改 -->
         <logger name="io.github.jerryt92.j2agent.mapper" level="DEBUG" additivity="false"/>
+        <logger name="io.github.jerryt92.j2agent.agent.run" level="INFO" additivity="false">
+            <appender-ref ref="AgentRunFile"/>
+        </logger>
         <logger name="io.github.jerryt92.j2agent" level="INFO" additivity="true">
         </logger>
         <!--建立一个默认的root的logger-->

@@ -1,10 +1,11 @@
 package io.github.jerryt92.j2agent.service.llm.advisor;
 
+import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
 import io.github.jerryt92.j2agent.service.llm.rag.TurnRagSourceRegistry;
 import io.github.jerryt92.j2agent.service.rag.RagSourceFileService;
 import io.github.jerryt92.j2agent.service.rag.query.MultimodalQueryTransformer;
 import io.github.jerryt92.j2agent.service.rag.query.QueryUserMessageSupport;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.api.AdvisorChain;
@@ -24,7 +25,6 @@ import java.util.Map;
  * 纯图片消息在交给 {@link RetrievalAugmentationAdvisor} 前注入不可见占位 query 文本（Spring AI {@code Query} 要求 text 非空），
  * 再由 {@link MultimodalQueryTransformer} 产出真实检索句。
  */
-@Slf4j
 public final class EmptyQuerySkippingRetrievalAugmentationAdvisor implements BaseAdvisor {
 
     static final String SKIP_RAG_CONTEXT_KEY = "rag.skip";
@@ -51,10 +51,14 @@ public final class EmptyQuerySkippingRetrievalAugmentationAdvisor implements Bas
     @Override
     public ChatClientRequest before(ChatClientRequest request, AdvisorChain chain) {
         if (shouldSkipRag(request)) {
-            log.info("query transform: skipped entire retrieval (no text and no image)");
+            String conversationId = resolveConversationId(request);
+            AgentRunLogger.infoByConversationId(conversationId, AgentRunEventType.RAG_SKIP,
+                    AgentRunLogger.kv("rag", "reason=noTextAndNoImage"),
+                    "skipped entire retrieval");
             return request.mutate().context(SKIP_RAG_CONTEXT_KEY, true).build();
         }
-        ChatClientRequest ragReady = QueryUserMessageSupport.patchRequestForImageOnlyRag(request);
+        ChatClientRequest ragReady = QueryUserMessageSupport.patchRequestForImageOnlyRag(
+                request, resolveConversationId(request));
         ChatClientRequest processed = delegate.before(ragReady, chain);
         publishRagSourcesIfPresent(processed);
         return processed;
@@ -102,7 +106,9 @@ public final class EmptyQuerySkippingRetrievalAugmentationAdvisor implements Bas
         }
         String conversationId = resolveConversationId(processed);
         if (!StringUtils.hasText(conversationId)) {
-            log.warn("RAG 来源发布跳过: 无法解析 conversationId");
+            AgentRunLogger.warnByConversationId(null, AgentRunEventType.RAG_SOURCE,
+                    AgentRunLogger.kv("rag", "skipped=missingConversationId"),
+                    "RAG source publish skipped: conversationId unresolved");
             return;
         }
         TurnRagSourceRegistry.publishSources(

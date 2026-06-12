@@ -25,6 +25,10 @@ import io.github.jerryt92.j2agent.service.llm.memory.ConversationIdCodec;
 import io.github.jerryt92.j2agent.service.llm.reasoning.AssistantMessageReasoningExtractor;
 import io.github.jerryt92.j2agent.service.llm.reasoning.ReasoningSnapshotTracker;
 import io.github.jerryt92.j2agent.service.llm.reasoning.SpringAiReasoningMetadataAdapter;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunLogContext;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunLogSnapshot;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
 import io.github.jerryt92.j2agent.service.llm.rag.TurnRagSourceRegistry;
 import io.github.jerryt92.j2agent.service.llm.reasoning.ThinkingStreamSplitter;
 import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
@@ -144,6 +148,10 @@ public class ChatService {
             AtomicBoolean activeTurnReleased = new AtomicBoolean(false);
             Runnable releaseActiveTurn = () -> {
                 if (activeTurnReleased.compareAndSet(false, true)) {
+                    String conversationId = conversationIdRef.get();
+                    if (conversationId != null) {
+                        AgentRunLogContext.clear(conversationId);
+                    }
                     activeChatTurnRegistry.unregister(contextId, resolvedAgentId);
                     contextChatCallbackMap.remove(contextId);
                 }
@@ -151,6 +159,13 @@ public class ChatService {
             final String turnConversationId = buildConversationId(userId, contextId, resolvedAgentId);
             StreamedAssistantPersistence.enable(turnConversationId);
             conversationIdRef.set(turnConversationId);
+            final AgentRunLogSnapshot runLogSnapshot = new AgentRunLogSnapshot(
+                    contextId,
+                    turnId,
+                    turnConversationId,
+                    resolveLogUserId(userId),
+                    resolvedAgentId);
+            AgentRunLogContext.bind(turnConversationId, runLogSnapshot);
             int index = request.getMessages().size() - 1;
             TurnRagSourceRegistry.bind(turnConversationId, recordingResponseCall, turnLock, contextId, turnId, seq,
                     stateMachine, index);
@@ -195,8 +210,17 @@ public class ChatService {
                     userId,
                     turnId,
                     turnConversationId,
+                    resolvedAgentId,
                     finalAttachments,
                     toolEventEmitter);
+            AgentRunLogger.info(runLogSnapshot, AgentRunEventType.TURN_START,
+                    AgentRunLogger.kv(
+                            "userMsgLen", limitedUserMessage == null ? 0 : limitedUserMessage.length(),
+                            "attachmentCount", finalAttachments.size()),
+                    "turn started");
+            AgentRunLogger.info(runLogSnapshot, AgentRunEventType.CHAT,
+                    AgentRunLogger.kv("role", "user", "msgLen", latestUserMessage == null ? 0 : latestUserMessage.length()),
+                    "user message accepted");
             // 纯文本 assistant 由 streamedContent/streamedReasoning 落库；Advisor 仅写入 tool_calls 等结构化消息
             AiAgent aiAgent = aiAgentForConversation;
             AgentThinkingOverride effectiveThinking = ThinkingOverrideResolver.resolve(request, aiAgent);
@@ -271,6 +295,7 @@ public class ChatService {
                     } finally {
                         StreamedAssistantPersistence.disable(turnConversationId);
                         TurnRagSourceRegistry.clear(turnConversationId);
+                        logTurnEnd(runLogSnapshot, streamStartedAtMs, turnStepRecorder, AgentState.COMPLETED);
                         flushTurnTrace.run();
                         runOriginalCompleteCall(originalCompleteCall);
                         releaseActiveTurn.run();
@@ -286,15 +311,17 @@ public class ChatService {
                 synchronized (turnLock) {
                     currentState = stateMachine.getState();
                 }
-                log.error("Agent stream failed, contextId={}, turnId={}, detail={}",
-                        contextId,
-                        turnId,
-                        "elapsedMs=" + (streamStartedAtMs.get() == 0L ? "unknown" : String.valueOf(System.currentTimeMillis() - streamStartedAtMs.get()))
-                                + ", state=" + currentState
-                                + ", bufferedAssistantTextLen=" + bufferedLen
-                                + System.lineSeparator()
-                                + LlmProviderErrorFormatter.formatForLog(t),
+                AgentRunLogger.error(runLogSnapshot, AgentRunEventType.ERROR,
+                        AgentRunLogger.kv(
+                                "errorCode", LlmProviderErrorFormatter.resolveErrorCode(t),
+                                "errorType", t.getClass().getSimpleName(),
+                                "state", currentState == null ? "" : currentState.name(),
+                                "elapsedMs", streamStartedAtMs.get() == 0L ? "unknown"
+                                        : String.valueOf(System.currentTimeMillis() - streamStartedAtMs.get()),
+                                "bufferedLen", bufferedLen),
+                        LlmProviderErrorFormatter.formatForLog(t),
                         t);
+                logTurnEnd(runLogSnapshot, streamStartedAtMs, turnStepRecorder, AgentState.FAILED);
                 terminateTurnWithFailure(
                         chatChatCallback,
                         contextId,
@@ -373,13 +400,14 @@ public class ChatService {
                                     currentState = stateMachine.getState();
                                 }
                                 int nextRetryNo = retryNo.incrementAndGet();
-                                log.warn("LLM stream attempt failed, willRetry. nextRetryNo={}, contextId={}, turnId={}, state={}, elapsedMs={}, bufferedAssistantTextLen={}\n{}",
-                                        nextRetryNo,
-                                        contextId,
-                                        turnId,
-                                        currentState,
-                                        System.currentTimeMillis() - streamStartedAtMs.get(),
-                                        bufferedLen,
+                                AgentRunLogger.warn(runLogSnapshot, AgentRunEventType.LLM_RETRY,
+                                        AgentRunLogger.kv(
+                                                "retryNo", nextRetryNo,
+                                                "state", currentState == null ? "" : currentState.name(),
+                                                "elapsedMs", System.currentTimeMillis() - streamStartedAtMs.get(),
+                                                "bufferedLen", bufferedLen,
+                                                "errorType", rs.failure() == null ? ""
+                                                        : rs.failure().getClass().getSimpleName()),
                                         LlmProviderErrorFormatter.formatForLog(rs.failure()));
                             })
                     )
@@ -439,6 +467,7 @@ public class ChatService {
                             streamedReasoning, streamedTextLock, streamedAssistantFlushed, true);
                     StreamedAssistantPersistence.disable(turnConversationId);
                     TurnRagSourceRegistry.clear(turnConversationId);
+                    logTurnEnd(runLogSnapshot, streamStartedAtMs, turnStepRecorder, AgentState.CANCELLED);
                     // 关闭上游流，停止继续接收增量 token
                     if (!disposable.isDisposed()) {
                         disposable.dispose();
@@ -466,13 +495,24 @@ public class ChatService {
                     releaseActiveTurn.run();
                 }
             };
-            log.info("conversationId: {}, ask: {}", turnConversationId, latestUserMessage);
         } catch (Throwable t) {
-            log.error("handleChat failed, contextId={}, detail={}", contextId, LlmProviderErrorFormatter.formatForLog(t), t);
-            if (conversationIdRef.get() != null) {
-                ThinkingOverrideRegistry.unbind(conversationIdRef.get());
-                StreamedAssistantPersistence.disable(conversationIdRef.get());
-                TurnRagSourceRegistry.clear(conversationIdRef.get());
+            String failedConversationId = conversationIdRef.get();
+            AgentRunLogSnapshot failedSnapshot = failedConversationId == null
+                    ? null
+                    : AgentRunLogContext.lookup(failedConversationId);
+            if (failedSnapshot != null) {
+                AgentRunLogger.error(failedSnapshot, AgentRunEventType.ERROR,
+                        AgentRunLogger.kv(
+                                "errorCode", resolveErrorCode(t),
+                                "errorType", t.getClass().getSimpleName()),
+                        LlmProviderErrorFormatter.formatForLog(t),
+                        t);
+            }
+            if (failedConversationId != null) {
+                ThinkingOverrideRegistry.unbind(failedConversationId);
+                StreamedAssistantPersistence.disable(failedConversationId);
+                TurnRagSourceRegistry.clear(failedConversationId);
+                AgentRunLogContext.clear(failedConversationId);
             }
             Runnable releaseActiveTurnOnFailure = () -> {
                 String resolvedAgentId = resolvedAgentIdRef.get();
@@ -585,9 +625,36 @@ public class ChatService {
             chatMemory.add(conversationId,
                     List.of(chatMemoryMessageCodec.buildTurnTraceAuditMessage(turnId, turnStepRecorder.getSteps())));
         } catch (Exception e) {
-            log.warn("Failed to persist turn trace audit, context conversationId={}, turnId={}: {}",
-                    conversationId, turnId, e.toString());
+            AgentRunLogSnapshot snapshot = AgentRunLogContext.lookup(conversationId);
+            if (snapshot != null) {
+                AgentRunLogger.warn(snapshot, AgentRunEventType.ERROR,
+                        AgentRunLogger.kv("errorCode", "turnTracePersistFailed",
+                                "errorType", e.getClass().getSimpleName()),
+                        e.toString());
+            }
         }
+    }
+
+    private static void logTurnEnd(AgentRunLogSnapshot snapshot,
+                                   AtomicLong streamStartedAtMs,
+                                   TurnStepRecorder turnStepRecorder,
+                                   AgentState status) {
+        if (snapshot == null) {
+            return;
+        }
+        long elapsedMs = streamStartedAtMs.get() == 0L
+                ? 0L
+                : System.currentTimeMillis() - streamStartedAtMs.get();
+        AgentRunLogger.info(snapshot, AgentRunEventType.TURN_END,
+                AgentRunLogger.kv(
+                        "status", status == null ? "" : status.name(),
+                        "elapsedMs", elapsedMs,
+                        "stepCount", turnStepRecorder == null ? 0 : turnStepRecorder.getSteps().size()),
+                "turn finished");
+    }
+
+    private static String resolveLogUserId(String userId) {
+        return StringUtils.isNotBlank(userId) ? userId.trim() : ANONYMOUS_USER;
     }
 
     /**

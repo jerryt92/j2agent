@@ -1,5 +1,6 @@
 package io.github.jerryt92.j2agent.service.rag.query;
 
+import io.github.jerryt92.j2agent.logging.rag.QueryTransformAgentRunLog;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.rag.Query;
 import org.springframework.ai.rag.preretrieval.query.transformation.QueryTransformer;
@@ -26,8 +27,10 @@ public final class FaultTolerantQueryTransformer implements QueryTransformer {
         try {
             return delegate.transform(query);
         } catch (RuntimeException e) {
-            log.warn("query transform [{}]: failed, passthrough | {}",
-                    step, QueryTransformLogSupport.preview(QueryTransformLogSupport.queryText(query)), e);
+            String preview = QueryTransformLogSupport.preview(QueryTransformLogSupport.queryText(query));
+            log.warn("query transform [{}]: failed, passthrough | {}", step, preview, e);
+            QueryTransformAgentRunLog.warn(query, step, "failed=true,query=" + preview,
+                    "query transform failed, passthrough", e);
             return query;
         }
     }

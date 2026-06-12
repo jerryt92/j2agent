@@ -10,7 +10,8 @@ import io.github.jerryt92.j2agent.model.MessageDto;
 import io.github.jerryt92.j2agent.model.RagInfoDto;
 import io.github.jerryt92.j2agent.service.llm.AgentEventBuilder;
 import io.github.jerryt92.j2agent.service.llm.AgentTurnStateMachine;
-import lombok.extern.slf4j.Slf4j;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,7 +23,6 @@ import java.util.function.Consumer;
  * 单轮流式对话内 RAG 来源收集与 WebSocket 推送。
  * <p>使用 {@code conversationId} 作为键（非 ThreadLocal），因 RAG Advisor 常在 {@code publishOn} 后的工作线程执行。</p>
  */
-@Slf4j
 public final class TurnRagSourceRegistry {
 
     private static final ConcurrentHashMap<String, Holder> BY_CONVERSATION = new ConcurrentHashMap<>();
@@ -65,7 +65,9 @@ public final class TurnRagSourceRegistry {
         }
         Holder holder = BY_CONVERSATION.get(conversationId);
         if (holder == null) {
-            log.warn("RAG 来源采集跳过: 未找到 conversationId={} 的回合注册", conversationId);
+            AgentRunLogger.warnByConversationId(conversationId, AgentRunEventType.RAG_SOURCE,
+                    AgentRunLogger.kv("rag", "skipped=registryMissing"),
+                    "RAG source collection skipped: turn registry missing");
             return;
         }
         if (holder.collected) {
@@ -74,8 +76,9 @@ public final class TurnRagSourceRegistry {
         holder.collected = true;
         holder.ragInfosJson = JSON.toJSONString(ragInfos != null ? ragInfos : List.of());
         if (!displayToFrontend) {
-            log.info("RAG 来源已采集（未推送前端）: conversationId={}, md文件数={}",
-                    conversationId, srcFiles.size());
+            AgentRunLogger.infoByConversationId(conversationId, AgentRunEventType.RAG_SOURCE,
+                    AgentRunLogger.kv("rag", "mdFiles=" + srcFiles.size() + ",display=false"),
+                    "RAG sources collected");
             return;
         }
         ChatResponseDto payload = new ChatResponseDto();
@@ -96,7 +99,9 @@ public final class TurnRagSourceRegistry {
                     payload
             ));
         }
-        log.info("RAG 来源已推送前端: conversationId={}, md文件数={}", conversationId, srcFiles.size());
+        AgentRunLogger.infoByConversationId(conversationId, AgentRunEventType.RAG_SOURCE,
+                AgentRunLogger.kv("rag", "mdFiles=" + srcFiles.size() + ",display=true"),
+                "RAG sources pushed to frontend");
     }
 
     /**

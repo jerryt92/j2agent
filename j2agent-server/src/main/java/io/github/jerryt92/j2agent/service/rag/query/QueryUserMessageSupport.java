@@ -1,5 +1,6 @@
 package io.github.jerryt92.j2agent.service.rag.query;
 
+import io.github.jerryt92.j2agent.logging.rag.QueryTransformAgentRunLog;
 import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
 import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentService;
 import io.github.jerryt92.j2agent.service.llm.memory.ChatMemoryMessageCodec;
@@ -39,6 +40,10 @@ public final class QueryUserMessageSupport {
      * 纯图且无用户文字时，为最后一条 {@link UserMessage} 注入占位 text，避免检索 Advisor 构建 Query 失败。
      */
     public static ChatClientRequest patchRequestForImageOnlyRag(ChatClientRequest request) {
+        return patchRequestForImageOnlyRag(request, null);
+    }
+
+    public static ChatClientRequest patchRequestForImageOnlyRag(ChatClientRequest request, String conversationId) {
         if (request == null || request.prompt() == null) {
             return request;
         }
@@ -47,6 +52,9 @@ public final class QueryUserMessageSupport {
             return request;
         }
         log.info("query transform: patching image-only user message with invisible placeholder for Query.text");
+        QueryTransformAgentRunLog.infoByConversationId(conversationId, "patch",
+                "action=imageOnlyPlaceholder",
+                "patching image-only user message with invisible placeholder for Query.text");
         UserMessage patched = UserMessage.builder()
                 .text(IMAGE_ONLY_QUERY_PLACEHOLDER)
                 .metadata(userMessage.getMetadata())
