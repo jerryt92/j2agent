@@ -7,7 +7,6 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemWithBLOBs;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecord;
-import io.github.jerryt92.j2agent.constants.CommonConstants;
 import io.github.jerryt92.j2agent.service.file.StaticFileService;
 import io.github.jerryt92.j2agent.service.llm.ChatContextBo;
 import io.github.jerryt92.j2agent.service.llm.TurnStepItem;
