@@ -3,7 +3,7 @@ x-middleware-images:
   redis: &redis_image redis:7.4.2
   etcd: &etcd_image quay.io/coreos/etcd:v3.5.25
   minio: &minio_image minio/minio:RELEASE.2024-12-18T13-15-44Z
-  milvus: &milvus_image milvusdb/milvus:v2.6.17
+  milvus: &milvus_image milvusdb/milvus:v2.6.18
 
 services:
   mysql:
