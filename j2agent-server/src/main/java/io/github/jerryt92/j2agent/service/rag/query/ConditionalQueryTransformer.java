@@ -1,5 +1,6 @@
 package io.github.jerryt92.j2agent.service.rag.query;
 
+import io.github.jerryt92.j2agent.logging.rag.QueryTransformAgentRunLog;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.rag.Query;
 import org.springframework.ai.rag.preretrieval.query.transformation.QueryTransformer;
@@ -32,6 +33,7 @@ public final class ConditionalQueryTransformer implements QueryTransformer {
         if (query == null || !predicate.test(query)) {
             if (StringUtils.hasText(step)) {
                 log.info("query transform [{}]: skipped", step);
+                QueryTransformAgentRunLog.info(query, step, "skipped=true", "query transform skipped");
             }
             return query;
         }

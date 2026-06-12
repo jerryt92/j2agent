@@ -141,7 +141,7 @@ public class RedissonCachingChatMemoryRepository implements ChatMemoryRepository
                 if (row == null) {
                     continue;
                 }
-                entries.add(new CachedChatMemoryEntry(row.chatRole(), row.content(), row.metaJson()));
+                entries.add(new CachedChatMemoryEntry(row.chatRole(), row.content(), row.metaJson(), row.ragInfos()));
             } catch (JsonProcessingException ignored) {
                 // 单条序列化失败则跳过，避免整批缓存失败
             }
@@ -155,7 +155,7 @@ public class RedissonCachingChatMemoryRepository implements ChatMemoryRepository
             return list;
         }
         for (CachedChatMemoryEntry e : entries) {
-            Message m = messageCodec.decode(e.chatRole(), e.content(), e.metaJson());
+            Message m = messageCodec.decode(e.chatRole(), e.content(), e.metaJson(), e.ragInfos());
             if (m != null) {
                 list.add(m);
             }

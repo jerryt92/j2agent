@@ -1,11 +1,10 @@
 package io.github.jerryt92.j2agent.service.rag.knowledge.repo;
 
-import io.github.jerryt92.j2agent.constants.CommonConstants;
+import io.github.jerryt92.j2agent.service.file.StaticFileService;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.net.URLDecoder;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
@@ -92,7 +91,7 @@ public class KnowledgeMarkdownImageRewriter {
         }
         String trimmed = rawUrl.trim();
         if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("/")) {
-            return trimmed;
+            return StaticFileService.normalizeRepoFileUrl(trimmed);
         }
         try {
             String decoded = URLDecoder.decode(trimmed, StandardCharsets.UTF_8);
@@ -104,8 +103,7 @@ public class KnowledgeMarkdownImageRewriter {
             Path resolved = sourceDir == null
                     ? Path.of(normalizedRelative)
                     : sourceDir.resolve(normalizedRelative).normalize();
-            String encodedPath = URLEncoder.encode(resolved.toString().replace("\\", "/"), StandardCharsets.UTF_8);
-            return CommonConstants.REPO_FILE_URL + encodedPath;
+            return StaticFileService.toRepoFileUrl(resolved.toString().replace("\\", "/"));
         } catch (Exception e) {
             return trimmed;
         }

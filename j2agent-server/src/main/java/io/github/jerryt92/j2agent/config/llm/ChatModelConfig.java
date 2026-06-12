@@ -17,7 +17,7 @@ public class ChatModelConfig {
     private ActiveProviderHolder activeProviderHolder;
 
     /**
-     * 实现按当前 LLM 配置在 OpenAI 兼容 / vLLM / Anthropic / Ollama 间路由，并支持热更新。
+     * 实现按当前 LLM 配置在 OpenAI 兼容 / vLLM / Anthropic / Ollama / LM Studio 间路由，并支持热更新。
      */
     @Primary
     @Bean

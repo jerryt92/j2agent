@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 
 /**
  * 文件读取控制器，提供静态文件与知识库源文件直链访问。
@@ -37,9 +38,7 @@ public class FileController {
         if (resource == null || !resource.exists()) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok()
-                .contentType(StaticFileService.parseMediaType(resource.getFilename()))
-                .body(resource);
+        return StaticFileService.asFileResponse(resource, Path.of(relativePath).getFileName().toString());
     }
 
     /**
@@ -55,9 +54,7 @@ public class FileController {
         if (resource == null || !resource.exists()) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok()
-                .contentType(StaticFileService.parseMediaType(resource.getFilename()))
-                .body(resource);
+        return StaticFileService.asFileResponse(resource, Path.of(relativePath).getFileName().toString());
     }
 
     /**

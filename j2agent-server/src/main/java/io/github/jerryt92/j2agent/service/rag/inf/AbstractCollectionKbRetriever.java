@@ -1,6 +1,9 @@
 package io.github.jerryt92.j2agent.service.rag.inf;
 
 import io.github.jerryt92.j2agent.model.EmbeddingModel;
+import io.github.jerryt92.j2agent.service.llm.PromptConversationIdExtractor;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
 import io.github.jerryt92.j2agent.service.rag.query.QueryTransformContextKeys;
 import io.github.jerryt92.j2agent.service.rag.retrieval.Retriever;
 import lombok.extern.slf4j.Slf4j;
@@ -50,29 +53,73 @@ public abstract class AbstractCollectionKbRetriever implements DocumentRetriever
      */
     @Override
     public List<Document> retrieve(Query query) {
+        String conversationId = PromptConversationIdExtractor.extract(query);
         if (query != null && Boolean.TRUE.equals(query.context().get(QueryTransformContextKeys.SKIP_RETRIEVAL))) {
-            log.info("retrieval skipped: image-only query transform produced no valid query text");
+            logRagSkip(conversationId, "imageOnlyNoQueryText");
             return Collections.emptyList();
         }
         String queryText = Retriever.resolveQueryText(query);
         if (StringUtils.isBlank(queryText)) {
-            log.info("RAG 对话检索跳过: collection={}, reason=blank queryText", boundCollection());
+            logRagSkip(conversationId, "blankQueryText");
             return Collections.emptyList();
         }
         if (isReactToolLoopQuery(query)) {
-            log.info("RAG 对话检索跳过: collection={}, reason=react tool loop", boundCollection());
+            logRagSkip(conversationId, "reactToolLoop");
             return Collections.emptyList();
         }
-        Retriever.RagChunksResult ragChunksResult = retriever.retrieveRagChunksResult(queryText, boundCollection(), boundPartitions());
+        Retriever.RagChunksResult ragChunksResult = retriever.retrieveRagChunksResult(
+                queryText, boundCollection(), boundPartitions(), conversationId);
         if (ragChunksResult.status() == Retriever.RetrievalStatus.FAILED) {
-            log.warn("RAG 对话检索降级: collection={}, reason={}", boundCollection(), ragChunksResult.failureMessage());
+            logRagRetrieve(conversationId, boundCollection(), ragChunksResult.status(),
+                    0, 0, ragChunksResult.failureMessage());
             return List.of(buildFallbackDocument());
         }
         List<EmbeddingModel.EmbeddingsQueryItem> embeddingsQueryItems = ragChunksResult.items();
         List<Document> documents = buildDocuments(embeddingsQueryItems);
-        log.info("RAG 对话检索: collection={}, status={}, 分片命中数={}, 生成Document数={}",
-                boundCollection(), ragChunksResult.status(), embeddingsQueryItems.size(), documents.size());
+        logRagRetrieve(conversationId, boundCollection(), ragChunksResult.status(),
+                embeddingsQueryItems.size(), documents.size(), null);
         return documents;
+    }
+
+    private void logRagSkip(String conversationId, String reason) {
+        if (conversationId != null) {
+            AgentRunLogger.infoByConversationId(conversationId, AgentRunEventType.RAG_SKIP,
+                    AgentRunLogger.kv("rag", "collection=" + boundCollection() + ",reason=" + reason),
+                    "RAG retrieval skipped");
+            return;
+        }
+        log.info("RAG 对话检索跳过: collection={}, reason={}", boundCollection(), reason);
+    }
+
+    private void logRagRetrieve(String conversationId,
+                                String collection,
+                                Retriever.RetrievalStatus status,
+                                int hits,
+                                int docs,
+                                String failureMessage) {
+        String ragSummary = "collection=" + collection
+                + ",status=" + status
+                + ",hits=" + hits
+                + ",docs=" + docs
+                + (failureMessage == null ? "" : ",reason=" + AgentRunLogger.preview(failureMessage));
+        if (conversationId != null) {
+            if (status == Retriever.RetrievalStatus.FAILED) {
+                AgentRunLogger.warnByConversationId(conversationId, AgentRunEventType.RAG_RETRIEVE,
+                        AgentRunLogger.kv("rag", ragSummary),
+                        "RAG retrieval degraded");
+            } else {
+                AgentRunLogger.infoByConversationId(conversationId, AgentRunEventType.RAG_RETRIEVE,
+                        AgentRunLogger.kv("rag", ragSummary),
+                        "RAG retrieval completed");
+            }
+            return;
+        }
+        if (status == Retriever.RetrievalStatus.FAILED) {
+            log.warn("RAG 对话检索降级: collection={}, reason={}", collection, failureMessage);
+        } else {
+            log.info("RAG 对话检索: collection={}, status={}, 分片命中数={}, 生成Document数={}",
+                    collection, status, hits, docs);
+        }
     }
 
     private List<Document> buildDocuments(List<EmbeddingModel.EmbeddingsQueryItem> embeddingsQueryItems) {

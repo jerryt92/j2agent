@@ -11,6 +11,7 @@ import com.alibaba.cloud.ai.graph.skills.SkillMetadata;
 import com.alibaba.fastjson2.JSONObject;
 import io.github.jerryt92.j2agent.config.plugin.PluginProperties;
 import io.github.jerryt92.j2agent.constants.CommonConstants;
+import io.github.jerryt92.j2agent.service.rag.RagSourceFileService;
 import io.github.jerryt92.j2agent.service.rag.query.DefaultQueryTransformers;
 import io.github.jerryt92.j2agent.service.llm.advisor.EmptyQuerySkippingRetrievalAugmentationAdvisor;
 import io.github.jerryt92.j2agent.service.llm.advisor.ReactCompatibleMessageChatMemoryAdvisor;
@@ -184,6 +185,9 @@ public abstract class AiAgent {
     protected AgentToolErrorReturnInterceptor agentToolErrorReturnInterceptor;
 
     @Autowired
+    protected RagSourceFileService ragSourceFileService;
+
+    @Autowired
     protected PluginProperties pluginProperties;
 
     @Autowired
@@ -227,6 +231,10 @@ public abstract class AiAgent {
                 .build();
         runnableConfig.context().put(AgentUiToolEventInterceptor.CONTEXT_KEY_TOOL_EVENT_EMITTER, context.toolEventEmitter());
         runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_CHAT_CONVERSATION_ID, context.conversationId());
+        runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_CONTEXT_ID, context.contextId());
+        runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_TURN_ID, context.turnId());
+        runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_USER_ID, context.userId());
+        runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_AGENT_ID, context.agentId());
         var userMessageBuilder = UserMessage.builder()
                 .text(context.text())
                 .metadata(Map.of(
@@ -291,6 +299,14 @@ public abstract class AiAgent {
      */
     protected DocumentRetriever buildDocumentRetriever() {
         return null;
+    }
+
+    /**
+     * 是否向前端展示 RAG 命中的知识库文件来源（实时 WebSocket PATCH + 历史回放 srcFile）。
+     * 默认关闭；{@code rag_infos} 仍正常落库，仅 UI 层按本开关过滤。
+     */
+    public boolean isRagSourceDisplayEnabled() {
+        return false;
     }
 
     /**
@@ -452,7 +468,9 @@ public abstract class AiAgent {
             }
             RetrievalAugmentationAdvisor ragAdvisor = ragAdvisorBuilder.build();
             chatClient = ChatClient.builder(chatModel)
-                    .defaultAdvisors(memoryAdvisor, EmptyQuerySkippingRetrievalAugmentationAdvisor.wrap(ragAdvisor))
+                    .defaultAdvisors(memoryAdvisor,
+                            EmptyQuerySkippingRetrievalAugmentationAdvisor.wrap(
+                                    ragAdvisor, ragSourceFileService, isRagSourceDisplayEnabled()))
                     .build();
         }
         Builder builder = ReactAgent.builder()

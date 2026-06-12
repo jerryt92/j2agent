@@ -5,6 +5,7 @@ import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.rag.Query;
 
 import java.util.List;
 import java.util.Map;
@@ -15,6 +16,40 @@ import java.util.Map;
 public final class PromptConversationIdExtractor {
 
     private PromptConversationIdExtractor() {
+    }
+
+    /**
+     * 从 RAG {@link Query} 的 history 或 context 中提取 conversationId。
+     */
+    public static String extract(Query query) {
+        if (query == null) {
+            return null;
+        }
+        Map<String, Object> context = query.context();
+        if (context != null) {
+            Object fromContext = context.get(ChatMemory.CONVERSATION_ID);
+            if (fromContext != null) {
+                String conversationId = fromContext.toString();
+                if (StringUtils.isNotBlank(conversationId)) {
+                    return conversationId;
+                }
+            }
+        }
+        List<Message> history = query.history();
+        if (history == null || history.isEmpty()) {
+            return null;
+        }
+        for (int i = history.size() - 1; i >= 0; i--) {
+            Message message = history.get(i);
+            if (!(message instanceof UserMessage userMessage)) {
+                continue;
+            }
+            String conversationId = readConversationId(userMessage.getMetadata());
+            if (conversationId != null) {
+                return conversationId;
+            }
+        }
+        return null;
     }
 
     /**

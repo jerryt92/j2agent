@@ -4,14 +4,15 @@ import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallHandler;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallRequest;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallResponse;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolInterceptor;
-import lombok.extern.slf4j.Slf4j;
+import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunnableContextKeys;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
 /**
  * 工具链最外层兜底：将漏出的工具异常转换为 ToolResponse 回注给 LLM，避免打断整轮 Agent 流程。
  */
-@Slf4j
 @Component
 public class AgentToolErrorReturnInterceptor extends ToolInterceptor {
 
@@ -36,9 +37,13 @@ public class AgentToolErrorReturnInterceptor extends ToolInterceptor {
                 Thread.currentThread().interrupt();
             }
             String message = buildToolErrorMessage(request, t);
-            log.warn("Tool {} execution failed and will be returned to LLM: {}",
-                    safeToolName(request), message);
-            log.debug("Tool execution failure detail", t);
+            String conversationId = resolveConversationId(request);
+            AgentRunLogger.warnByConversationId(conversationId, AgentRunEventType.TOOL_ERROR_RETURN,
+                    AgentRunLogger.kv(
+                            "tool", safeToolName(request),
+                            "callId", request.getToolCallId(),
+                            "errorType", t.getClass().getSimpleName()),
+                    message);
             return ToolCallResponse.error(request.getToolCallId(), safeToolName(request), message);
         }
     }
@@ -49,14 +54,22 @@ public class AgentToolErrorReturnInterceptor extends ToolInterceptor {
     private static ToolCallResponse rejectMalformedToolCall(ToolCallRequest request) {
         if (request.getToolName() == null || request.getToolName().isBlank()) {
             String message = "Malformed streaming tool-call fragment ignored: missing tool name. Continue without retrying this tool fragment.";
-            log.warn("Ignore malformed tool call fragment, callId={}, arguments={}",
-                    request.getToolCallId(), request.getArguments());
+            AgentRunLogger.warnByConversationId(resolveConversationId(request), AgentRunEventType.TOOL_ERROR_RETURN,
+                    AgentRunLogger.kv(
+                            "tool", safeToolName(request),
+                            "callId", request.getToolCallId(),
+                            "errorType", "MalformedToolFragment"),
+                    message);
             return ToolCallResponse.error(request.getToolCallId(), safeToolName(request), message);
         }
         if (StringUtils.isBlank(request.getArguments())) {
             String message = "Malformed streaming tool-call fragment ignored: empty tool arguments. Continue without retrying this tool fragment.";
-            log.warn("Ignore malformed tool call fragment, tool={}, callId={}",
-                    request.getToolName(), request.getToolCallId());
+            AgentRunLogger.warnByConversationId(resolveConversationId(request), AgentRunEventType.TOOL_ERROR_RETURN,
+                    AgentRunLogger.kv(
+                            "tool", request.getToolName(),
+                            "callId", request.getToolCallId(),
+                            "errorType", "MalformedToolFragment"),
+                    message);
             return ToolCallResponse.error(request.getToolCallId(), request.getToolName(), message);
         }
         return null;
@@ -76,5 +89,13 @@ public class AgentToolErrorReturnInterceptor extends ToolInterceptor {
         return request.getToolName() == null || request.getToolName().isBlank()
                 ? "unknown_tool"
                 : request.getToolName();
+    }
+
+    private static String resolveConversationId(ToolCallRequest request) {
+        return request.getExecutionContext()
+                .map(ctx -> ctx.config().context().get(AgentRunnableContextKeys.CONTEXT_KEY_CHAT_CONVERSATION_ID))
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .orElse(null);
     }
 }

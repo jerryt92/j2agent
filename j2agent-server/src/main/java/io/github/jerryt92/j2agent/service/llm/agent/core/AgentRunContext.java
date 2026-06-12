@@ -14,6 +14,7 @@ public record AgentRunContext(
         String userId,
         String turnId,
         String conversationId,
+        String agentId,
         List<ChatAttachmentDto> attachments,
         ToolEventEmitter toolEventEmitter) {
 }

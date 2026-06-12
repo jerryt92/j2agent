@@ -80,7 +80,10 @@ public class ChatController extends AbstractWebSocketHandler implements ChatApi 
     public ResponseEntity<ChatContextDto> getHistoryContext(String contextId, String agentId) {
         SessionBo session = loginService.getSession();
         ChatContextBo chatContextBo = chatContextService.getChatContext(contextId, session == null ? null : session.getUserId(), agentId);
-        ChatContextDto dto = chatContextBo == null ? null : Translator.translateToChatContextDto(chatContextBo);
+        boolean ragSourceDisplayEnabled = agentRouter.route(agentId).isRagSourceDisplayEnabled();
+        ChatContextDto dto = chatContextBo == null
+                ? null
+                : Translator.translateToChatContextDto(chatContextBo, ragSourceDisplayEnabled);
         if (dto != null && chatAttachmentUrlResolver != null) {
             chatAttachmentUrlResolver.applyToChatContext(dto);
         }

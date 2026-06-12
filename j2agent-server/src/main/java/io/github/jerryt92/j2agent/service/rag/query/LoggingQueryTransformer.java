@@ -1,5 +1,7 @@
 package io.github.jerryt92.j2agent.service.rag.query;
 
+import io.github.jerryt92.j2agent.logging.rag.QueryTransformAgentRunLog;
+import io.github.jerryt92.j2agent.service.llm.PromptConversationIdExtractor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.rag.Query;
 import org.springframework.ai.rag.preretrieval.query.transformation.QueryTransformer;
@@ -26,14 +28,27 @@ public final class LoggingQueryTransformer implements QueryTransformer {
         Query result = delegate.transform(query);
         String after = QueryTransformLogSupport.queryText(result);
         if (Objects.equals(before, after)) {
-            log.info("query transform [{}]: unchanged | {}",
-                    step, QueryTransformLogSupport.preview(after));
+            String preview = QueryTransformLogSupport.preview(after);
+            if (isAgentRun(query)) {
+                QueryTransformAgentRunLog.info(query, step, "unchanged=" + preview, "query transform unchanged");
+            } else {
+                log.info("query transform [{}]: unchanged | {}", step, preview);
+            }
         } else {
-            log.info("query transform [{}]: {} -> {}",
-                    step,
-                    QueryTransformLogSupport.preview(before),
-                    QueryTransformLogSupport.preview(after));
+            String beforePreview = QueryTransformLogSupport.preview(before);
+            String afterPreview = QueryTransformLogSupport.preview(after);
+            if (isAgentRun(query)) {
+                QueryTransformAgentRunLog.info(query, step,
+                        "before=" + beforePreview + ",after=" + afterPreview,
+                        "query transform applied");
+            } else {
+                log.info("query transform [{}]: {} -> {}", step, beforePreview, afterPreview);
+            }
         }
         return result;
+    }
+
+    private static boolean isAgentRun(Query query) {
+        return PromptConversationIdExtractor.extract(query) != null;
     }
 }

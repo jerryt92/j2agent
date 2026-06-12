@@ -7,6 +7,8 @@ import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallResponse;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolInterceptor;
 import com.alibaba.fastjson2.JSONObject;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunnableContextKeys;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
 import io.github.jerryt92.j2agent.service.llm.memory.ChatMemoryMessageCodec;
 import io.github.jerryt92.j2agent.service.llm.tool.AgentUiToolEventInterceptor;
 import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
@@ -58,6 +60,7 @@ public class AgentUiSkillLoadToolInterceptor extends ToolInterceptor {
         String callId = request.getToolCallId();
         emitterOpt.ifPresent(e -> e.onSkillLoadStart(callId, toolName, args, skillName));
         long startNanos = System.nanoTime();
+        String conversationId = conversationIdOpt.orElse(null);
         try {
             ToolCallResponse response = handler.call(request);
             long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
@@ -66,15 +69,18 @@ public class AgentUiSkillLoadToolInterceptor extends ToolInterceptor {
             boolean truncated = fullLen > ToolEventEmitter.MAX_TOOL_RESULT_LENGTH;
             if (response.isError()) {
                 Throwable err = toFailureThrowable(response);
+                logSkillLoad(conversationId, skillName, "FAILED", durationMs, err.getMessage());
                 emitterOpt.ifPresent(e -> e.onSkillLoadFailure(callId, toolName, skillName, err, durationMs));
                 persistAudit(conversationIdOpt, skillName, false, fullLen, truncated, err.getMessage());
                 return response;
             }
+            logSkillLoad(conversationId, skillName, "SUCCESS", durationMs, null);
             emitterOpt.ifPresent(e -> e.onSkillLoadSuccess(callId, toolName, skillName, rawResult, durationMs));
             persistAudit(conversationIdOpt, skillName, true, fullLen, truncated, null);
             return response;
         } catch (Throwable t) {
             long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+            logSkillLoad(conversationId, skillName, "FAILED", durationMs, t.getMessage());
             emitterOpt.ifPresent(e -> e.onSkillLoadFailure(callId, toolName, skillName, t, durationMs));
             persistAudit(conversationIdOpt, skillName, false, 0, false, t.getMessage());
             throw t;
@@ -132,6 +138,16 @@ public class AgentUiSkillLoadToolInterceptor extends ToolInterceptor {
                 .map(ctx -> ctx.config().context().get(AgentRunnableContextKeys.CONTEXT_KEY_CHAT_CONVERSATION_ID))
                 .filter(String.class::isInstance)
                 .map(String.class::cast);
+    }
+
+    private static void logSkillLoad(String conversationId,
+                                     String skillName,
+                                     String status,
+                                     long durationMs,
+                                     String errorMessage) {
+        AgentRunLogger.infoByConversationId(conversationId, AgentRunEventType.SKILL_LOAD,
+                AgentRunLogger.kv("skill", skillName, "status", status, "durationMs", durationMs),
+                errorMessage == null ? "skill loaded" : errorMessage);
     }
 
     private static Throwable toFailureThrowable(ToolCallResponse response) {
