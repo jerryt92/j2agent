@@ -94,7 +94,8 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
         List<ChatContextItemWithBLOBs> items = chatContextItemMapper.selectByExampleWithBLOBs(example);
         List<Message> messages = new ArrayList<>();
         for (ChatContextItemWithBLOBs item : items) {
-            Message m = messageCodec.decode(item.getChatRole(), item.getContent(), item.getMetaJson());
+            Message m = messageCodec.decode(item.getChatRole(), item.getContent(), item.getMetaJson(),
+                    item.getRagInfos());
             if (m != null) {
                 messages.add(m);
             }
@@ -155,7 +156,7 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
                     row.chatRole(),
                     row.content(),
                     0,
-                    null,
+                    row.ragInfos(),
                     now,
                     messageId,
                     null,

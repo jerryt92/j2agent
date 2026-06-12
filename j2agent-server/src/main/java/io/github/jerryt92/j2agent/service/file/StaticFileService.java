@@ -1,16 +1,24 @@
 package io.github.jerryt92.j2agent.service.file;
 
+import io.github.jerryt92.j2agent.constants.CommonConstants;
 import io.github.jerryt92.j2agent.service.rag.knowledge.repo.KnowledgeRepoMetadataService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -117,6 +125,44 @@ public class StaticFileService {
     }
 
     /**
+     * 将知识库相对路径编码为 {@link CommonConstants#REPO_FILE_URL} 直链。
+     * <p>按路径段分别 {@link URLEncoder#encode}，保留 {@code /}，避免整段编码产生 {@code %2F} 触发 Tomcat 400。</p>
+     */
+    public static String toRepoFileUrl(String relativePath) {
+        if (StringUtils.isBlank(relativePath)) {
+            return CommonConstants.REPO_FILE_URL;
+        }
+        return CommonConstants.REPO_FILE_URL + encodeRepoPathSegments(relativePath);
+    }
+
+    /**
+     * 对知识库相对路径逐段 URL 编码，段间保留 {@code /}。
+     */
+    public static String encodeRepoPathSegments(String relativePath) {
+        String normalized = relativePath.replace('\\', '/');
+        return Arrays.stream(normalized.split("/"))
+                .map(segment -> URLEncoder.encode(segment, StandardCharsets.UTF_8))
+                .collect(Collectors.joining("/"));
+    }
+
+    /**
+     * 构建带正确文件名的文件下载/预览响应（{@code Content-Disposition} + Content-Type）。
+     */
+    public static ResponseEntity<Resource> asFileResponse(Resource resource, String displayFileName) {
+        String fileName = StringUtils.isNotBlank(displayFileName) ? displayFileName : resource.getFilename();
+        HttpHeaders headers = new HttpHeaders();
+        if (StringUtils.isNotBlank(fileName)) {
+            headers.setContentDisposition(ContentDisposition.builder("inline")
+                    .filename(fileName, StandardCharsets.UTF_8)
+                    .build());
+        }
+        return ResponseEntity.ok()
+                .headers(headers)
+                .contentType(parseMediaType(fileName))
+                .body(resource);
+    }
+
+    /**
      * 根据文件名后缀解析 HTTP Content-Type。
      */
     public static MediaType parseMediaType(String fullFileName) {
@@ -141,6 +187,10 @@ public class StaticFileService {
                 break;
             case "txt":
                 mediaType = MediaType.TEXT_PLAIN;
+                break;
+            case "md":
+            case "markdown":
+                mediaType = new MediaType("text", "markdown", StandardCharsets.UTF_8);
                 break;
             default:
                 mediaType = MediaType.APPLICATION_OCTET_STREAM;

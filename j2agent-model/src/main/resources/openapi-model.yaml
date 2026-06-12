@@ -156,6 +156,9 @@ components:
         fullFileName:
           type: string
           description: 文件全名
+        relativePath:
+          type: string
+          description: 知识库仓库内相对路径（相对 repo 根目录）
         url:
           type: string
           description: 文件URL

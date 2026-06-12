@@ -11,6 +11,7 @@ import com.alibaba.cloud.ai.graph.skills.SkillMetadata;
 import com.alibaba.fastjson2.JSONObject;
 import io.github.jerryt92.j2agent.config.plugin.PluginProperties;
 import io.github.jerryt92.j2agent.constants.CommonConstants;
+import io.github.jerryt92.j2agent.service.rag.RagSourceFileService;
 import io.github.jerryt92.j2agent.service.rag.query.DefaultQueryTransformers;
 import io.github.jerryt92.j2agent.service.llm.advisor.EmptyQuerySkippingRetrievalAugmentationAdvisor;
 import io.github.jerryt92.j2agent.service.llm.advisor.ReactCompatibleMessageChatMemoryAdvisor;
@@ -182,6 +183,9 @@ public abstract class AiAgent {
      */
     @Autowired
     protected AgentToolErrorReturnInterceptor agentToolErrorReturnInterceptor;
+
+    @Autowired
+    protected RagSourceFileService ragSourceFileService;
 
     @Autowired
     protected PluginProperties pluginProperties;
@@ -452,7 +456,8 @@ public abstract class AiAgent {
             }
             RetrievalAugmentationAdvisor ragAdvisor = ragAdvisorBuilder.build();
             chatClient = ChatClient.builder(chatModel)
-                    .defaultAdvisors(memoryAdvisor, EmptyQuerySkippingRetrievalAugmentationAdvisor.wrap(ragAdvisor))
+                    .defaultAdvisors(memoryAdvisor,
+                            EmptyQuerySkippingRetrievalAugmentationAdvisor.wrap(ragAdvisor, ragSourceFileService))
                     .build();
         }
         Builder builder = ReactAgent.builder()

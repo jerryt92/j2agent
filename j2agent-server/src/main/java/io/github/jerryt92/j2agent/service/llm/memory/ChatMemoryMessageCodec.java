@@ -22,6 +22,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -72,6 +73,7 @@ public class ChatMemoryMessageCodec {
     static final String META_KIND_TURN_TRACE = "turn_trace";
     static final String META_REASONING_CONTENT = "reasoningContent";
     static final String META_ATTACHMENTS = "attachments";
+    public static final String META_RAG_INFOS = "ragInfos";
 
     @Autowired(required = false)
     private ChatAttachmentService chatAttachmentService;
@@ -92,7 +94,7 @@ public class ChatMemoryMessageCodec {
             List<ChatAttachmentDto> persistedAttachments = sanitizeAttachmentsForPersist(attachments);
             String meta = persistedAttachments == null ? null
                     : truncateMetaJson(objectMapper.writeValueAsString(Map.of(META_ATTACHMENTS, persistedAttachments)));
-            return new PersistedRow(1, t, meta);
+            return new PersistedRow(1, t, meta, null);
         }
         if (message instanceof AssistantMessage am) {
             if (am.hasToolCalls()) {
@@ -111,28 +113,29 @@ public class ChatMemoryMessageCodec {
                 String meta = truncateMetaJson(objectMapper.writeValueAsString(Map.of(
                         META_DISPLAY_IN_CHAT, false,
                         META_KIND, META_KIND_ASSISTANT_TOOL)));
-                return new PersistedRow(2, capContentField(objectMapper.writeValueAsString(root), "assistant_tool"), meta);
+                return new PersistedRow(2, capContentField(objectMapper.writeValueAsString(root), "assistant_tool"), meta, null);
             }
             String t = capContentField(am.getText() != null ? am.getText() : "", "assistant");
+            String ragInfos = extractRagInfosFromMetadata(am);
             if (isSkillLoadAuditContent(t, null)) {
                 String meta = truncateMetaJson(objectMapper.writeValueAsString(Map.of(
                         META_DISPLAY_IN_CHAT, false,
                         META_KIND, META_KIND_SKILL_LOAD_AUDIT)));
-                return new PersistedRow(2, t, meta);
+                return new PersistedRow(2, t, meta, ragInfos);
             }
             if (isTurnTraceContent(t, null)) {
                 String meta = truncateMetaJson(objectMapper.writeValueAsString(Map.of(
                         META_DISPLAY_IN_CHAT, false,
                         META_KIND, META_KIND_TURN_TRACE)));
-                return new PersistedRow(2, t, meta);
+                return new PersistedRow(2, t, meta, ragInfos);
             }
             String reasoning = extractReasoningFromMetadata(am);
             if (StringUtils.hasText(reasoning)) {
                 String meta = truncateMetaJson(objectMapper.writeValueAsString(
                         Map.of(META_REASONING_CONTENT, capContentField(reasoning, "reasoningContent"))));
-                return new PersistedRow(2, t, meta);
+                return new PersistedRow(2, t, meta, ragInfos);
             }
-            return new PersistedRow(2, t, null);
+            return new PersistedRow(2, t, null, ragInfos);
         }
         if (message instanceof ToolResponseMessage tr) {
             ObjectNode root = objectMapper.createObjectNode();
@@ -148,15 +151,34 @@ public class ChatMemoryMessageCodec {
             String meta = truncateMetaJson(objectMapper.writeValueAsString(Map.of(
                     META_DISPLAY_IN_CHAT, false,
                     META_KIND, META_KIND_TOOL_RESULT)));
-            return new PersistedRow(CHAT_ROLE_TOOL, capContentField(objectMapper.writeValueAsString(root), "tool_response"), meta);
+            return new PersistedRow(CHAT_ROLE_TOOL, capContentField(objectMapper.writeValueAsString(root), "tool_response"), meta, null);
         }
         return null;
+    }
+
+    private static String extractRagInfosFromMetadata(AssistantMessage am) {
+        if (am == null || am.getMetadata() == null) {
+            return null;
+        }
+        Object raw = am.getMetadata().get(META_RAG_INFOS);
+        if (raw == null) {
+            return null;
+        }
+        String value = raw.toString().trim();
+        return value.isEmpty() ? null : value;
     }
 
     /**
      * 从库表行还原为 Spring AI 消息。
      */
     public Message decode(int chatRole, String content, String metaJson) {
+        return decode(chatRole, content, metaJson, null);
+    }
+
+    /**
+     * 从库表行还原为 Spring AI 消息（含 {@code rag_infos} 列）。
+     */
+    public Message decode(int chatRole, String content, String metaJson, String ragInfos) {
         String c = content != null ? content : "";
         if (chatRole == 1) {
             List<ChatAttachmentDto> attachments = parseAttachments(metaJson);
@@ -182,19 +204,27 @@ public class ChatMemoryMessageCodec {
             if (isAssistantToolJson(c, metaJson)) {
                 return parseAssistantToolMessage(c);
             }
-            String reasoning = parseReasoningFromMetaJson(metaJson);
-            if (StringUtils.hasText(reasoning)) {
-                return AssistantMessage.builder()
-                        .content(c)
-                        .properties(Map.of("reasoningContent", reasoning))
-                        .build();
-            }
-            if (!StringUtils.hasText(c)) {
-                return null;
-            }
-            return new AssistantMessage(c);
+            return buildDecodedAssistantMessage(c, metaJson, ragInfos);
         }
         return null;
+    }
+
+    private AssistantMessage buildDecodedAssistantMessage(String content, String metaJson, String ragInfos) {
+        Map<String, Object> props = new LinkedHashMap<>();
+        String reasoning = parseReasoningFromMetaJson(metaJson);
+        if (StringUtils.hasText(reasoning)) {
+            props.put(META_REASONING_CONTENT, reasoning);
+        }
+        if (StringUtils.hasText(ragInfos)) {
+            props.put(META_RAG_INFOS, ragInfos);
+        }
+        if (!props.isEmpty()) {
+            return AssistantMessage.builder().content(content).properties(props).build();
+        }
+        if (!StringUtils.hasText(content)) {
+            return null;
+        }
+        return new AssistantMessage(content);
     }
 
     public List<ChatAttachmentDto> parseAttachments(String metaJson) {
@@ -503,6 +533,6 @@ public class ChatMemoryMessageCodec {
     /**
      * 单行持久化载荷。
      */
-    public record PersistedRow(int chatRole, String content, String metaJson) {
+    public record PersistedRow(int chatRole, String content, String metaJson, String ragInfos) {
     }
 }

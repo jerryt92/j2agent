@@ -7,6 +7,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemWithBLOBs;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecord;
+import io.github.jerryt92.j2agent.constants.CommonConstants;
+import io.github.jerryt92.j2agent.service.file.StaticFileService;
 import io.github.jerryt92.j2agent.service.llm.ChatContextBo;
 import io.github.jerryt92.j2agent.service.llm.TurnStepItem;
 import io.github.jerryt92.j2agent.service.llm.memory.ChatMemoryMessageCodec;
@@ -23,10 +25,12 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.util.CollectionUtils;
 
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -312,18 +316,7 @@ public final class Translator {
                 messageDto.setContent("");
             }
         }
-        if (StringUtils.isNotEmpty(chatContextItem.getRagInfos())) {
-            List<RagInfoDto> ragInfoDtos = JSONArray.parseArray(chatContextItem.getRagInfos(), RagInfoDto.class);
-            List<FileDto> fileDtos = new ArrayList<>();
-            if (ragInfoDtos != null) {
-                for (RagInfoDto ragInfoDto : ragInfoDtos) {
-                    fileDtos.add(ragInfoDto.getSrcFile());
-                }
-            }
-            if (!CollectionUtils.isEmpty(fileDtos)) {
-                messageDto.setSrcFile(fileDtos);
-            }
-        }
+        applySrcFileFromRagInfosJson(chatContextItem.getRagInfos(), messageDto);
         if (MessageDto.MessageKindEnum.TOOL_ROUND.equals(messageDto.getMessageKind())) {
             messageDto.setContent("");
         }
@@ -374,12 +367,14 @@ public final class Translator {
                 String assistantText = am.getText() != null ? am.getText() : "";
                 messageDto.setContent(assistantText);
                 applyReasoningFromAssistant(am, messageDto);
+                applySrcFileFromAssistant(am, messageDto);
                 boolean hasReasoning = StringUtils.isNotBlank(messageDto.getReasoningContent());
-                // 含 tool_calls、持久化 JSON 形态、技能加载审计行、或历史空正文脏数据：均不展示空气泡
+                boolean hasSrcFile = !CollectionUtils.isEmpty(messageDto.getSrcFile());
+                // 含 tool_calls、持久化 JSON 形态、技能加载审计行、或历史空正文脏数据：均不展示空气泡（有来源时仍展示）
                 boolean hideToolRound = am.hasToolCalls()
                         || isAssistantToolPersistenceJson(assistantText)
                         || isSkillLoadAuditPersistenceJson(assistantText)
-                        || (!am.hasToolCalls() && !hasReasoning && !StringUtils.isNotBlank(assistantText));
+                        || (!am.hasToolCalls() && !hasReasoning && !hasSrcFile && !StringUtils.isNotBlank(assistantText));
                 if (hideToolRound) {
                     messageDto.setDisplayInChat(Boolean.FALSE);
                     messageDto.setMessageKind(MessageDto.MessageKindEnum.TOOL_ROUND);
@@ -408,6 +403,64 @@ public final class Translator {
         String reasoning = AssistantMessageReasoningExtractor.extractFullReasoning(am);
         if (StringUtils.isNotBlank(reasoning)) {
             messageDto.setReasoningContent(reasoning);
+        }
+    }
+
+    private static void applySrcFileFromAssistant(AssistantMessage am, MessageDto messageDto) {
+        if (am == null || am.getMetadata() == null) {
+            return;
+        }
+        Object raw = am.getMetadata().get(ChatMemoryMessageCodec.META_RAG_INFOS);
+        applySrcFileFromRagInfosJson(raw == null ? null : raw.toString(), messageDto);
+    }
+
+    private static void applySrcFileFromRagInfosJson(String ragInfosJson, MessageDto messageDto) {
+        List<FileDto> fileDtos = parseSrcFilesFromRagInfosJson(ragInfosJson);
+        if (!CollectionUtils.isEmpty(fileDtos)) {
+            messageDto.setSrcFile(fileDtos);
+        }
+    }
+
+    static List<FileDto> parseSrcFilesFromRagInfosJson(String ragInfosJson) {
+        if (StringUtils.isEmpty(ragInfosJson)) {
+            return List.of();
+        }
+        List<RagInfoDto> ragInfoDtos = JSONArray.parseArray(ragInfosJson, RagInfoDto.class);
+        if (ragInfoDtos == null || ragInfoDtos.isEmpty()) {
+            return List.of();
+        }
+        Map<Integer, FileDto> deduped = new LinkedHashMap<>();
+        for (RagInfoDto ragInfoDto : ragInfoDtos) {
+            if (ragInfoDto == null || ragInfoDto.getSrcFile() == null) {
+                continue;
+            }
+            FileDto srcFile = ragInfoDto.getSrcFile();
+            normalizeRepoFileDto(srcFile);
+            Integer id = srcFile.getId();
+            deduped.putIfAbsent(id != null ? id : deduped.size(), srcFile);
+        }
+        return new ArrayList<>(deduped.values());
+    }
+
+    private static void normalizeRepoFileDto(FileDto fileDto) {
+        if (fileDto == null || StringUtils.isBlank(fileDto.getUrl())) {
+            return;
+        }
+        String url = fileDto.getUrl();
+        if (!url.startsWith(CommonConstants.REPO_FILE_URL)) {
+            return;
+        }
+        try {
+            String relativePath = URLDecoder.decode(url.substring(CommonConstants.REPO_FILE_URL.length()),
+                    StandardCharsets.UTF_8);
+            if (StringUtils.isBlank(fileDto.getRelativePath()) && StringUtils.isNotBlank(relativePath)) {
+                fileDto.setRelativePath(relativePath);
+            }
+            if (url.contains("%2F") && StringUtils.isNotBlank(relativePath)) {
+                fileDto.setUrl(StaticFileService.toRepoFileUrl(relativePath));
+            }
+        } catch (Exception ignored) {
+            // keep original url
         }
     }
 
