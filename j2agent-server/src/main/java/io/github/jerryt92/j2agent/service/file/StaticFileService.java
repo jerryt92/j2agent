@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -27,6 +28,8 @@ import java.util.stream.Stream;
 @Slf4j
 @Service
 public class StaticFileService {
+    private static final String REPO_FILE_PATH_MARKER = "/file/repo/";
+
     private final KnowledgeRepoMetadataService knowledgeRepoMetadataService;
 
     public StaticFileService(KnowledgeRepoMetadataService knowledgeRepoMetadataService) {
@@ -143,6 +146,63 @@ public class StaticFileService {
         return Arrays.stream(normalized.split("/"))
                 .map(segment -> URLEncoder.encode(segment, StandardCharsets.UTF_8))
                 .collect(Collectors.joining("/"));
+    }
+
+    /**
+     * 将历史或外部写入的整段 {@code %2F} 知识库直链改写为按段编码，避免 Tomcat/网关 400。
+     * 支持相对路径、{@code /v1/rest/j2agent/...} 与部署网关前缀（如 {@code ai-center}）。
+     */
+    public static String normalizeRepoFileUrl(String url) {
+        if (StringUtils.isBlank(url) || !url.contains("%2F") || !url.contains(REPO_FILE_PATH_MARKER)) {
+            return url;
+        }
+        int markerIdx = url.indexOf(REPO_FILE_PATH_MARKER);
+        String prefix = url.substring(0, markerIdx + REPO_FILE_PATH_MARKER.length());
+        String remainder = url.substring(markerIdx + REPO_FILE_PATH_MARKER.length());
+        int suffixStart = remainder.length();
+        for (int i = 0; i < remainder.length(); i++) {
+            char ch = remainder.charAt(i);
+            if (ch == '?' || ch == '#') {
+                suffixStart = i;
+                break;
+            }
+        }
+        String encodedTail = remainder.substring(0, suffixStart);
+        String suffix = remainder.substring(suffixStart);
+        try {
+            String relativePath = URLDecoder.decode(encodedTail, StandardCharsets.UTF_8);
+            if (StringUtils.isBlank(relativePath)) {
+                return url;
+            }
+            return prefix + encodeRepoPathSegments(relativePath) + suffix;
+        } catch (Exception e) {
+            return url;
+        }
+    }
+
+    /**
+     * 从知识库直链 URL 提取仓库内相对路径（已 URL 解码）。
+     */
+    public static String extractRepoRelativePath(String url) {
+        if (StringUtils.isBlank(url) || !url.contains(REPO_FILE_PATH_MARKER)) {
+            return null;
+        }
+        int markerIdx = url.indexOf(REPO_FILE_PATH_MARKER);
+        String remainder = url.substring(markerIdx + REPO_FILE_PATH_MARKER.length());
+        int suffixStart = remainder.length();
+        for (int i = 0; i < remainder.length(); i++) {
+            char ch = remainder.charAt(i);
+            if (ch == '?' || ch == '#') {
+                suffixStart = i;
+                break;
+            }
+        }
+        try {
+            String relativePath = URLDecoder.decode(remainder.substring(0, suffixStart), StandardCharsets.UTF_8);
+            return StringUtils.isBlank(relativePath) ? null : relativePath;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**

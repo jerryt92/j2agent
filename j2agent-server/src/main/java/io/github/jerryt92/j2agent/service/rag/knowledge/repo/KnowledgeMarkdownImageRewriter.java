@@ -91,7 +91,7 @@ public class KnowledgeMarkdownImageRewriter {
         }
         String trimmed = rawUrl.trim();
         if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("/")) {
-            return trimmed;
+            return StaticFileService.normalizeRepoFileUrl(trimmed);
         }
         try {
             String decoded = URLDecoder.decode(trimmed, StandardCharsets.UTF_8);

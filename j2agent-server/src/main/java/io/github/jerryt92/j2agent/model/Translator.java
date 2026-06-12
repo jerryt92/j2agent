@@ -25,7 +25,6 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.util.CollectionUtils;
 
-import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -457,21 +456,15 @@ public final class Translator {
         if (fileDto == null || StringUtils.isBlank(fileDto.getUrl())) {
             return;
         }
-        String url = fileDto.getUrl();
-        if (!url.startsWith(CommonConstants.REPO_FILE_URL)) {
-            return;
+        String normalizedUrl = StaticFileService.normalizeRepoFileUrl(fileDto.getUrl());
+        if (!normalizedUrl.equals(fileDto.getUrl())) {
+            fileDto.setUrl(normalizedUrl);
         }
-        try {
-            String relativePath = URLDecoder.decode(url.substring(CommonConstants.REPO_FILE_URL.length()),
-                    StandardCharsets.UTF_8);
-            if (StringUtils.isBlank(fileDto.getRelativePath()) && StringUtils.isNotBlank(relativePath)) {
+        if (StringUtils.isBlank(fileDto.getRelativePath())) {
+            String relativePath = StaticFileService.extractRepoRelativePath(normalizedUrl);
+            if (StringUtils.isNotBlank(relativePath)) {
                 fileDto.setRelativePath(relativePath);
             }
-            if (url.contains("%2F") && StringUtils.isNotBlank(relativePath)) {
-                fileDto.setUrl(StaticFileService.toRepoFileUrl(relativePath));
-            }
-        } catch (Exception ignored) {
-            // keep original url
         }
     }
 

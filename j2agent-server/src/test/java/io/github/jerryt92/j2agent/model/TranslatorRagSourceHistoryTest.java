@@ -93,6 +93,20 @@ class TranslatorRagSourceHistoryTest {
     }
 
     @Test
+    void shouldNormalizeAbsoluteAiCenterLegacyRepoUrlsOnHistoryLoad() {
+        String legacyUrl = "https://inc.raisecom.com.cn/v1/rest/ai-center/file/repo/"
+                + "knowledge_base%2Fcommon%2Fassets%2Fdoc.png";
+        FileDto fileDto = new FileDto().id(4).fullFileName("doc.png").url(legacyUrl);
+        List<FileDto> files = Translator.parseSrcFilesFromRagInfosJson(
+                JSON.toJSONString(List.of(new RagInfoDto().srcFile(fileDto))));
+
+        assertEquals(1, files.size());
+        assertFalse(files.getFirst().getUrl().contains("%2F"));
+        assertTrue(files.getFirst().getUrl().contains("/file/repo/knowledge_base/common/assets/"));
+        assertEquals("knowledge_base/common/assets/doc.png", files.getFirst().getRelativePath());
+    }
+
+    @Test
     void shouldBackfillRelativePathFromRepoUrlWhenMissing() {
         String path = "j2agent-docs/平台/RAG机制/检索/README.md";
         FileDto fileDto = new FileDto()
