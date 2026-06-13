@@ -68,7 +68,8 @@ class KnowledgeRepoSyncServiceFullRebuildTest {
                 embeddingService,
                 vectorDatabaseService,
                 vectorDatabaseInit,
-                knowledgeTextChunkService);
+                knowledgeTextChunkService,
+                new KnowledgeRepoSyncProgressTracker());
 
         assertTrue(syncService.executeFullRebuild(() -> true));
 

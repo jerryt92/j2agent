@@ -118,6 +118,7 @@ class KnowledgeRepoSyncServiceNeedsEmbeddingFullRebuildTest {
                 embeddingService,
                 vectorDatabaseService,
                 vectorDatabaseInit,
-                knowledgeTextChunkService);
+                knowledgeTextChunkService,
+                new KnowledgeRepoSyncProgressTracker());
     }
 }

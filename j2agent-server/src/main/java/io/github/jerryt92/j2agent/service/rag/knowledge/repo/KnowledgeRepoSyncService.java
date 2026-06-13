@@ -55,6 +55,7 @@ public class KnowledgeRepoSyncService {
     private final VectorDatabaseService vectorDatabaseService;
     private final VectorDatabaseInit vectorDatabaseInit;
     private final KnowledgeTextChunkService knowledgeTextChunkService;
+    private final KnowledgeRepoSyncProgressTracker progressTracker;
     private final KnowledgeRepoHashCache hashCache = new KnowledgeRepoHashCache();
     private final Set<Path> watchedDirectories = ConcurrentHashMap.newKeySet();
     private WatchService watchService;
@@ -68,7 +69,8 @@ public class KnowledgeRepoSyncService {
                                     EmbeddingService embeddingService,
                                     VectorDatabaseService vectorDatabaseService,
                                     VectorDatabaseInit vectorDatabaseInit,
-                                    KnowledgeTextChunkService knowledgeTextChunkService) {
+                                    KnowledgeTextChunkService knowledgeTextChunkService,
+                                    KnowledgeRepoSyncProgressTracker progressTracker) {
         this.metadataService = metadataService;
         this.hashTreeService = hashTreeService;
         this.knowledgeTextChunkParser = knowledgeTextChunkParser;
@@ -78,6 +80,17 @@ public class KnowledgeRepoSyncService {
         this.vectorDatabaseService = vectorDatabaseService;
         this.vectorDatabaseInit = vectorDatabaseInit;
         this.knowledgeTextChunkService = knowledgeTextChunkService;
+        this.progressTracker = progressTracker;
+    }
+
+    private record UpsertOutcome(boolean synced, int knowledgeCount, String skipReason) {
+        static UpsertOutcome synced(int knowledgeCount) {
+            return new UpsertOutcome(true, knowledgeCount, null);
+        }
+
+        static UpsertOutcome skipped(String reason) {
+            return new UpsertOutcome(false, 0, reason);
+        }
     }
 
     /**
@@ -177,6 +190,7 @@ public class KnowledgeRepoSyncService {
             log.info("完全重建准备被打断");
             return false;
         }
+        progressTracker.beginPreparing();
         metadataService.reloadMetadata();
         Set<String> knowledgeCollections = collectKnowledgeCollectionNames();
         log.warn("知识库完全重建准备开始：将 drop 知识库绑定 collections={}", knowledgeCollections);
@@ -239,6 +253,7 @@ public class KnowledgeRepoSyncService {
     }
 
     private void doSyncBodyInternal(Path rootPath, KnowledgeRepoSyncGuard guard) {
+        progressTracker.setPhase(KnowledgeRepoSyncPhase.SCANNING);
         metadataService.reloadMetadata();
         Map<String, String> previousFileCollectionMap = hashTreeService.loadActiveFileCollections();
         Map<String, Long> previousCollectionCounts = hashTreeService.loadActiveCollectionCounts();
@@ -250,27 +265,33 @@ public class KnowledgeRepoSyncService {
         logCollectionSet("同步前", previousActiveCollections);
         logCollectionStats("本轮扫描", latestCollectionCounts);
         KnowledgeRepoHashCache.DiffResult diffResult = hashCache.diff(latestSnapshot);
+        progressTracker.registerDiff(
+                diffResult.deleted(),
+                diffResult.added(),
+                diffResult.modified(),
+                latestFileCollectionMap,
+                previousFileCollectionMap);
         long now = System.currentTimeMillis();
         for (String deletedPath : diffResult.deleted().stream().sorted().toList()) {
             if (!guard.shouldContinue()) {
                 log.info("知识库同步在删除文件阶段被中断");
                 return;
             }
-            Path path = resolveAbsolutePath(rootPath, deletedPath);
+            progressTracker.markFileInProgress(deletedPath);
             String collection = previousFileCollectionMap.get(deletedPath);
             if (collection != null && !collection.isBlank()) {
                 milvusKnowledgeWriteService.deleteBySourceFile(collection, deletedPath);
             }
             hashTreeService.markDeleted(Path.of(deletedPath), now);
+            progressTracker.markFileDeleted(deletedPath);
         }
+        progressTracker.setPhase(KnowledgeRepoSyncPhase.UPSERTING);
         for (String changedPath : orderChangedPaths(rootPath, diffResult.added())) {
             if (!guard.shouldContinue()) {
                 log.info("知识库同步在新增文件阶段被中断");
                 return;
             }
-            if (!upsertFile(rootPath, resolveAbsolutePath(rootPath, changedPath), changedPath, latestFileStateMap.get(changedPath), now, guard)) {
-                log.warn("知识库文件跳过并等待后续重试: {}", changedPath);
-            }
+            processUpsert(rootPath, changedPath, latestFileStateMap.get(changedPath), now, guard);
         }
         for (String changedPath : orderChangedPaths(rootPath, diffResult.modified())) {
             if (!guard.shouldContinue()) {
@@ -281,22 +302,53 @@ public class KnowledgeRepoSyncService {
             FileState latestState = latestFileStateMap.get(changedPath);
             deleteVectorsForModifiedFile(changedPath, previousFileCollectionMap.get(changedPath),
                     latestState == null ? null : latestState.collectionName());
-            if (!upsertFile(rootPath, path, changedPath, latestFileStateMap.get(changedPath), now, guard)) {
-                log.warn("知识库文件跳过并等待后续重试: {}", changedPath);
-            }
+            processUpsert(rootPath, changedPath, latestFileStateMap.get(changedPath), now, guard);
         }
         hashCache.replaceAll(latestSnapshot);
         recycleEmptyCollections(previousActiveCollections, latestCollectionCounts);
+        progressTracker.complete();
+    }
+
+    private void processUpsert(Path rootPath,
+                               String changedPath,
+                               FileState fileState,
+                               long scanTime,
+                               KnowledgeRepoSyncGuard guard) {
+        progressTracker.markFileInProgress(changedPath);
+        String collection = fileState == null ? null : fileState.collectionName();
+        try {
+            UpsertOutcome outcome = upsertFile(
+                    rootPath,
+                    resolveAbsolutePath(rootPath, changedPath),
+                    changedPath,
+                    fileState,
+                    scanTime,
+                    guard);
+            if (outcome.synced()) {
+                progressTracker.markFileSynced(changedPath, collection, outcome.knowledgeCount());
+            } else {
+                log.warn("知识库文件跳过并等待后续重试: {}", changedPath);
+                progressTracker.markFileSkipped(changedPath, collection, outcome.skipReason());
+            }
+        } catch (MilvusKnowledgeWriteService.SyncInterruptedException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            progressTracker.markFileFailed(changedPath, collection, e.getMessage());
+            throw e;
+        }
     }
 
     /**
      * 将单个文件解析并 upsert 到 Milvus。
      */
-    private boolean upsertFile(Path rootPath, Path filePath, String relativePath, FileState fileState, long scanTime,
-                               KnowledgeRepoSyncGuard guard) {
+    private UpsertOutcome upsertFile(Path rootPath, Path filePath, String relativePath, FileState fileState, long scanTime,
+                                     KnowledgeRepoSyncGuard guard) {
         if (!guard.shouldContinue()) {
             log.info("知识库文件 upsert 被中断: {}", relativePath);
-            return false;
+            return UpsertOutcome.skipped("同步被中断");
+        }
+        if (fileState == null) {
+            return UpsertOutcome.skipped("文件状态不可用");
         }
         try {
             String documentContent = Files.readString(filePath, StandardCharsets.UTF_8);
@@ -323,13 +375,13 @@ public class KnowledgeRepoSyncService {
                     fileSizeBytes,
                     scanTime
             );
-            return true;
+            return UpsertOutcome.synced(upsertedCount);
         } catch (MilvusKnowledgeWriteService.SyncInterruptedException e) {
             log.info("知识库文件 upsert 被中断: {}", relativePath);
             throw e;
         } catch (MilvusKnowledgeWriteService.EmbeddingUnavailableException e) {
             log.warn("知识库向量化降级: sourceFile={}, reason={}", relativePath, e.getMessage());
-            return false;
+            return UpsertOutcome.skipped(e.getMessage());
         } catch (IOException e) {
             throw new IllegalStateException("读取知识库文档失败: " + filePath, e);
         }

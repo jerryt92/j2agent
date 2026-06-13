@@ -501,14 +501,98 @@ components:
             type: string
     KnowledgeSyncResult:
       type: object
-      description: 知识库目录增量同步结果
+      description: 知识库目录同步提交结果（异步接受或拒绝）
       properties:
         success:
           type: boolean
-          description: 是否同步成功
+          description: 是否成功接受后台同步任务
         message:
           type: string
-          description: 失败原因（成功时可为空）
+          description: 失败原因或接受提示（成功时可为空）
+    KnowledgeSyncStatusDto:
+      type: object
+      description: 知识库维护运行时状态（Embedding 健康 + 同步任务 + 文件进度）
+      properties:
+        ready:
+          type: boolean
+          description: Embedding 是否已探测成功且可用于知识库写入
+        dimension:
+          type: integer
+          description: 探测到的向量维度
+        modelName:
+          type: string
+          description: 当前生效 Embedding 模型名
+        providerType:
+          type: string
+          description: 当前生效 Embedding provider
+        embeddingBatchSize:
+          type: integer
+          description: 当前生效的 Embedding API 批量大小
+        lastProbeTime:
+          type: integer
+          format: int64
+          description: 最近一次 Embedding 探测时间（毫秒）
+        probeError:
+          type: string
+          description: Embedding 探测失败时的错误信息
+        taskType:
+          type: string
+          description: 维护任务类型
+          enum: [ IDLE, INITIALIZING, PROBING, INCREMENTAL_SYNC, FULL_REBUILD, FAILED ]
+        maintenanceActive:
+          type: boolean
+          description: 是否有进行中的维护任务
+        fullRebuildRunning:
+          type: boolean
+          description: 完全重建主体是否执行中
+        exclusiveSyncActive:
+          type: boolean
+          description: exclusive 重建门禁是否生效
+        lastFailureMessage:
+          type: string
+          description: 最近一次失败原因
+        phase:
+          type: string
+          description: 本轮文件同步阶段
+          enum: [ IDLE, PREPARING, SCANNING, DELETING, UPSERTING, COMPLETED ]
+        totalCount:
+          type: integer
+          description: 本轮 diff 文件总数
+        processedCount:
+          type: integer
+          description: 已处理文件数
+        currentFilePath:
+          type: string
+          description: 当前正在处理的文件路径
+        files:
+          type: array
+          description: 本轮 diff 文件进度
+          items:
+            $ref: '#/components/schemas/KnowledgeSyncFileStatusDto'
+    KnowledgeSyncFileStatusDto:
+      type: object
+      description: 本轮同步中的单文件状态
+      properties:
+        filePath:
+          type: string
+          description: 仓库内相对路径
+        changeType:
+          type: string
+          description: 变更类型
+          enum: [ ADDED, MODIFIED, DELETED ]
+        status:
+          type: string
+          description: 处理状态
+          enum: [ PENDING, IN_PROGRESS, SYNCED, DELETED, SKIPPED, FAILED ]
+        collection:
+          type: string
+          description: 目标 collection
+        knowledgeCount:
+          type: integer
+          description: 写入的知识条数
+        errorMessage:
+          type: string
+          description: 跳过或失败原因
     KnowledgeDto:
       type: object
       properties:

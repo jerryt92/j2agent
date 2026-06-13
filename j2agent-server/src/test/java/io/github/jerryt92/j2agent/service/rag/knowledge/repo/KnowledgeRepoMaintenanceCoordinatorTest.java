@@ -13,6 +13,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -45,6 +46,8 @@ class KnowledgeRepoMaintenanceCoordinatorTest {
     private EmbeddingService embeddingService;
     @Mock
     private ActiveProviderHolder activeProviderHolder;
+    @Mock
+    private KnowledgeRepoSyncProgressTracker progressTracker;
 
     @TempDir
     Path tempRepo;
@@ -232,6 +235,70 @@ class KnowledgeRepoMaintenanceCoordinatorTest {
     }
 
     @Test
+    void syncNowAsync_whenRepoRootMissing_returnsFailImmediately() {
+        coordinator = newCoordinator();
+        when(metadataService.getRepoRootPath()).thenReturn(null);
+
+        KnowledgeRepoSyncOutcome outcome = coordinator.syncNowAsync(false);
+        assertFalse(outcome.succeeded());
+        assertTrue(outcome.message().contains("根目录"));
+    }
+
+    @Test
+    void syncNowAsync_whenAccepted_returnsImmediatelyWhileTaskRuns() throws Exception {
+        when(metadataService.getRepoRootPath()).thenReturn(tempRepo);
+        when(lockService.repoRootHash(tempRepo)).thenReturn("repo-hash");
+        CountDownLatch incrementalStarted = new CountDownLatch(1);
+        CountDownLatch allowFinish = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            Runnable action = invocation.getArgument(2);
+            action.run();
+            return true;
+        }).when(lockService).tryWithLock(eq("repo-hash"), any(), any());
+        doAnswer(invocation -> {
+            incrementalStarted.countDown();
+            assertTrue(allowFinish.await(5, TimeUnit.SECONDS));
+            return null;
+        }).when(syncService).executeIncrementalSync(any());
+
+        coordinator = newCoordinator();
+        long start = System.nanoTime();
+        KnowledgeRepoSyncOutcome outcome = coordinator.syncNowAsync(false);
+        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+
+        assertTrue(outcome.succeeded());
+        assertTrue(outcome.message().contains("后台"));
+        assertTrue(elapsedMs < 2000);
+        assertTrue(incrementalStarted.await(5, TimeUnit.SECONDS));
+        allowFinish.countDown();
+        Thread.sleep(300);
+    }
+
+    @Test
+    void snapshotSyncStatus_delegatesToProgressTracker() {
+        when(progressTracker.snapshot()).thenReturn(new KnowledgeRepoSyncProgressTracker.Snapshot(
+                KnowledgeRepoSyncPhase.UPSERTING,
+                3,
+                1,
+                "doc/a.md",
+                List.of(new KnowledgeRepoSyncProgressTracker.FileProgress(
+                        "doc/a.md",
+                        KnowledgeRepoSyncFileChangeType.ADDED,
+                        KnowledgeRepoSyncFileStatus.IN_PROGRESS,
+                        "kb",
+                        null,
+                        null))));
+        coordinator = newCoordinator();
+
+        KnowledgeRepoSyncStatusSnapshot snapshot = coordinator.snapshotSyncStatus();
+        assertEquals(KnowledgeRepoSyncPhase.UPSERTING, snapshot.phase());
+        assertEquals(3, snapshot.totalCount());
+        assertEquals(1, snapshot.processedCount());
+        assertEquals("doc/a.md", snapshot.currentFilePath());
+        assertEquals(1, snapshot.files().size());
+    }
+
+    @Test
     void isExclusiveGenerationActive_tracksLatestGeneration() {
         coordinator = newCoordinator();
         long gen1 = coordinator.claimExclusiveGeneration();
@@ -250,6 +317,7 @@ class KnowledgeRepoMaintenanceCoordinatorTest {
                 lockService,
                 vectorDatabaseInit,
                 embeddingService,
-                activeProviderHolder);
+                activeProviderHolder,
+                progressTracker);
     }
 }
