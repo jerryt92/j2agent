@@ -98,6 +98,7 @@ j2agent:
       cleanup-cron: "${J2AGENT_STORAGE_SYNC_CLEANUP_CRON:0 30 2 * * *}"
   security:
     jwt:
+      # secret / kmac-output-length-bytes 须与外部系统部署一致（通常与 com.nms.jwt 相同）
       algorithm: Kmac256
       secret: ${JWT_SECRET}
       kmac-output-length-bytes: 256

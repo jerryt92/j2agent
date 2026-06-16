@@ -13,7 +13,9 @@ import io.github.jerryt92.j2agent.model.security.UserContextBo;
 import io.github.jerryt92.j2agent.utils.UserUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -31,17 +33,20 @@ public class LoginService {
     private final CaptchaService captchaService;
     private final JwtService jwtService;
     private final UserLoginContextCache userLoginContextCache;
+    private final UserService userService;
     private final ThreadLocal<UserContextBo> sessionThreadLocal = new ThreadLocal<>();
 
     public LoginService(
             UserPoMapper userPoMapper,
             CaptchaService captchaService,
             JwtService jwtService,
-            UserLoginContextCache userLoginContextCache) {
+            UserLoginContextCache userLoginContextCache,
+            @Lazy UserService userService) {
         this.userPoMapper = userPoMapper;
         this.captchaService = captchaService;
         this.jwtService = jwtService;
         this.userLoginContextCache = userLoginContextCache;
+        this.userService = userService;
     }
 
     public AuthResultDto login(String username, String password, String captchaCode, String hash) {
@@ -171,6 +176,10 @@ public class LoginService {
         Optional<UserContextBo> cached = userLoginContextCache.get(sid);
         if (cached.isPresent()) {
             UserContextBo userContextBo = cached.get();
+            if (StringUtils.isNotBlank(userId) && !userId.equals(userContextBo.getUserId())) {
+                userLoginContextCache.remove(sid, userContextBo.getUserId());
+                return loadAndCacheContext(sid, userId, username, expireTime, remainingTtl);
+            }
             userContextBo.setExpireTime(expireTime);
             return userContextBo;
         }
@@ -179,16 +188,15 @@ public class LoginService {
 
     private UserContextBo loadAndCacheContext(
             String sid, String userId, String username, long expireTime, long ttlSeconds) {
-        UserPo userPo = null;
-        if (StringUtils.isNotBlank(userId)) {
-            userPo = userPoMapper.selectByPrimaryKey(userId);
+        if (StringUtils.isBlank(userId)) {
+            return null;
         }
-        if (userPo == null && StringUtils.isNotBlank(username)) {
-            UserPoExample example = new UserPoExample();
-            example.createCriteria().andUsernameEqualTo(username);
-            List<UserPo> users = userPoMapper.selectByExample(example);
-            if (!users.isEmpty()) {
-                userPo = users.get(0);
+        UserPo userPo = userPoMapper.selectByPrimaryKey(userId);
+        if (userPo == null) {
+            try {
+                userPo = userService.provisionExternalUser(userId, username);
+            } catch (ResponseStatusException ex) {
+                return null;
             }
         }
         if (userPo == null) {

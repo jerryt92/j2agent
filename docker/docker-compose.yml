@@ -144,6 +144,7 @@ services:
       - "${J2AGENT_PORT}:${J2AGENT_PORT}"
     environment:
       I18N: "${I18N}"
+      JWT_SECRET: "${JWT_SECRET}"
       JAVA_OPTS: "${JAVA_OPTS}"
       SPRING_OPTIONS: "${SPRING_OPTIONS}"
       J2AGENT_PORT: "${J2AGENT_PORT}"

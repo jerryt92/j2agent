@@ -121,8 +121,9 @@ j2agent:
       cleanup-cron: "0 30 2 * * *"
   security:
     jwt:
+      # 与外部系统（com.nms.jwt / platsvc-security）联调时 algorithm、secret、kmac-output-length-bytes 必须一致
       algorithm: Kmac256
-      secret: base64:iiWkZ2kCYEdglYrQi/SofZybjnptG7bId5gnl4dUBNI=
+      secret: ${JWT_SECRET:base64:iiWkZ2kCYEdglYrQi/SofZybjnptG7bId5gnl4dUBNI=}
       kmac-output-length-bytes: 256
       expires-for-browser: 1800
       expires-for-mobile: 2592000
