@@ -4,13 +4,17 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import lombok.Data;
 
+import java.util.List;
+
 @Data
-public class SessionBo {
+public class UserContextBo {
     private String sessionId;
     private String userId;
     private String username;
     private RoleEnum role;
     private long expireTime;
+    /** 预留细粒度权限，当前为空列表。 */
+    private List<String> permissions = List.of();
 
     /**
      * 用户角色，数值越小权限越高。

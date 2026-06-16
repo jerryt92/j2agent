@@ -81,6 +81,12 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/AuthResultDto'
+        '401':
+          description: Unauthorized
   /v1/auth/j2agent/logout:
     get:
       tags: [ Login ]

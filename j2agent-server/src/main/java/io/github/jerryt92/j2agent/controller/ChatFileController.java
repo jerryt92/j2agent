@@ -2,7 +2,7 @@ package io.github.jerryt92.j2agent.controller;
 
 import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
 import io.github.jerryt92.j2agent.model.po.ObjectFilePo;
-import io.github.jerryt92.j2agent.model.security.SessionBo;
+import io.github.jerryt92.j2agent.model.security.UserContextBo;
 import io.github.jerryt92.j2agent.service.file.oss.ChatFileKeys;
 import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentUrlResolver;
 import io.github.jerryt92.j2agent.service.file.oss.ObjectFileManagementService;
@@ -54,7 +54,7 @@ public class ChatFileController {
     @PostMapping
     public ResponseEntity<ChatAttachmentDto> upload(@RequestParam("file") MultipartFile file,
                                                     @RequestParam("context-id") String contextId) {
-        SessionBo session = requireSession();
+        UserContextBo session = requireSession();
         validate(file);
         if (!StringUtils.hasText(contextId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "context-id is required");
@@ -70,7 +70,7 @@ public class ChatFileController {
 
     @GetMapping("/preview")
     public ResponseEntity<ChatAttachmentDto> preview(@RequestParam("objectKey") String objectKey) {
-        SessionBo session = requireSession();
+        UserContextBo session = requireSession();
         ChatFileKeys.requireOwnedKey(objectKey, session.getUserId());
         ChatAttachmentDto dto = new ChatAttachmentDto();
         dto.setObjectKey(objectKey);
@@ -82,7 +82,7 @@ public class ChatFileController {
 
     @GetMapping("/content")
     public ResponseEntity<InputStreamResource> content(@RequestParam("objectKey") String objectKey) {
-        SessionBo session = requireSession();
+        UserContextBo session = requireSession();
         ChatFileKeys.requireOwnedKey(objectKey, session.getUserId());
         ObjectFilePo file = fileService.requireReadyObjectFile(objectKey);
         InputStream stream = fileService.openObjectStream(objectKey);
@@ -106,8 +106,8 @@ public class ChatFileController {
         return dto;
     }
 
-    private SessionBo requireSession() {
-        SessionBo session = loginService.getSession();
+    private UserContextBo requireSession() {
+        UserContextBo session = loginService.getSession();
         if (session == null || !StringUtils.hasText(session.getUserId())) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "login required");
         }

@@ -6,7 +6,7 @@ import io.github.jerryt92.j2agent.model.HistoryContextItem;
 import io.github.jerryt92.j2agent.model.HistoryContextList;
 import io.github.jerryt92.j2agent.model.MessageFeedbackRequest;
 import io.github.jerryt92.j2agent.model.Translator;
-import io.github.jerryt92.j2agent.model.security.SessionBo;
+import io.github.jerryt92.j2agent.model.security.UserContextBo;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemExample;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemWithBLOBs;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecord;
@@ -128,7 +128,7 @@ public class ChatContextService {
      */
     @Transactional(rollbackFor = Throwable.class)
     public void deleteHistoryContext(List<String> contextIds, String agentId) {
-        SessionBo session = loginService.getSession();
+        UserContextBo session = loginService.getSession();
         if (session == null) {
             return;
         }
@@ -156,7 +156,7 @@ public class ChatContextService {
      */
     @Transactional(rollbackFor = Throwable.class)
     public void clearAllHistoryContext(String agentId) {
-        SessionBo session = loginService.getSession();
+        UserContextBo session = loginService.getSession();
         if (session == null) {
             return;
         }
@@ -219,7 +219,7 @@ public class ChatContextService {
      * 历史列表；可选按 agent-id 过滤。
      */
     public HistoryContextList getHistoryContextList(Integer offset, Integer limit, String agentIdFilter) {
-        SessionBo session = loginService.getSession();
+        UserContextBo session = loginService.getSession();
         if (session == null) {
             return new HistoryContextList().data(new ArrayList<>());
         }
@@ -246,7 +246,7 @@ public class ChatContextService {
      * 消息反馈：请求体须带 agentId（可与空串历史行对齐）。
      */
     public void addMessageFeedback(MessageFeedbackRequest messageFeedbackRequest) {
-        SessionBo session = loginService.getSession();
+        UserContextBo session = loginService.getSession();
         if (session != null) {
             String aid = normalizeAgentId(messageFeedbackRequest.getAgentId());
             ChatContextBo chatContextBo = getChatContext(messageFeedbackRequest.getContextId(), session.getUserId(), aid);

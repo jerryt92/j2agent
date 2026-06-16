@@ -11,7 +11,7 @@ import io.github.jerryt92.j2agent.model.UserPasswordUpdateRequestDto;
 import io.github.jerryt92.j2agent.model.UserRoleUpdateRequestDto;
 import io.github.jerryt92.j2agent.model.po.mgb.UserPo;
 import io.github.jerryt92.j2agent.model.po.mgb.UserPoExample;
-import io.github.jerryt92.j2agent.model.security.SessionBo;
+import io.github.jerryt92.j2agent.model.security.UserContextBo;
 import io.github.jerryt92.j2agent.utils.UUIDv7Utils;
 import io.github.jerryt92.j2agent.utils.UserUtil;
 import org.springframework.http.HttpStatus;
@@ -86,7 +86,7 @@ public class UserService {
         UserPo user = requireUser(userId);
         ensureMutableUser(user);
         userPoMapper.deleteByPrimaryKey(userId);
-        loginService.invalidateUserSessions(userId);
+        loginService.invalidateUserLogin(userId);
     }
 
     /**
@@ -101,7 +101,7 @@ public class UserService {
         ensureMutableUser(user);
         user.setRole(normalizeRole(request.getRole()));
         userPoMapper.updateByPrimaryKeySelective(user);
-        loginService.invalidateUserSessions(user.getId());
+        loginService.invalidateUserLogin(user.getId());
     }
 
     /**
@@ -135,7 +135,7 @@ public class UserService {
         ensureMutableUser(user);
         user.setPasswordHash(UserUtil.getPasswordHash(user.getId(), request.getNewPassword()));
         userPoMapper.updateByPrimaryKeySelective(user);
-        loginService.invalidateUserSessions(user.getId());
+        loginService.invalidateUserLogin(user.getId());
     }
 
     /**
@@ -158,7 +158,7 @@ public class UserService {
         user.setUsername(username);
         user.setEmail(email);
         user.setCreateTime(System.currentTimeMillis());
-        user.setRole(SessionBo.RoleEnum.USER.getValue());
+        user.setRole(UserContextBo.RoleEnum.USER.getValue());
         user.setPasswordHash(UserUtil.getPasswordHash(user.getId(), request.getPassword()));
         userPoMapper.insertSelective(user);
     }
@@ -170,7 +170,7 @@ public class UserService {
         if (request == null || isBlank(request.getNewPassword())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "newPassword is required");
         }
-        SessionBo session = requireSession();
+        UserContextBo session = requireSession();
         String targetUserId = isBlank(request.getUserId()) ? session.getUserId() : request.getUserId();
         UserPo user = requireUser(targetUserId);
 
@@ -184,11 +184,11 @@ public class UserService {
 
         user.setPasswordHash(UserUtil.getPasswordHash(user.getId(), request.getNewPassword()));
         userPoMapper.updateByPrimaryKeySelective(user);
-        loginService.invalidateUserSessions(user.getId());
+        loginService.invalidateUserLogin(user.getId());
     }
 
-    private SessionBo requireSession() {
-        SessionBo session = loginService.getSession();
+    private UserContextBo requireSession() {
+        UserContextBo session = loginService.getSession();
         if (session == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "login required");
         }
@@ -235,8 +235,8 @@ public class UserService {
     }
 
     private int normalizeRole(Integer role) {
-        int value = role == null ? SessionBo.RoleEnum.USER.getValue() : role;
-        if (value != SessionBo.RoleEnum.ADMIN.getValue() && value != SessionBo.RoleEnum.USER.getValue()) {
+        int value = role == null ? UserContextBo.RoleEnum.USER.getValue() : role;
+        if (value != UserContextBo.RoleEnum.ADMIN.getValue() && value != UserContextBo.RoleEnum.USER.getValue()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "unsupported role");
         }
         return value;

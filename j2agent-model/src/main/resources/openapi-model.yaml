@@ -187,6 +187,16 @@ components:
         hash:
           type: string
           description: 验证码Hash
+    AuthResultDto:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT access token
+        expiresIn:
+          type: integer
+          format: int64
+          description: token 有效秒数
     SessionInfoDto:
       type: object
       properties:

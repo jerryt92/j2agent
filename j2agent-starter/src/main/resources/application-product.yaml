@@ -97,6 +97,14 @@ j2agent:
       retention-days: ${J2AGENT_STORAGE_SYNC_RETENTION_DAYS:7}
       cleanup-cron: "${J2AGENT_STORAGE_SYNC_CLEANUP_CRON:0 30 2 * * *}"
   security:
+    jwt:
+      algorithm: Kmac256
+      secret: ${JWT_SECRET}
+      kmac-output-length-bytes: 256
+      expires-for-browser: 1800
+      expires-for-mobile: 2592000
+      expires-for-openapi: 7200
+      expires-for-remember-me: 2592000
     captcha:
       expire-seconds: 300
       pow-difficulty: 4
