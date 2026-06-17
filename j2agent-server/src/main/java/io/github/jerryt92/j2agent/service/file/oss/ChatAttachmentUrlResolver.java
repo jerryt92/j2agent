@@ -14,7 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 按 {@link ObjectStorageProperties#getChatAttachmentDisplay()} 为聊天附件生成展示 URL。
+ * 按 {@link ObjectStorageProperties#getAccessMode()} 为聊天附件生成展示 URL。
  */
 @Service
 @ConditionalOnBean(ObjectFileManagementService.class)
@@ -32,14 +32,14 @@ public class ChatAttachmentUrlResolver {
         this.storageProperties = storageProperties;
     }
 
-    public boolean isDirectDisplay() {
-        return storageProperties.getChatAttachmentDisplay()
-                == ObjectStorageProperties.ChatAttachmentDisplayMode.DIRECT;
+    public boolean isDirectAccess() {
+        return storageProperties.getAccessMode()
+                == ObjectStorageProperties.AccessMode.DIRECT;
     }
 
     public String displayUrl(String objectKey) {
-        if (storageProperties.getChatAttachmentDisplay()
-                != ObjectStorageProperties.ChatAttachmentDisplayMode.DIRECT) {
+        if (storageProperties.getAccessMode()
+                != ObjectStorageProperties.AccessMode.DIRECT) {
             return ChatFileController.stableContentUrl(objectKey);
         }
         return fileService.previewUrl(objectKey, DISPLAY_URL_TTL).toString();

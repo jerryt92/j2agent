@@ -29,8 +29,8 @@ class ObjectFilePreviewUrlResolverTest {
 
     @Test
     void directModeShouldReturnOssPresignedLink() {
-        storageProperties.setChatAttachmentDisplay(
-                ObjectStorageProperties.ChatAttachmentDisplayMode.DIRECT);
+        storageProperties.setAccessMode(
+                ObjectStorageProperties.AccessMode.DIRECT);
         resolver = new ObjectFilePreviewUrlResolver(fileService, storageProperties);
 
         assertEquals("https://oss.example.com/docs/readme.pdf", resolver.displayUrl("docs/readme.pdf"));
@@ -38,8 +38,8 @@ class ObjectFilePreviewUrlResolverTest {
 
     @Test
     void proxyModeShouldReturnStableContentUrl() {
-        storageProperties.setChatAttachmentDisplay(
-                ObjectStorageProperties.ChatAttachmentDisplayMode.PROXY);
+        storageProperties.setAccessMode(
+                ObjectStorageProperties.AccessMode.PROXY);
         resolver = new ObjectFilePreviewUrlResolver(fileService, storageProperties);
 
         String url = resolver.displayUrl("docs/readme.pdf");

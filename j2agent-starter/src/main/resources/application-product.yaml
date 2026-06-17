@@ -79,7 +79,7 @@ j2agent:
     enabled: ${J2AGENT_STORAGE_ENABLED}
     type: ${J2AGENT_STORAGE_TYPE}
     bucket: ${J2AGENT_STORAGE_BUCKET}
-    chat-attachment-display: ${J2AGENT_CHAT_ATTACHMENT_DISPLAY:proxy}
+    access-mode: ${J2AGENT_STORAGE_ACCESS_MODE:proxy}
     s3:
       endpoint: ${J2AGENT_S3_ENDPOINT:}
       access-key-id: ${J2AGENT_S3_ACCESS_KEY_ID:}

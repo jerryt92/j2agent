@@ -6,7 +6,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Service;
 
 /**
- * 按 {@link ObjectStorageProperties#getChatAttachmentDisplay()} 为文件管理预览生成展示 URL。
+ * 按 {@link ObjectStorageProperties#getAccessMode()} 为文件管理预览生成展示 URL。
  */
 @Service
 @ConditionalOnBean(ObjectFileManagementService.class)
@@ -22,8 +22,8 @@ public class ObjectFilePreviewUrlResolver {
     }
 
     public String displayUrl(String objectKey) {
-        if (storageProperties.getChatAttachmentDisplay()
-                != ObjectStorageProperties.ChatAttachmentDisplayMode.DIRECT) {
+        if (storageProperties.getAccessMode()
+                != ObjectStorageProperties.AccessMode.DIRECT) {
             return FileManagementController.stableContentUrl(objectKey);
         }
         return fileService.previewUrl(objectKey).toString();
