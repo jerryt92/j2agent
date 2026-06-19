@@ -244,8 +244,8 @@ public class ObjectFileManagementService {
             String contentType,
             long sizeBytes
     ) {
-        if (storageProperties.getChatAttachmentDisplay()
-                == ObjectStorageProperties.ChatAttachmentDisplayMode.DIRECT) {
+        if (storageProperties.getAccessMode()
+                == ObjectStorageProperties.AccessMode.DIRECT) {
             String bucket = storageService.getDefaultBucket();
             return storageService.generatePresignedUploadUrl(
                     bucket,

@@ -79,7 +79,7 @@ j2agent:
     enabled: ${J2AGENT_STORAGE_ENABLED}
     type: ${J2AGENT_STORAGE_TYPE}
     bucket: ${J2AGENT_STORAGE_BUCKET}
-    chat-attachment-display: ${J2AGENT_CHAT_ATTACHMENT_DISPLAY:proxy}
+    access-mode: ${J2AGENT_STORAGE_ACCESS_MODE:proxy}
     s3:
       endpoint: ${J2AGENT_S3_ENDPOINT:}
       access-key-id: ${J2AGENT_S3_ACCESS_KEY_ID:}
@@ -97,6 +97,15 @@ j2agent:
       retention-days: ${J2AGENT_STORAGE_SYNC_RETENTION_DAYS:7}
       cleanup-cron: "${J2AGENT_STORAGE_SYNC_CLEANUP_CRON:0 30 2 * * *}"
   security:
+    jwt:
+      # secret / kmac-output-length-bytes 须与外部系统部署一致（通常与 com.nms.jwt 相同）
+      algorithm: Kmac256
+      secret: ${JWT_SECRET}
+      kmac-output-length-bytes: 256
+      expires-for-browser: 1800
+      expires-for-mobile: 2592000
+      expires-for-openapi: 7200
+      expires-for-remember-me: 2592000
     captcha:
       expire-seconds: 300
       pow-difficulty: 4

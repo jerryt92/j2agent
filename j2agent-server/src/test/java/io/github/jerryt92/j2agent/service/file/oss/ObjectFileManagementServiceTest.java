@@ -49,8 +49,8 @@ class ObjectFileManagementServiceTest {
     void setUp() {
         RLock lock = mock(RLock.class);
         when(lockService.lock(any())).thenReturn(lock);
-        storageProperties.setChatAttachmentDisplay(
-                ObjectStorageProperties.ChatAttachmentDisplayMode.DIRECT);
+        storageProperties.setAccessMode(
+                ObjectStorageProperties.AccessMode.DIRECT);
         service = new ObjectFileManagementService(
                 storage, mapper, reconcileQueue, deleteReconcileQueue, lockService, referenceService,
                 storageProperties
@@ -168,9 +168,9 @@ class ObjectFileManagementServiceTest {
     }
 
     @Test
-    void shouldReturnProxyUploadUrlOnDirectUploadInitWhenDisplayModeIsProxy() {
-        storageProperties.setChatAttachmentDisplay(
-                ObjectStorageProperties.ChatAttachmentDisplayMode.PROXY);
+    void shouldReturnProxyUploadUrlOnDirectUploadInitWhenAccessModeIsProxy() {
+        storageProperties.setAccessMode(
+                ObjectStorageProperties.AccessMode.PROXY);
         when(storage.getDefaultBucket()).thenReturn("bucket");
         when(storage.getProvider()).thenReturn("MinIO");
         when(storage.objectExists("bucket", "a.txt")).thenReturn(false);

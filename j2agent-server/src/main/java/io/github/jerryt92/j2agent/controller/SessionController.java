@@ -1,7 +1,7 @@
 package io.github.jerryt92.j2agent.controller;
 
 import io.github.jerryt92.j2agent.model.SessionInfoDto;
-import io.github.jerryt92.j2agent.model.security.SessionBo;
+import io.github.jerryt92.j2agent.model.security.UserContextBo;
 import io.github.jerryt92.j2agent.server.api.SessionApi;
 import io.github.jerryt92.j2agent.service.security.LoginService;
 import org.springframework.http.HttpStatus;
@@ -17,7 +17,7 @@ public class SessionController implements SessionApi {
     }
 
     public ResponseEntity<SessionInfoDto> getSessionInfo() {
-        SessionBo session = loginService.getSession();
+        UserContextBo session = loginService.getSession();
         if (session == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }

@@ -46,6 +46,7 @@ public class KnowledgeRepoMaintenanceCoordinator {
     private final VectorDatabaseInit vectorDatabaseInit;
     private final EmbeddingService embeddingService;
     private final ActiveProviderHolder activeProviderHolder;
+    private final KnowledgeRepoSyncProgressTracker progressTracker;
     private final ThreadPoolExecutor maintenanceExecutor;
     private final Object taskLock = new Object();
     private volatile Future<?> currentTaskFuture;
@@ -61,7 +62,8 @@ public class KnowledgeRepoMaintenanceCoordinator {
                                                KnowledgeRepoMaintenanceLockService lockService,
                                                VectorDatabaseInit vectorDatabaseInit,
                                                EmbeddingService embeddingService,
-                                               ActiveProviderHolder activeProviderHolder) {
+                                               ActiveProviderHolder activeProviderHolder,
+                                               KnowledgeRepoSyncProgressTracker progressTracker) {
         this.properties = properties;
         this.metadataService = metadataService;
         this.syncService = syncService;
@@ -69,6 +71,7 @@ public class KnowledgeRepoMaintenanceCoordinator {
         this.vectorDatabaseInit = vectorDatabaseInit;
         this.embeddingService = embeddingService;
         this.activeProviderHolder = activeProviderHolder;
+        this.progressTracker = progressTracker;
         this.maintenanceExecutor = new ThreadPoolExecutor(
                 1,
                 1,
@@ -140,7 +143,56 @@ public class KnowledgeRepoMaintenanceCoordinator {
     }
 
     /**
-     * 管理端手动同步入口。
+     * 管理端手动同步入口（异步提交，立即返回）。
+     */
+    public KnowledgeRepoSyncOutcome syncNowAsync(boolean fullRebuild) {
+        Path rootPath = metadataService.getRepoRootPath();
+        if (rootPath == null) {
+            return KnowledgeRepoSyncOutcome.fail("知识库根目录未配置");
+        }
+        if (!Files.exists(rootPath)) {
+            return KnowledgeRepoSyncOutcome.fail("知识库根目录不存在: " + rootPath.toAbsolutePath().normalize());
+        }
+        if (isExclusiveSyncActive() && !fullRebuild) {
+            return KnowledgeRepoSyncOutcome.fail("知识库 exclusive 重建进行中，请稍后重试");
+        }
+        Future<?> future;
+        if (fullRebuild) {
+            long gen = claimExclusiveGeneration();
+            activateExclusiveGateAndStopPrevious();
+            future = submitMaintenanceTaskAndGetFuture(KnowledgeRepoMaintenanceTaskType.FULL_REBUILD,
+                    () -> runManualFullRebuild(gen));
+        } else {
+            future = submitMaintenanceTaskAndGetFuture(KnowledgeRepoMaintenanceTaskType.INCREMENTAL_SYNC,
+                    () -> runIncrementalSync("manual-api", true));
+        }
+        if (future == null) {
+            return KnowledgeRepoSyncOutcome.fail("未能提交知识库维护任务");
+        }
+        return KnowledgeRepoSyncOutcome.accepted("已提交后台知识库同步");
+    }
+
+    /**
+     * 聚合维护协调器与同步进度快照，供管理端轮询。
+     */
+    public KnowledgeRepoSyncStatusSnapshot snapshotSyncStatus() {
+        KnowledgeRepoSyncProgressTracker.Snapshot progress = progressTracker.snapshot();
+        return new KnowledgeRepoSyncStatusSnapshot(
+                currentTaskType,
+                isMaintenanceActive(),
+                isFullRebuildRunning(),
+                isExclusiveSyncActive(),
+                lastFailureMessage,
+                progress.phase(),
+                progress.totalCount(),
+                progress.processedCount(),
+                progress.currentFilePath(),
+                progress.files()
+        );
+    }
+
+    /**
+     * 管理端手动同步入口（阻塞等待完成，保留供内部或测试使用）。
      */
     public KnowledgeRepoSyncOutcome syncNowAndAwait(Duration timeout, boolean fullRebuild) {
         Path rootPath = metadataService.getRepoRootPath();

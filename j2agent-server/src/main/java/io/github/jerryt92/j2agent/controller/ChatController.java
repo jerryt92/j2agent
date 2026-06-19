@@ -16,14 +16,14 @@ import io.github.jerryt92.j2agent.model.ContextIdDto;
 import io.github.jerryt92.j2agent.model.HistoryContextList;
 import io.github.jerryt92.j2agent.model.MessageFeedbackRequest;
 import io.github.jerryt92.j2agent.model.Translator;
-import io.github.jerryt92.j2agent.model.security.SessionBo;
+import io.github.jerryt92.j2agent.model.security.UserContextBo;
 import io.github.jerryt92.j2agent.server.api.ChatApi;
+import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentUrlResolver;
 import io.github.jerryt92.j2agent.service.llm.AgentEventBuilder;
 import io.github.jerryt92.j2agent.service.llm.AgentTurnStateMachine;
 import io.github.jerryt92.j2agent.service.llm.ChatContextBo;
 import io.github.jerryt92.j2agent.service.llm.ChatContextService;
 import io.github.jerryt92.j2agent.service.llm.ChatService;
-import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentUrlResolver;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRouter;
 import io.github.jerryt92.j2agent.service.security.LoginService;
 import io.github.jerryt92.j2agent.utils.UUIDv7Utils;
@@ -78,7 +78,7 @@ public class ChatController extends AbstractWebSocketHandler implements ChatApi 
 
     @Override
     public ResponseEntity<ChatContextDto> getHistoryContext(String contextId, String agentId) {
-        SessionBo session = loginService.getSession();
+        UserContextBo session = loginService.getSession();
         ChatContextBo chatContextBo = chatContextService.getChatContext(contextId, session == null ? null : session.getUserId(), agentId);
         boolean ragSourceDisplayEnabled = agentRouter.route(agentId).isRagSourceDisplayEnabled();
         ChatContextDto dto = chatContextBo == null
@@ -145,11 +145,9 @@ public class ChatController extends AbstractWebSocketHandler implements ChatApi 
         session.getAttributes().put("contextId", contextId);
         session.getAttributes().put(AGENT_ID_ATTRIBUTE, agentId);
         session.getAttributes().put("callback", new ChatCallback<AgentUiEventEnvelope>(UUIDv7Utils.randomUUIDv7()));
-        SessionBo sessionBo = loginService.getSession();
-        if (sessionBo != null) {
-            session.getAttributes().put("session", sessionBo);
-        } else {
-            sendHandshakeFailure(session, contextId, "sessionMissing", "login session is required");
+        UserContextBo userContextBo = (UserContextBo) session.getAttributes().get(LoginService.LOGIN_ATTRIBUTE);
+        if (userContextBo == null) {
+            sendHandshakeFailure(session, contextId, "loginMissing", "login is required");
             closeSession(session);
         }
     }
@@ -174,7 +172,7 @@ public class ChatController extends AbstractWebSocketHandler implements ChatApi 
         } catch (IOException e) {
             closeSession(wsSession);
         }
-        SessionBo sessionBo = (SessionBo) wsSession.getAttributes().get("session");
+        UserContextBo userContextBo = (UserContextBo) wsSession.getAttributes().get(LoginService.LOGIN_ATTRIBUTE);
         ChatCallback<AgentUiEventEnvelope> chatChatCallback = getChatCallback(wsSession);
         chatChatCallback.responseCall = chatResponse -> {
             if (!wsSession.isOpen()) {
@@ -197,7 +195,7 @@ public class ChatController extends AbstractWebSocketHandler implements ChatApi 
         };
         chatChatCallback.completeCall = () -> closeSession(wsSession);
         String agentId = (String) wsSession.getAttributes().get(AGENT_ID_ATTRIBUTE);
-        chatService.handleChat(chatChatCallback, chatRequestDto, sessionBo == null ? null : sessionBo.getUserId(), agentId);
+        chatService.handleChat(chatChatCallback, chatRequestDto, userContextBo == null ? null : userContextBo.getUserId(), agentId);
     }
 
     /**

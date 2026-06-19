@@ -23,15 +23,16 @@ public class ObjectStorageProperties {
     private Upload upload = new Upload();
     private Delete delete = new Delete();
     /**
-     * 聊天图片展示方式：{@link ChatAttachmentDisplayMode#DIRECT} OSS 预签名直链；
-     * {@link ChatAttachmentDisplayMode#PROXY} 同源 content 代理。
+     * 对象存储文件访问方式（预览/下载/直传）：
+     * {@link AccessMode#DIRECT} OSS 预签名直链；
+     * {@link AccessMode#PROXY} 经应用服务器同源 content 代理。
      */
-    private ChatAttachmentDisplayMode chatAttachmentDisplay = ChatAttachmentDisplayMode.PROXY;
+    private AccessMode accessMode = AccessMode.PROXY;
 
-    public enum ChatAttachmentDisplayMode {
+    public enum AccessMode {
         /** OSS 预签名直链 */
         DIRECT,
-        /** 经应用服务器 {@code /chat/files/content} 转发，不依赖预签名 host */
+        /** 经应用服务器 content 端点转发，不依赖预签名 host */
         PROXY
     }
 

@@ -33,8 +33,8 @@ class ChatAttachmentUrlResolverTest {
 
     @Test
     void directModeShouldReturnOssPresignedLink() {
-        storageProperties.setChatAttachmentDisplay(
-                ObjectStorageProperties.ChatAttachmentDisplayMode.DIRECT);
+        storageProperties.setAccessMode(
+                ObjectStorageProperties.AccessMode.DIRECT);
         resolver = new ChatAttachmentUrlResolver(fileService, storageProperties);
 
         List<ChatAttachmentDto> resolved = resolver.withDisplayUrls(List.of(sampleAttachment()));
@@ -44,8 +44,8 @@ class ChatAttachmentUrlResolverTest {
 
     @Test
     void proxyModeShouldReturnStableContentUrl() {
-        storageProperties.setChatAttachmentDisplay(
-                ObjectStorageProperties.ChatAttachmentDisplayMode.PROXY);
+        storageProperties.setAccessMode(
+                ObjectStorageProperties.AccessMode.PROXY);
         resolver = new ChatAttachmentUrlResolver(fileService, storageProperties);
 
         List<ChatAttachmentDto> resolved = resolver.withDisplayUrls(List.of(sampleAttachment()));

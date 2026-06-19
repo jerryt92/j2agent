@@ -11,15 +11,18 @@ import io.github.jerryt92.j2agent.model.UserPasswordUpdateRequestDto;
 import io.github.jerryt92.j2agent.model.UserRoleUpdateRequestDto;
 import io.github.jerryt92.j2agent.model.po.mgb.UserPo;
 import io.github.jerryt92.j2agent.model.po.mgb.UserPoExample;
-import io.github.jerryt92.j2agent.model.security.SessionBo;
+import io.github.jerryt92.j2agent.model.security.UserContextBo;
 import io.github.jerryt92.j2agent.utils.UUIDv7Utils;
 import io.github.jerryt92.j2agent.utils.UserUtil;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.security.SecureRandom;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 
 /**
  * 用户管理服务。
@@ -27,11 +30,17 @@ import java.util.Locale;
 @Service
 public class UserService {
     private static final String BUILTIN_ADMIN_USERNAME = "aiadmin";
+    private static final int MAX_EXTERNAL_USER_ID_LENGTH = 32;
+    private static final int USERNAME_SUFFIX_LENGTH = 6;
+    private static final int MAX_USERNAME_BASE_LENGTH = 57;
+    private static final int MAX_USERNAME_RESOLVE_ATTEMPTS = 10;
+    private static final String USERNAME_SUFFIX_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 
     private final UserPoMapper userPoMapper;
     private final LoginService loginService;
     private final EmailVerificationService emailVerificationService;
     private final EmailRegisterService emailRegisterService;
+    private final SecureRandom secureRandom = new SecureRandom();
 
     public UserService(UserPoMapper userPoMapper,
                        LoginService loginService,
@@ -86,7 +95,7 @@ public class UserService {
         UserPo user = requireUser(userId);
         ensureMutableUser(user);
         userPoMapper.deleteByPrimaryKey(userId);
-        loginService.invalidateUserSessions(userId);
+        loginService.invalidateUserLogin(userId);
     }
 
     /**
@@ -101,7 +110,7 @@ public class UserService {
         ensureMutableUser(user);
         user.setRole(normalizeRole(request.getRole()));
         userPoMapper.updateByPrimaryKeySelective(user);
-        loginService.invalidateUserSessions(user.getId());
+        loginService.invalidateUserLogin(user.getId());
     }
 
     /**
@@ -135,7 +144,35 @@ public class UserService {
         ensureMutableUser(user);
         user.setPasswordHash(UserUtil.getPasswordHash(user.getId(), request.getNewPassword()));
         userPoMapper.updateByPrimaryKeySelective(user);
-        loginService.invalidateUserSessions(user.getId());
+        loginService.invalidateUserLogin(user.getId());
+    }
+
+    /**
+     * 外部系统合法 JWT 首次访问时自动建档：id 沿用 JWT user claim，username 来自 name 并去重。
+     */
+    public UserPo provisionExternalUser(String externalUserId, String preferredUsername) {
+        String userId = normalizeExternalUserId(externalUserId);
+        UserPo existing = userPoMapper.selectByPrimaryKey(userId);
+        if (existing != null) {
+            return existing;
+        }
+        String username = resolveUniqueUsername(preferredUsername, userId);
+        UserPo user = new UserPo();
+        user.setId(userId);
+        user.setUsername(username);
+        user.setRole(UserContextBo.RoleEnum.USER.getValue());
+        user.setCreateTime(System.currentTimeMillis());
+        user.setPasswordHash(UserUtil.getPasswordHash(userId, UUID.randomUUID().toString()));
+        try {
+            userPoMapper.insertSelective(user);
+        } catch (DuplicateKeyException ex) {
+            UserPo raced = userPoMapper.selectByPrimaryKey(userId);
+            if (raced != null) {
+                return raced;
+            }
+            throw ex;
+        }
+        return user;
     }
 
     /**
@@ -158,7 +195,7 @@ public class UserService {
         user.setUsername(username);
         user.setEmail(email);
         user.setCreateTime(System.currentTimeMillis());
-        user.setRole(SessionBo.RoleEnum.USER.getValue());
+        user.setRole(UserContextBo.RoleEnum.USER.getValue());
         user.setPasswordHash(UserUtil.getPasswordHash(user.getId(), request.getPassword()));
         userPoMapper.insertSelective(user);
     }
@@ -170,7 +207,7 @@ public class UserService {
         if (request == null || isBlank(request.getNewPassword())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "newPassword is required");
         }
-        SessionBo session = requireSession();
+        UserContextBo session = requireSession();
         String targetUserId = isBlank(request.getUserId()) ? session.getUserId() : request.getUserId();
         UserPo user = requireUser(targetUserId);
 
@@ -184,11 +221,11 @@ public class UserService {
 
         user.setPasswordHash(UserUtil.getPasswordHash(user.getId(), request.getNewPassword()));
         userPoMapper.updateByPrimaryKeySelective(user);
-        loginService.invalidateUserSessions(user.getId());
+        loginService.invalidateUserLogin(user.getId());
     }
 
-    private SessionBo requireSession() {
-        SessionBo session = loginService.getSession();
+    private UserContextBo requireSession() {
+        UserContextBo session = loginService.getSession();
         if (session == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "login required");
         }
@@ -213,11 +250,52 @@ public class UserService {
     }
 
     private void ensureUsernameAvailable(String username) {
-        UserPoExample example = new UserPoExample();
-        example.createCriteria().andUsernameEqualTo(username);
-        if (userPoMapper.countByExample(example) > 0) {
+        if (isUsernameTaken(username)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ErrorConstants.REGISTER_USERNAME_EXISTS);
         }
+    }
+
+    private String normalizeExternalUserId(String externalUserId) {
+        if (isBlank(externalUserId)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid external user id");
+        }
+        String userId = externalUserId.trim();
+        if (userId.length() > MAX_EXTERNAL_USER_ID_LENGTH) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid external user id");
+        }
+        return userId;
+    }
+
+    private String resolveUniqueUsername(String preferredUsername, String userId) {
+        String base = isBlank(preferredUsername) ? userId : preferredUsername.trim();
+        if (base.length() > MAX_USERNAME_BASE_LENGTH) {
+            base = base.substring(0, MAX_USERNAME_BASE_LENGTH);
+        }
+        if (!isUsernameTaken(base)) {
+            return base;
+        }
+        for (int attempt = 0; attempt < MAX_USERNAME_RESOLVE_ATTEMPTS; attempt++) {
+            String candidate = base + "_" + randomAlphanumericSuffix(USERNAME_SUFFIX_LENGTH);
+            if (!isUsernameTaken(candidate)) {
+                return candidate;
+            }
+        }
+        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "failed to resolve unique username");
+    }
+
+    private boolean isUsernameTaken(String username) {
+        UserPoExample example = new UserPoExample();
+        example.createCriteria().andUsernameEqualTo(username);
+        return userPoMapper.countByExample(example) > 0;
+    }
+
+    private String randomAlphanumericSuffix(int length) {
+        StringBuilder suffix = new StringBuilder(length);
+        for (int i = 0; i < length; i++) {
+            suffix.append(USERNAME_SUFFIX_ALPHABET.charAt(
+                    secureRandom.nextInt(USERNAME_SUFFIX_ALPHABET.length())));
+        }
+        return suffix.toString();
     }
 
     private void ensureEmailAvailable(String email) {
@@ -235,8 +313,8 @@ public class UserService {
     }
 
     private int normalizeRole(Integer role) {
-        int value = role == null ? SessionBo.RoleEnum.USER.getValue() : role;
-        if (value != SessionBo.RoleEnum.ADMIN.getValue() && value != SessionBo.RoleEnum.USER.getValue()) {
+        int value = role == null ? UserContextBo.RoleEnum.USER.getValue() : role;
+        if (value != UserContextBo.RoleEnum.ADMIN.getValue() && value != UserContextBo.RoleEnum.USER.getValue()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "unsupported role");
         }
         return value;

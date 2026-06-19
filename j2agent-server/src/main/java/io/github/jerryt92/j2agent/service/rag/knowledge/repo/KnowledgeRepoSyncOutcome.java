@@ -13,6 +13,13 @@ public record KnowledgeRepoSyncOutcome(boolean succeeded, String message) {
     }
 
     /**
+     * 异步任务已接受。
+     */
+    public static KnowledgeRepoSyncOutcome accepted(String message) {
+        return new KnowledgeRepoSyncOutcome(true, message);
+    }
+
+    /**
      * 同步失败。
      */
     public static KnowledgeRepoSyncOutcome fail(String message) {

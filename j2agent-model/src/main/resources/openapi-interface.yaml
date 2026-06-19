@@ -81,6 +81,12 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/AuthResultDto'
+        '401':
+          description: Unauthorized
   /v1/auth/j2agent/logout:
     get:
       tags: [ Login ]
@@ -404,7 +410,7 @@ paths:
     post:
       tags: [ Knowledge ]
       summary: 手动触发知识库目录增量同步
-      description: 扫描知识库根目录下 Markdown，按哈希差异增量写入 Milvus；fullRebuild=true 时先清空 Milvus 全部 collection 与哈希记录表再重建
+      description: 异步提交后台任务；扫描知识库根目录下 Markdown，按哈希差异增量写入 Milvus；fullRebuild=true 时先清空 Milvus 全部 collection 与哈希记录表再重建
       operationId: syncKnowledge
       parameters:
         - name: fullRebuild
@@ -416,17 +422,30 @@ paths:
             default: false
       responses:
         "200":
-          description: 同步成功
+          description: 已接受后台同步任务
           content:
             application/json:
               schema:
                 $ref: './openapi-model.yaml#/components/schemas/KnowledgeSyncResult'
         "400":
-          description: 同步失败
+          description: 拒绝提交
           content:
             application/json:
               schema:
                 $ref: './openapi-model.yaml#/components/schemas/KnowledgeSyncResult'
+  /v1/rest/j2agent/knowledge/sync/status:
+    get:
+      tags: [ Knowledge ]
+      summary: 查询知识库维护状态
+      description: 返回 Embedding 运行时健康、维护任务类型、同步阶段进度及本轮 diff 文件处理状态
+      operationId: getKnowledgeSyncStatus
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/KnowledgeSyncStatusDto'
   /v1/rest/j2agent/knowledge/delete:
     post:
       tags: [ Knowledge ]
