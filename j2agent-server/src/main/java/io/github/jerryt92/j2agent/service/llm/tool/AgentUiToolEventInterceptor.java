@@ -6,6 +6,7 @@ import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallHandler;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallRequest;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallResponse;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolInterceptor;
+import io.github.jerryt92.j2agent.service.llm.agent.builtin.SubAgentCallTurnContextHolder;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunnableContextKeys;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
@@ -49,54 +50,59 @@ public class AgentUiToolEventInterceptor extends ToolInterceptor {
         }
 
         String conversationId = resolveConversationId(request);
-        if (emitterOpt.isEmpty()) {
-            AgentRunLogger.warnByConversationId(conversationId, AgentRunEventType.ERROR,
-                    AgentRunLogger.kv("errorCode", "toolEventEmitterMissing", "tool", toolName),
-                    "ToolEventEmitter missing in RunnableConfig.context, skip Agent-UI tool events");
-            return handler.call(request);
-        }
-        ToolEventEmitter emitter = emitterOpt.get();
-        AgentRunLogger.infoByConversationId(conversationId, AgentRunEventType.TOOL_START,
-                AgentRunLogger.kv("tool", toolName, "callId", callId, "argsPreview", AgentRunLogger.preview(args)),
-                "tool invoked");
-        emitter.onToolStart(callId, toolName, args);
-        long startNanos = System.nanoTime();
+        SubAgentCallTurnContextHolder.bind(request);
         try {
-            ToolCallResponse response = handler.call(request);
-            long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
-            if (response.isError()) {
-                Throwable err = toFailureThrowable(response);
-                AgentRunLogger.warnByConversationId(conversationId, AgentRunEventType.TOOL_FAILURE,
-                        AgentRunLogger.kv(
-                                "tool", toolName,
-                                "callId", callId,
-                                "durationMs", durationMs,
-                                "errorType", err.getClass().getSimpleName()),
-                        err.getMessage());
-                emitter.onToolFailure(callId, toolName, err, durationMs);
-            } else {
-                AgentRunLogger.infoByConversationId(conversationId, AgentRunEventType.TOOL_SUCCESS,
-                        AgentRunLogger.kv(
-                                "tool", toolName,
-                                "callId", callId,
-                                "durationMs", durationMs,
-                                "resultPreview", AgentRunLogger.preview(response.getResult())),
-                        "tool completed");
-                emitter.onToolSuccess(callId, toolName, response.getResult(), durationMs);
+            if (emitterOpt.isEmpty()) {
+                AgentRunLogger.warnByConversationId(conversationId, AgentRunEventType.ERROR,
+                        AgentRunLogger.kv("errorCode", "toolEventEmitterMissing", "tool", toolName),
+                        "ToolEventEmitter missing in RunnableConfig.context, skip Agent-UI tool events");
+                return handler.call(request);
             }
-            return response;
-        } catch (Throwable t) {
-            long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
-            AgentRunLogger.errorByConversationId(conversationId, AgentRunEventType.TOOL_FAILURE,
-                    AgentRunLogger.kv(
-                            "tool", toolName,
-                            "callId", callId,
-                            "durationMs", durationMs,
-                            "errorType", t.getClass().getSimpleName()),
-                    t.getMessage(),
-                    t);
-            emitter.onToolFailure(callId, toolName, t, durationMs);
-            throw t;
+            ToolEventEmitter emitter = emitterOpt.get();
+            AgentRunLogger.infoByConversationId(conversationId, AgentRunEventType.TOOL_START,
+                    AgentRunLogger.kv("tool", toolName, "callId", callId, "argsPreview", AgentRunLogger.preview(args)),
+                    "tool invoked");
+            emitter.onToolStart(callId, toolName, args);
+            long startNanos = System.nanoTime();
+            try {
+                ToolCallResponse response = handler.call(request);
+                long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+                if (response.isError()) {
+                    Throwable err = toFailureThrowable(response);
+                    AgentRunLogger.warnByConversationId(conversationId, AgentRunEventType.TOOL_FAILURE,
+                            AgentRunLogger.kv(
+                                    "tool", toolName,
+                                    "callId", callId,
+                                    "durationMs", durationMs,
+                                    "errorType", err.getClass().getSimpleName()),
+                            err.getMessage());
+                    emitter.onToolFailure(callId, toolName, err, durationMs);
+                } else {
+                    AgentRunLogger.infoByConversationId(conversationId, AgentRunEventType.TOOL_SUCCESS,
+                            AgentRunLogger.kv(
+                                    "tool", toolName,
+                                    "callId", callId,
+                                    "durationMs", durationMs,
+                                    "resultPreview", AgentRunLogger.preview(response.getResult())),
+                            "tool completed");
+                    emitter.onToolSuccess(callId, toolName, response.getResult(), durationMs);
+                }
+                return response;
+            } catch (Throwable t) {
+                long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+                AgentRunLogger.errorByConversationId(conversationId, AgentRunEventType.TOOL_FAILURE,
+                        AgentRunLogger.kv(
+                                "tool", toolName,
+                                "callId", callId,
+                                "durationMs", durationMs,
+                                "errorType", t.getClass().getSimpleName()),
+                        t.getMessage(),
+                        t);
+                emitter.onToolFailure(callId, toolName, t, durationMs);
+                throw t;
+            }
+        } finally {
+            SubAgentCallTurnContextHolder.clear();
         }
     }
 

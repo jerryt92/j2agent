@@ -5,6 +5,7 @@ import io.github.jerryt92.j2agent.model.AgentEventType;
 import io.github.jerryt92.j2agent.model.AgentState;
 import io.github.jerryt92.j2agent.model.AgentUiEventEnvelope;
 import io.github.jerryt92.j2agent.model.ToolCallEventPayload;
+import io.github.jerryt92.j2agent.service.llm.agent.builtin.UniversalSubAgentCallTool;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -110,7 +111,14 @@ public final class TurnStepRecorder {
                 return relativePath != null ? skillId + "/" + relativePath : skillId;
             }
         }
-        return payload.toolName();
+        String toolName = payload.toolName();
+        if (UniversalSubAgentCallTool.isSubAgentCallToolName(toolName)) {
+            String agentDisplayName = parseAgentIdFromCallAgentArguments(payload.arguments());
+            if (agentDisplayName != null) {
+                return agentDisplayName;
+            }
+        }
+        return toolName;
     }
 
     private static ToolPayloadView extractToolPayload(AgentUiEventEnvelope event) {
@@ -148,6 +156,22 @@ public final class TurnStepRecorder {
             return null;
         }
         return value.trim();
+    }
+
+    private static String parseAgentIdFromCallAgentArguments(Object argumentsJson) {
+        if (!(argumentsJson instanceof String s) || s.isBlank()) {
+            return null;
+        }
+        try {
+            com.alibaba.fastjson2.JSONObject parsed = com.alibaba.fastjson2.JSON.parseObject(s);
+            String agentId = parsed.getString("agentId");
+            if (agentId == null || agentId.isBlank()) {
+                return null;
+            }
+            return agentId.trim();
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private static String parseRelativePathFromArguments(Object argumentsJson) {

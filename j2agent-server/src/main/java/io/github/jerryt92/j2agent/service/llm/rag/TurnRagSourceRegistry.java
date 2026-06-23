@@ -12,6 +12,7 @@ import io.github.jerryt92.j2agent.service.llm.AgentEventBuilder;
 import io.github.jerryt92.j2agent.service.llm.AgentTurnStateMachine;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -53,6 +54,35 @@ public final class TurnRagSourceRegistry {
     }
 
     /**
+     * 子智能体调用运行时与直进使用相同 conversationId 键；共享 persist 回合 Holder 以推送 RAG 来源并落库。
+     */
+    public static void shareHolder(String runtimeConversationId, String persistConversationId) {
+        if (!StringUtils.hasText(runtimeConversationId) || !StringUtils.hasText(persistConversationId)) {
+            return;
+        }
+        Holder holder = BY_CONVERSATION.get(persistConversationId);
+        if (holder != null) {
+            BY_CONVERSATION.put(runtimeConversationId, holder);
+        }
+    }
+
+    /**
+     * 移除子智能体调用运行时键，不影响 persist 回合 Holder。
+     */
+    public static void unshareHolder(String runtimeConversationId) {
+        if (runtimeConversationId != null && !runtimeConversationId.isBlank()) {
+            BY_CONVERSATION.remove(runtimeConversationId);
+        }
+    }
+
+    private static Holder resolveHolder(String conversationId) {
+        if (conversationId == null || conversationId.isBlank()) {
+            return null;
+        }
+        return BY_CONVERSATION.get(conversationId);
+    }
+
+    /**
      * 首次有非空来源时缓存 rag_infos JSON 供落库；{@code displayToFrontend=true} 时额外推送 WebSocket PATCH。
      * 后续调用幂等忽略。
      */
@@ -63,7 +93,7 @@ public final class TurnRagSourceRegistry {
         if (conversationId == null || conversationId.isBlank() || srcFiles == null || srcFiles.isEmpty()) {
             return;
         }
-        Holder holder = BY_CONVERSATION.get(conversationId);
+        Holder holder = resolveHolder(conversationId);
         if (holder == null) {
             AgentRunLogger.warnByConversationId(conversationId, AgentRunEventType.RAG_SOURCE,
                     AgentRunLogger.kv("rag", "skipped=registryMissing"),
@@ -111,7 +141,7 @@ public final class TurnRagSourceRegistry {
         if (conversationId == null || conversationId.isBlank()) {
             return null;
         }
-        Holder holder = BY_CONVERSATION.get(conversationId);
+        Holder holder = resolveHolder(conversationId);
         if (holder == null) {
             return null;
         }

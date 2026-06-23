@@ -1,0 +1,73 @@
+package io.github.jerryt92.j2agent.service.llm.agent.builtin;
+
+import io.github.jerryt92.j2agent.model.AgentUiEventEnvelope;
+import io.github.jerryt92.j2agent.model.ChatCallback;
+import io.github.jerryt92.j2agent.service.llm.AgentTurnStateMachine;
+import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnLifecycle;
+import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
+
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * 通用助手调用子智能体时，将子 Agent 流式增量桥接到父回合 WebSocket 缓冲区。
+ */
+public final class SubAgentStreamBridge {
+
+    private static final Map<String, Target> BINDINGS = new ConcurrentHashMap<>();
+
+    private SubAgentStreamBridge() {
+    }
+
+    public record Target(
+            ChatCallback<AgentUiEventEnvelope> chatCallback,
+            String contextId,
+            String turnId,
+            String userId,
+            String parentConversationId,
+            ToolEventEmitter toolEventEmitter,
+            AtomicLong seq,
+            AgentTurnStateMachine stateMachine,
+            Object turnLock,
+            StringBuilder streamedContent,
+            StringBuilder streamedReasoning,
+            Object streamedTextLock,
+            int messageIndex) {
+
+        public void emitDelta(String answerDelta, String reasoningDelta) {
+            if (chatCallback == null) {
+                return;
+            }
+            ChatTurnLifecycle.emitAnswerDelta(
+                    chatCallback,
+                    contextId,
+                    turnId,
+                    seq,
+                    stateMachine,
+                    turnLock,
+                    streamedContent,
+                    streamedReasoning,
+                    streamedTextLock,
+                    messageIndex,
+                    answerDelta,
+                    reasoningDelta);
+        }
+    }
+
+    public static void bind(String turnId, Target target) {
+        if (turnId != null && target != null) {
+            BINDINGS.put(turnId, target);
+        }
+    }
+
+    public static Target lookup(String turnId) {
+        return turnId == null ? null : BINDINGS.get(turnId);
+    }
+
+    public static void unbind(String turnId) {
+        if (turnId != null) {
+            BINDINGS.remove(turnId);
+        }
+    }
+}

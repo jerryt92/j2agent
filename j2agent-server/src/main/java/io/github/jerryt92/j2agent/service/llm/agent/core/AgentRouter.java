@@ -2,6 +2,7 @@ package io.github.jerryt92.j2agent.service.llm.agent.core;
 
 import io.github.jerryt92.j2agent.model.AgentInfoDto;
 import io.github.jerryt92.j2agent.model.AgentInfoList;
+import io.github.jerryt92.j2agent.service.llm.universal.UniversalAssistantConstants;
 import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationContext;
@@ -15,6 +16,8 @@ import java.util.stream.Collectors;
 
 /**
  * Agent 路由器，根据 WebSocket 传入的 agentId 选择具体 Agent。
+ * <p>首次 {@link #refresh()} 由 {@link AgentPluginRegistry}（{@code ApplicationReadyEvent}）
+ * 及 {@link AgentPluginReloadService} 触发，不在构造/初始化阶段刷新，避免与通用助手工具循环依赖。
  */
 @Slf4j
 @Component
@@ -25,7 +28,6 @@ public class AgentRouter {
 
     public AgentRouter(ApplicationContext applicationContext) {
         this.applicationContext = applicationContext;
-        refresh();
     }
 
     /**
@@ -73,6 +75,7 @@ public class AgentRouter {
      */
     public AgentInfoList listRegisteredAgents() {
         List<AgentInfoDto> items = agents.values().stream()
+                .filter(a -> !UniversalAssistantConstants.isUniversalAssistant(a.getAgentId()))
                 .sorted(Comparator.comparingInt(AiAgent::getSort)
                         .thenComparing(AiAgent::getAgentId))
                 .map(a -> new AgentInfoDto()
@@ -84,5 +87,34 @@ public class AgentRouter {
                         .logo(a.getLogo()))
                 .collect(Collectors.toList());
         return new AgentInfoList().agents(items);
+    }
+
+    /**
+     * 可被通用助手调用的全部子智能体。
+     */
+    public List<AiAgent> listCallableSubAgents() {
+        return agents.values().stream()
+                .filter(a -> !UniversalAssistantConstants.isUniversalAssistant(a.getAgentId()))
+                .sorted(Comparator.comparingInt(AiAgent::getSort)
+                        .thenComparing(AiAgent::getAgentId))
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 解析智能体展示名；未知 id 时回退为 id 本身。
+     */
+    public String resolveAgentName(String agentId) {
+        if (agentId == null) {
+            return "";
+        }
+        AiAgent agent = agents.get(agentId);
+        if (agent == null && "assistant".equals(agentId)) {
+            agent = agents.get("chat_assistant");
+        }
+        if (agent == null) {
+            return agentId;
+        }
+        String name = agent.getAgentName();
+        return name != null && !name.isBlank() ? name.trim() : agentId;
     }
 }

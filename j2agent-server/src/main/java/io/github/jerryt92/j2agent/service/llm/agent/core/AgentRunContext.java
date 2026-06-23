@@ -16,5 +16,18 @@ public record AgentRunContext(
         String conversationId,
         String agentId,
         List<ChatAttachmentDto> attachments,
-        ToolEventEmitter toolEventEmitter) {
+        ToolEventEmitter toolEventEmitter,
+        boolean subAgentCallRun) {
+
+    public AgentRunContext(
+            String text,
+            String contextId,
+            String userId,
+            String turnId,
+            String conversationId,
+            String agentId,
+            List<ChatAttachmentDto> attachments,
+            ToolEventEmitter toolEventEmitter) {
+        this(text, contextId, userId, turnId, conversationId, agentId, attachments, toolEventEmitter, false);
+    }
 }

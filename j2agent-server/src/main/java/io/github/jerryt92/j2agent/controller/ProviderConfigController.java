@@ -49,7 +49,7 @@ public class ProviderConfigController implements ProviderConfigApi {
     @Override
     public ResponseEntity<ProviderConfigDto> createProviderConfig(ProviderConfigUpsertDto body) {
         String apiType = body.getApiType() == null ? null : body.getApiType().getValue();
-        boolean enabled = body.getEnabled() == null || body.getEnabled();
+        boolean enabled = true;
         boolean makeCurrent = body.getMakeCurrent() != null && body.getMakeCurrent();
         ProviderConfigView view = service.create(
                 apiType,
@@ -64,7 +64,7 @@ public class ProviderConfigController implements ProviderConfigApi {
 
     @Override
     public ResponseEntity<ProviderConfigDto> updateProviderConfig(Long id, ProviderConfigUpsertDto body) {
-        boolean enabled = body.getEnabled() == null || body.getEnabled();
+        boolean enabled = true;
         ProviderConfigView view = service.update(
                 id,
                 body.getConfigName(),
@@ -84,6 +84,11 @@ public class ProviderConfigController implements ProviderConfigApi {
     @Override
     public ResponseEntity<ProviderConfigDto> activateProviderConfig(Long id) {
         return ResponseEntity.ok(toDto(service.activate(id)));
+    }
+
+    @Override
+    public ResponseEntity<ProviderConfigDto> copyProviderConfig(Long id) {
+        return ResponseEntity.ok(toDto(service.copy(id)));
     }
 
     @Override

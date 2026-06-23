@@ -95,6 +95,7 @@
     <update id="markCurrent">
         update api_provider_config
         set is_current  = 1,
+            enabled     = 1,
             update_time = #{updateTime,jdbcType=BIGINT}
         where id = #{id,jdbcType=BIGINT}
     </update>

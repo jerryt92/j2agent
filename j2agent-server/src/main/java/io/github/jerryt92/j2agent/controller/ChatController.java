@@ -25,6 +25,7 @@ import io.github.jerryt92.j2agent.service.llm.ChatContextBo;
 import io.github.jerryt92.j2agent.service.llm.ChatContextService;
 import io.github.jerryt92.j2agent.service.llm.ChatService;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRouter;
+import io.github.jerryt92.j2agent.service.llm.universal.UniversalAssistantConstants;
 import io.github.jerryt92.j2agent.service.security.LoginService;
 import io.github.jerryt92.j2agent.utils.UUIDv7Utils;
 import lombok.extern.log4j.Log4j2;
@@ -80,9 +81,11 @@ public class ChatController extends AbstractWebSocketHandler implements ChatApi 
     public ResponseEntity<ChatContextDto> getHistoryContext(String contextId, String agentId) {
         UserContextBo session = loginService.getSession();
         ChatContextBo chatContextBo = chatContextService.getChatContext(contextId, session == null ? null : session.getUserId(), agentId);
-        boolean ragSourceDisplayEnabled = agentRouter.route(agentId).isRagSourceDisplayEnabled();
+        boolean ragSourceDisplayEnabled = UniversalAssistantConstants.isUniversalAssistant(agentId)
+                ? true
+                : agentRouter.route(agentId).isRagSourceDisplayEnabled();
         ChatContextDto dto = chatContextBo == null
-                ? null
+                ? new ChatContextDto().messages(List.of())
                 : Translator.translateToChatContextDto(chatContextBo, ragSourceDisplayEnabled);
         if (dto != null && chatAttachmentUrlResolver != null) {
             chatAttachmentUrlResolver.applyToChatContext(dto);

@@ -932,6 +932,27 @@ paths:
         '200':
           description: OK
 
+  /v1/rest/j2agent/provider-config/{id}/copy:
+    post:
+      tags: [ ProviderConfig ]
+      summary: 复制模型提供商配置
+      description: 基于指定 id 克隆一条新配置（含完整 apiKey）；新配置默认启用且非当前生效。
+      operationId: copyProviderConfig
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/ProviderConfigDto'
+
   /v1/rest/j2agent/provider-config/{id}/activate:
     post:
       tags: [ ProviderConfig ]

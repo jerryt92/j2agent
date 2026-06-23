@@ -85,7 +85,7 @@ public class ApiProviderConfigService {
         po.setConfigName(configName);
         po.setProviderType(providerType);
         po.setConfigJson(writeJson(sanitizeConfig(config, apiType, providerType)));
-        po.setEnabled(toByte(enabled));
+        po.setEnabled((byte) 1);
         po.setIsCurrent((byte) 0);
         po.setDescription(description);
         po.setCreateTime(now);
@@ -93,7 +93,7 @@ public class ApiProviderConfigService {
         mapper.insert(po);
 
         boolean switched = false;
-        if (makeCurrent && enabled) {
+        if (makeCurrent) {
             switched = true;
             mapper.clearCurrentByApiType(apiType);
             mapper.markCurrent(po.getId(), now);
@@ -127,22 +127,17 @@ public class ApiProviderConfigService {
         merged = sanitizeConfig(merged, apiType, providerType);
 
         long now = System.currentTimeMillis();
-        boolean willDisable = !enabled && byteEquals(old.getEnabled(), 1)
-                && wasCurrent;
         old.setConfigName(configName);
         old.setProviderType(providerType);
         old.setConfigJson(writeJson(merged));
-        old.setEnabled(toByte(enabled));
+        old.setEnabled((byte) 1);
         old.setDescription(description);
         old.setUpdateTime(now);
-        if (willDisable) {
-            old.setIsCurrent((byte) 0);
-        }
         mapper.updateByPrimaryKey(old);
 
         boolean embeddingRuntimeChanged = isEmbeddingRuntimeChangedOnUpdate(
-                apiType, wasCurrent, willDisable, oldProviderType, oldConfig, providerType, merged);
-        publish(apiType, willDisable, embeddingRuntimeChanged);
+                apiType, wasCurrent, false, oldProviderType, oldConfig, providerType, merged);
+        publish(apiType, false, embeddingRuntimeChanged);
         return toView(old);
     }
 
@@ -160,14 +155,29 @@ public class ApiProviderConfigService {
     }
 
     /**
+     * 复制一条配置；新配置默认启用且非当前生效，完整保留源 config_json（含 apiKey）。
+     */
+    @Transactional
+    public ProviderConfigView copy(Long id) {
+        ApiProviderConfigPo source = requirePo(id);
+        Map<String, Object> config = readJson(source.getConfigJson());
+        String newName = deriveCopyName(source.getConfigName());
+        return create(
+                source.getApiType(),
+                newName,
+                source.getProviderType(),
+                config,
+                source.getDescription(),
+                true,
+                false);
+    }
+
+    /**
      * 将指定 id 设为该 api_type 下当前生效配置；目标必须启用。
      */
     @Transactional
     public ProviderConfigView activate(Long id) {
         ApiProviderConfigPo po = requirePo(id);
-        if (!byteEquals(po.getEnabled(), 1)) {
-            throw new IllegalStateException("仅启用中的配置可被设置为当前");
-        }
         long now = System.currentTimeMillis();
         mapper.clearCurrentByApiType(po.getApiType());
         mapper.markCurrent(id, now);
@@ -312,6 +322,18 @@ public class ApiProviderConfigService {
         if (configName.length() > 128) {
             throw new IllegalArgumentException("configName 长度超过 128");
         }
+    }
+
+    /** 复制配置时生成新名称，后缀为「 (副本)」，总长不超过 128。 */
+    static String deriveCopyName(String original) {
+        String suffix = " (副本)";
+        int maxLen = 128;
+        String base = original == null ? "" : original;
+        String candidate = base + suffix;
+        if (candidate.length() <= maxLen) {
+            return candidate;
+        }
+        return base.substring(0, maxLen - suffix.length()) + suffix;
     }
 
     /**

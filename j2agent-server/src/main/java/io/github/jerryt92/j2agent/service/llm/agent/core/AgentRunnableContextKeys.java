@@ -25,4 +25,17 @@ public final class AgentRunnableContextKeys {
 
     public static final String CONTEXT_KEY_AGENT_ID =
             AgentRunnableContextKeys.class.getName() + ".agentId";
+
+    /**
+     * 子智能体调用标记：为 true 时记忆 Advisor 不读写子智能体记忆表（无状态子调用，兼容旧 Orchestrator）。
+     */
+    public static final String CONTEXT_KEY_SUB_AGENT_CALL_RUN =
+            AgentRunnableContextKeys.class.getName() + ".subAgentCallRun";
+
+    /**
+     * @deprecated 仅用于读取历史 RunnableConfig；新代码请使用 {@link #CONTEXT_KEY_SUB_AGENT_CALL_RUN}。
+     */
+    @Deprecated
+    public static final String CONTEXT_KEY_DELEGATE_RUN =
+            AgentRunnableContextKeys.class.getName() + ".delegateRun";
 }
