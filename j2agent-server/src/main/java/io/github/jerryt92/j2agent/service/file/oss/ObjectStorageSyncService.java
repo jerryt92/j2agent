@@ -45,6 +45,7 @@ public class ObjectStorageSyncService {
     private final ObjectStorageService storageService;
     private final ObjectFileManagementService fileManagementService;
     private final ObjectFileMapper fileMapper;
+    private final ObjectFileReferenceService referenceService;
     private final ObjectStorageSyncTaskMapper taskMapper;
     private final ObjectStorageSyncDiffMapper diffMapper;
     private final ObjectStorageDifferenceSnapshotService snapshotService;
@@ -55,6 +56,7 @@ public class ObjectStorageSyncService {
             ObjectStorageService storageService,
             ObjectFileManagementService fileManagementService,
             ObjectFileMapper fileMapper,
+            ObjectFileReferenceService referenceService,
             ObjectStorageSyncTaskMapper taskMapper,
             ObjectStorageSyncDiffMapper diffMapper,
             ObjectStorageDifferenceSnapshotService snapshotService,
@@ -63,6 +65,7 @@ public class ObjectStorageSyncService {
         this.storageService = storageService;
         this.fileManagementService = fileManagementService;
         this.fileMapper = fileMapper;
+        this.referenceService = referenceService;
         this.taskMapper = taskMapper;
         this.diffMapper = diffMapper;
         this.snapshotService = snapshotService;
@@ -293,11 +296,7 @@ public class ObjectStorageSyncService {
                 String existingId = existing == null ? null : existing.getId();
                 fileMapper.upsert(fileManagementService.fromMetadata(existingId, current, createdAt));
             }
-            case "DELETE_DB" -> {
-                if (fileMapper.selectByKey(bucket, diff.getObjectKeyHash()) != null) {
-                    fileMapper.deleteByKey(bucket, diff.getObjectKeyHash());
-                }
-            }
+            case "DELETE_DB" -> deleteDbRecord(bucket, diff.getObjectKeyHash());
             case "DELETE_OSS" -> {
                 if (storageService.objectExists(bucket, key)) {
                     storageService.removeObject(bucket, key);
@@ -307,12 +306,19 @@ public class ObjectStorageSyncService {
                 if (storageService.objectExists(bucket, key)) {
                     storageService.removeObject(bucket, key);
                 }
-                if (fileMapper.selectByKey(bucket, diff.getObjectKeyHash()) != null) {
-                    fileMapper.deleteByKey(bucket, diff.getObjectKeyHash());
-                }
+                deleteDbRecord(bucket, diff.getObjectKeyHash());
             }
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "unsupported resolution action");
         }
+    }
+
+    private void deleteDbRecord(String bucket, String objectKeyHash) {
+        ObjectFilePo existing = fileMapper.selectByKey(bucket, objectKeyHash);
+        if (existing == null) {
+            return;
+        }
+        referenceService.removeAllReferences(existing.getId());
+        fileMapper.deleteByKey(bucket, objectKeyHash);
     }
 
     private void assertSnapshotCurrent(ObjectStorageSyncDiffPo diff) {
