@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.jerryt92.j2agent.model.AgentState;
 import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
-import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentService;
 import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentUrlResolver;
 import io.github.jerryt92.j2agent.service.llm.TurnStepItem;
 import io.github.jerryt92.j2agent.service.llm.reasoning.SpringAiReasoningMetadataAdapter;
@@ -17,7 +16,6 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -74,9 +72,6 @@ public class ChatMemoryMessageCodec {
     static final String META_REASONING_CONTENT = "reasoningContent";
     static final String META_ATTACHMENTS = "attachments";
     public static final String META_RAG_INFOS = "ragInfos";
-
-    @Autowired(required = false)
-    private ChatAttachmentService chatAttachmentService;
 
     private final ObjectMapper objectMapper;
 
@@ -185,9 +180,6 @@ public class ChatMemoryMessageCodec {
             UserMessage.Builder builder = UserMessage.builder().text(c);
             if (!attachments.isEmpty()) {
                 builder.metadata(Map.of(META_ATTACHMENTS, attachments));
-                if (chatAttachmentService != null) {
-                    builder.media(chatAttachmentService.toMedia(attachments));
-                }
             }
             return builder.build();
         }

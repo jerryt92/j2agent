@@ -32,13 +32,14 @@ class ObjectStorageSyncServiceTest {
     private final ObjectStorageService storage = mock(ObjectStorageService.class);
     private final ObjectFileManagementService fileService = mock(ObjectFileManagementService.class);
     private final ObjectFileMapper fileMapper = mock(ObjectFileMapper.class);
+    private final ObjectFileReferenceService referenceService = mock(ObjectFileReferenceService.class);
     private final ObjectStorageSyncTaskMapper taskMapper = mock(ObjectStorageSyncTaskMapper.class);
     private final ObjectStorageSyncDiffMapper diffMapper = mock(ObjectStorageSyncDiffMapper.class);
     private final ObjectStorageDifferenceSnapshotService snapshotService =
             mock(ObjectStorageDifferenceSnapshotService.class);
     private final TaskExecutor directExecutor = Runnable::run;
     private final ObjectStorageSyncService service = new ObjectStorageSyncService(
-            storage, fileService, fileMapper, taskMapper, diffMapper, snapshotService, directExecutor
+            storage, fileService, fileMapper, referenceService, taskMapper, diffMapper, snapshotService, directExecutor
     );
 
     ObjectStorageSyncServiceTest() {
@@ -159,6 +160,32 @@ class ObjectStorageSyncServiceTest {
         verify(diffMapper).updateResolution(
                 eq("diff"), eq("RESOLVED"), eq("DELETE_DB"), isNull(), anyLong()
         );
+    }
+
+    @Test
+    void shouldDeleteDbRecordAfterRemovingReferences() {
+        ObjectFilePo dbFile = file("db-only.txt", "etag-1", 10, 1_000);
+        ObjectStorageSyncDiffPo diff = new ObjectStorageSyncDiffPo();
+        diff.setId("diff-ref");
+        diff.setBucketName("bucket");
+        diff.setObjectKey(dbFile.getObjectKey());
+        diff.setObjectKeyHash(dbFile.getObjectKeyHash());
+        diff.setDiffType(ObjectStorageSyncService.DB_ONLY);
+        diff.setResolutionStatus("PENDING");
+        diff.setDbEtag(dbFile.getEtag());
+        diff.setDbSizeBytes(dbFile.getSizeBytes());
+        diff.setDbModifiedAt(dbFile.getObjectModifiedAt());
+        when(diffMapper.selectById("diff-ref")).thenReturn(diff);
+        when(fileMapper.selectByKey("bucket", dbFile.getObjectKeyHash())).thenReturn(dbFile);
+        when(storage.objectExists("bucket", dbFile.getObjectKey())).thenReturn(false);
+        when(diffMapper.updateResolution(
+                eq("diff-ref"), eq("RESOLVED"), eq("DELETE_DB"), isNull(), anyLong()
+        )).thenReturn(1);
+
+        assertTrue(service.resolve(List.of("diff-ref"), "DELETE_DB").isEmpty());
+
+        verify(referenceService).removeAllReferences(dbFile.getId());
+        verify(fileMapper).deleteByKey("bucket", dbFile.getObjectKeyHash());
     }
 
     @Test

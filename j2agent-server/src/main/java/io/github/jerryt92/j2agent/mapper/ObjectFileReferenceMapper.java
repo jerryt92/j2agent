@@ -38,4 +38,7 @@ public interface ObjectFileReferenceMapper {
             """)
     int deleteByBusinessPrefix(@Param("businessType") String businessType,
                                @Param("businessIdPrefix") String businessIdPrefix);
+
+    @Delete("DELETE FROM object_file_reference WHERE file_id = #{fileId}")
+    int deleteByFileId(@Param("fileId") String fileId);
 }

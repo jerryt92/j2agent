@@ -1343,6 +1343,8 @@ components:
       properties:
         message:
           type: string
+        traceId:
+          type: string
     RagInfoDto:
       $ref: './openapi-model.yaml#/components/schemas/RagInfoDto'
     TurnStepDto:

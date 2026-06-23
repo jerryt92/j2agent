@@ -42,6 +42,13 @@ public class ObjectFileReferenceService {
         mapper.deleteByBusinessPrefix(CHAT_MESSAGE, contextId + ":" + normalize(agentId) + ":");
     }
 
+    public void removeAllReferences(String fileId) {
+        if (fileId == null || fileId.isBlank()) {
+            return;
+        }
+        mapper.deleteByFileId(fileId);
+    }
+
     private static String chatBusinessId(String contextId, String agentId, int messageIndex) {
         return contextId + ":" + normalize(agentId) + ":" + messageIndex;
     }
