@@ -1085,7 +1085,7 @@ components:
           default: true
         makeCurrent:
           type: boolean
-          description: 新增时是否立即设为当前生效（仅 enabled=true 时生效）
+          description: 新增时是否立即设为当前生效
           default: false
 
     EmbeddingRuntimeStatusDto:
