@@ -55,15 +55,11 @@ public class AgentRouter {
     }
 
     /**
-     * 解析 agentId；兼容历史客户端传入的 assistant。
+     * 解析 agentId
      */
     public AiAgent route(String agentId) {
-        String resolvedId = agentId;
-        if ("assistant".equals(agentId)) {
-            resolvedId = "chat_assistant";
-        }
         Map<String, AiAgent> snapshot = agents;
-        AiAgent agent = snapshot.get(resolvedId);
+        AiAgent agent = snapshot.get(agentId);
         if (agent == null) {
             throw new IllegalArgumentException("Unsupported agentId: " + agentId);
         }
