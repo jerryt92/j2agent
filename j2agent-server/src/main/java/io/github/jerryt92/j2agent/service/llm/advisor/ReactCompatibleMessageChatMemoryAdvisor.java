@@ -41,6 +41,17 @@ import java.util.Map;
 public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMemoryAdvisor {
 
     /**
+     * 用户消息 metadata 键：子智能体无状态调用时为 true，Advisor 跳过子智能体记忆读写。
+     */
+    public static final String META_SUB_AGENT_CALL_RUN = "subAgentCallRun";
+
+    /**
+     * @deprecated 仅用于读取历史消息 metadata；新代码请使用 {@link #META_SUB_AGENT_CALL_RUN}。
+     */
+    @Deprecated
+    public static final String META_DELEGATE_RUN = "delegateRun";
+
+    /**
      * 单次 Agent 调用内作为 conversationId 的辅助传递（与 {@link AgentRunContext#conversationId()} 一致）。
      */
     private static final ThreadLocal<String> THREAD_CONVERSATION_ID = new ThreadLocal<>();
@@ -50,6 +61,8 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
      * （聚合后的 response context 往往不含 {@link ChatMemory#CONVERSATION_ID}）。
      */
     private static final ThreadLocal<String> ACTIVE_CONVERSATION_ID = new ThreadLocal<>();
+
+    private static final ThreadLocal<Boolean> ACTIVE_SUB_AGENT_CALL_RUN = new ThreadLocal<>();
 
     private final ChatMemory chatMemory;
 
@@ -83,6 +96,7 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
     public static void clear() {
         THREAD_CONVERSATION_ID.remove();
         ACTIVE_CONVERSATION_ID.remove();
+        ACTIVE_SUB_AGENT_CALL_RUN.remove();
     }
 
     /**
@@ -105,7 +119,11 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
     private static String extractConversationIdFromUserMessages(List<Message> instructions) {
         for (Message message : instructions) {
             if (message instanceof UserMessage userMessage) {
-                Object v = userMessage.getMetadata().get(ChatMemory.CONVERSATION_ID);
+                Map<String, Object> metadata = userMessage.getMetadata();
+                if (metadata == null) {
+                    continue;
+                }
+                Object v = metadata.get(ChatMemory.CONVERSATION_ID);
                 if (v != null && StringUtils.hasText(v.toString())) {
                     return v.toString();
                 }
@@ -159,6 +177,9 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
         if (!StringUtils.hasText(conversationId) || !conversationId.contains(":")) {
             return false;
         }
+        if (conversationId.startsWith("delegate:")) {
+            return false;
+        }
         try {
             ConversationIdCodec.parse(conversationId);
             return true;
@@ -177,10 +198,39 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
         return this.scheduler;
     }
 
+    private static boolean isSubAgentCallRun(List<Message> instructions) {
+        if (instructions == null) {
+            return false;
+        }
+        for (Message message : instructions) {
+            if (!(message instanceof UserMessage userMessage)) {
+                continue;
+            }
+            Map<String, Object> metadata = userMessage.getMetadata();
+            if (metadata == null) {
+                continue;
+            }
+            if (isTruthyMetadataFlag(metadata.get(META_SUB_AGENT_CALL_RUN))
+                    || isTruthyMetadataFlag(metadata.get(META_DELEGATE_RUN))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isTruthyMetadataFlag(Object flag) {
+        return Boolean.TRUE.equals(flag) || "true".equalsIgnoreCase(String.valueOf(flag));
+    }
+
     @Override
     public ChatClientRequest before(ChatClientRequest chatClientRequest, AdvisorChain advisorChain) {
         ChatClientRequest requestWithConversationId = ensureConversationIdInContext(chatClientRequest);
         List<Message> instructions = requestWithConversationId.prompt().getInstructions();
+        if (isSubAgentCallRun(instructions)) {
+            ACTIVE_SUB_AGENT_CALL_RUN.set(true);
+            ACTIVE_CONVERSATION_ID.remove();
+            return requestWithConversationId;
+        }
         String conversationId = resolvePersistableConversationId(requestWithConversationId.context(), instructions);
         if (!StringUtils.hasText(conversationId)) {
             ACTIVE_CONVERSATION_ID.remove();
@@ -211,7 +261,9 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
                 .build();
 
         Message userMessage = processedChatClientRequest.prompt().getLastUserOrToolResponseMessage();
-        this.chatMemory.add(conversationId, userMessage);
+        if (userMessage != null) {
+            this.chatMemory.add(conversationId, userMessage);
+        }
 
         return processedChatClientRequest;
     }
@@ -227,6 +279,9 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
                     .toList();
         }
         try {
+            if (Boolean.TRUE.equals(ACTIVE_SUB_AGENT_CALL_RUN.get())) {
+                return chatClientResponse;
+            }
             String conversationId = resolvePersistableConversationId(chatClientResponse.context(), null);
             if (!StringUtils.hasText(conversationId)) {
                 log.warn("ChatMemory conversationId unresolved in after(); skip persisting assistant messages");
@@ -238,6 +293,7 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
             }
         } finally {
             ACTIVE_CONVERSATION_ID.remove();
+            ACTIVE_SUB_AGENT_CALL_RUN.remove();
         }
         return chatClientResponse;
     }
@@ -278,7 +334,10 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
                 })
                 .transform(flux -> new ChatClientMessageAggregator().aggregateChatClientResponse(flux,
                         response -> this.after(response, streamAdvisorChain)))
-                .doFinally(signalType -> ACTIVE_CONVERSATION_ID.remove());
+                .doFinally(signalType -> {
+                    ACTIVE_CONVERSATION_ID.remove();
+                    ACTIVE_SUB_AGENT_CALL_RUN.remove();
+                });
     }
 
     /**
@@ -289,7 +348,9 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
                 || response.context().containsKey(ChatMemory.CONVERSATION_ID)) {
             return response;
         }
-        return response.mutate().context(ChatMemory.CONVERSATION_ID, conversationId).build();
+        var contextBuilder = new java.util.HashMap<>(response.context());
+        contextBuilder.put(ChatMemory.CONVERSATION_ID, conversationId);
+        return response.mutate().context(contextBuilder).build();
     }
 
     /**

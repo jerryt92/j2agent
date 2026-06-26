@@ -1,9 +1,7 @@
 package io.github.jerryt92.j2agent.service.llm;
 
-import com.alibaba.cloud.ai.graph.NodeOutput;
-import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
-import com.alibaba.cloud.ai.graph.streaming.OutputType;
-import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
+import io.github.jerryt92.j2agent.service.llm.agent.AgentStreamOptions;
+import io.github.jerryt92.j2agent.service.llm.agent.AgentStreamSession;
 import io.github.jerryt92.j2agent.config.chat.ActiveChatTurnProperties;
 import io.github.jerryt92.j2agent.config.chat.ChatInputProperties;
 import io.github.jerryt92.j2agent.model.AgentEventPhase;
@@ -22,31 +20,24 @@ import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
 import io.github.jerryt92.j2agent.service.llm.agent.inf.constant.AgentThinkingOverride;
 import io.github.jerryt92.j2agent.service.llm.memory.ChatMemoryMessageCodec;
 import io.github.jerryt92.j2agent.service.llm.memory.ConversationIdCodec;
-import io.github.jerryt92.j2agent.service.llm.reasoning.AssistantMessageReasoningExtractor;
-import io.github.jerryt92.j2agent.service.llm.reasoning.ReasoningSnapshotTracker;
 import io.github.jerryt92.j2agent.service.llm.reasoning.SpringAiReasoningMetadataAdapter;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunLogContext;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunLogSnapshot;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
 import io.github.jerryt92.j2agent.service.llm.rag.TurnRagSourceRegistry;
-import io.github.jerryt92.j2agent.service.llm.reasoning.ThinkingStreamSplitter;
 import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
+import io.github.jerryt92.j2agent.service.llm.agent.builtin.SubAgentStreamBridge;
+import io.github.jerryt92.j2agent.service.llm.universal.UniversalAssistantConstants;
 import io.github.jerryt92.j2agent.utils.UUIDv7Utils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.Message;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClientRequestException;
 import reactor.core.Disposable;
-import reactor.core.publisher.Flux;
-import reactor.util.retry.Retry;
-
-import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -73,6 +64,7 @@ public class ChatService {
     private final ChatMemoryMessageCodec chatMemoryMessageCodec;
     private final ObjectProvider<io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentService>
             chatAttachmentServiceProvider;
+    private final AgentStreamSession agentStreamSession;
 
     public ChatService(ChatContextService chatContextService,
                        AgentRouter agentRouter,
@@ -82,7 +74,8 @@ public class ChatService {
                        ChatMemoryMessageCodec chatMemoryMessageCodec,
                        ActiveChatTurnRegistry activeChatTurnRegistry,
                        ObjectProvider<io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentService>
-                               chatAttachmentServiceProvider) {
+                               chatAttachmentServiceProvider,
+                       AgentStreamSession agentStreamSession) {
         this.chatContextService = chatContextService;
         this.agentRouter = agentRouter;
         this.followUpSuggestionService = followUpSuggestionService;
@@ -91,6 +84,15 @@ public class ChatService {
         this.chatMemoryMessageCodec = chatMemoryMessageCodec;
         this.activeChatTurnRegistry = activeChatTurnRegistry;
         this.chatAttachmentServiceProvider = chatAttachmentServiceProvider;
+        this.agentStreamSession = agentStreamSession;
+    }
+
+    public static void registerContextChatCallback(String contextId, ChatCallback<AgentUiEventEnvelope> callback) {
+        contextChatCallbackMap.put(contextId, callback);
+    }
+
+    public static void unregisterContextChatCallback(String contextId) {
+        contextChatCallbackMap.remove(contextId);
     }
 
     public void handleChat(ChatCallback<AgentUiEventEnvelope> chatChatCallback, ChatRequestDto request, String userId, String agentId) {
@@ -127,7 +129,7 @@ public class ChatService {
                         () -> contextChatCallbackMap.remove(contextId));
                 return;
             }
-            AiAgent aiAgentForConversation = agentRouter.route(agentId);
+            final AiAgent aiAgentForConversation = agentRouter.route(agentId);
             final String resolvedAgentId = aiAgentForConversation.getAgentId();
             resolvedAgentIdRef.set(resolvedAgentId);
             activeChatTurnRegistry.register(contextId, resolvedAgentId);
@@ -172,8 +174,6 @@ public class ChatService {
             StringBuilder streamedContent = new StringBuilder();
             StringBuilder streamedReasoning = new StringBuilder();
             Object streamedTextLock = new Object();
-            ReasoningSnapshotTracker reasoningTracker = new ReasoningSnapshotTracker();
-            ThinkingStreamSplitter thinkingStreamSplitter = new ThinkingStreamSplitter();
             /** 正常结束或中断时，以 streamedContent/streamedReasoning 落库 assistant 一次 */
             AtomicBoolean streamedAssistantFlushed = new AtomicBoolean(false);
             ToolEventEmitter toolEventEmitter = new ToolEventEmitter(
@@ -195,7 +195,7 @@ public class ChatService {
                 attachments = attachmentService.validateAndReference(
                         latestUser.getAttachments(),
                         contextId,
-                        aiAgentForConversation.getAgentId(),
+                        resolvedAgentId,
                         latestUser.getIndex() == null ? index : latestUser.getIndex(),
                         userId);
             }
@@ -204,6 +204,22 @@ public class ChatService {
             }
             final List<ChatAttachmentDto> finalAttachments = attachments;
             final int userMessageIndex = latestUser.getIndex() == null ? index : latestUser.getIndex();
+            if (UniversalAssistantConstants.isUniversalAssistant(resolvedAgentId)) {
+                SubAgentStreamBridge.bind(turnId, new SubAgentStreamBridge.Target(
+                        chatChatCallback,
+                        contextId,
+                        turnId,
+                        userId,
+                        turnConversationId,
+                        toolEventEmitter,
+                        seq,
+                        stateMachine,
+                        turnLock,
+                        streamedContent,
+                        streamedReasoning,
+                        streamedTextLock,
+                        userMessageIndex));
+            }
             AgentRunContext agentRunContext = new AgentRunContext(
                     limitedUserMessage,
                     contextId,
@@ -223,7 +239,7 @@ public class ChatService {
                     "user message accepted");
             // 纯文本 assistant 由 streamedContent/streamedReasoning 落库；Advisor 仅写入 tool_calls 等结构化消息
             AiAgent aiAgent = aiAgentForConversation;
-            AgentThinkingOverride effectiveThinking = ThinkingOverrideResolver.resolve(request, aiAgent);
+            AgentThinkingOverride effectiveThinking = ThinkingOverrideResolver.resolve(request, aiAgentForConversation);
             ThinkingOverrideRegistry.bind(turnConversationId, effectiveThinking);
             AtomicBoolean thinkingOverrideUnbound = new AtomicBoolean(false);
             Runnable unbindThinkingOverride = () -> {
@@ -231,7 +247,7 @@ public class ChatService {
                     ThinkingOverrideRegistry.unbind(turnConversationId);
                 }
             };
-            agentChatMemoryRef.set(aiAgent.getChatMemory());
+            agentChatMemoryRef.set(aiAgentForConversation.getChatMemory());
             final ChatMemory agentChatMemory = agentChatMemoryRef.get();
             AtomicLong streamStartedAtMs = new AtomicLong(0L);
             chatChatCallback.completeCall = () -> {
@@ -295,6 +311,7 @@ public class ChatService {
                     } finally {
                         StreamedAssistantPersistence.disable(turnConversationId);
                         TurnRagSourceRegistry.clear(turnConversationId);
+                        SubAgentStreamBridge.unbind(turnId);
                         logTurnEnd(runLogSnapshot, streamStartedAtMs, turnStepRecorder, AgentState.COMPLETED);
                         flushTurnTrace.run();
                         runOriginalCompleteCall(originalCompleteCall);
@@ -339,6 +356,7 @@ public class ChatService {
                                     streamedReasoning, streamedTextLock, streamedAssistantFlushed, true);
                             StreamedAssistantPersistence.disable(turnConversationId);
                             TurnRagSourceRegistry.clear(turnConversationId);
+                            SubAgentStreamBridge.unbind(turnId);
                         },
                         flushTurnTrace,
                         releaseActiveTurn);
@@ -374,88 +392,38 @@ public class ChatService {
                 }
             }
             AtomicInteger retryNo = new AtomicInteger(0);
-            Disposable disposable = Flux.defer(() -> {
-                        streamStartedAtMs.set(System.currentTimeMillis());
-                        try {
-                            return aiAgent.stream(agentRunContext)
-                                    .doFinally(signalType -> unbindThinkingOverride.run());
-                        } catch (GraphRunnerException e) {
-                            unbindThinkingOverride.run();
-                            throw new RuntimeException(e);
-                        }
-                    })
-                    .retryWhen(Retry.backoff(3, Duration.ofSeconds(1))
-                            .maxBackoff(Duration.ofSeconds(3))
-                            .filter(t -> (isConnectionResetByPeer(t)
-                                    || LlmProviderErrorFormatter.isEmptyStreamFailure(t))
-                                    && isStillThinkingAndEmpty(streamedContent, streamedReasoning, stateMachine,
-                                    streamedTextLock, turnLock))
-                            .doBeforeRetry(rs -> {
-                                int bufferedLen;
-                                AgentState currentState;
-                                synchronized (streamedTextLock) {
-                                    bufferedLen = streamedContent.length();
-                                }
-                                synchronized (turnLock) {
-                                    currentState = stateMachine.getState();
-                                }
-                                int nextRetryNo = retryNo.incrementAndGet();
-                                AgentRunLogger.warn(runLogSnapshot, AgentRunEventType.LLM_RETRY,
-                                        AgentRunLogger.kv(
-                                                "retryNo", nextRetryNo,
-                                                "state", currentState == null ? "" : currentState.name(),
-                                                "elapsedMs", System.currentTimeMillis() - streamStartedAtMs.get(),
-                                                "bufferedLen", bufferedLen,
-                                                "errorType", rs.failure() == null ? ""
-                                                        : rs.failure().getClass().getSimpleName()),
-                                        LlmProviderErrorFormatter.formatForLog(rs.failure()));
-                            })
-                    )
-                    .subscribe(nodeOutput -> {
-                        StreamingTextParts parts = extractStreamingParts(
-                                nodeOutput, reasoningTracker, thinkingStreamSplitter);
-                        if (parts == null) {
-                            return;
-                        }
-                        String answerDelta = parts.answerDelta();
-                        String reasoningDelta = parts.reasoningDelta();
-                        if (StringUtils.isNotBlank(answerDelta)
-                                && StringUtils.isNotBlank(reasoningDelta)
-                                && answerDelta.equals(reasoningDelta)) {
-                            answerDelta = null;
-                        }
-                        if (!StringUtils.isNotBlank(answerDelta) && !StringUtils.isNotBlank(reasoningDelta)) {
-                            return;
-                        }
-                        ChatResponseDto chatResponseDto = buildChatResponseDto(answerDelta, reasoningDelta, index);
-                        synchronized (streamedTextLock) {
-                            if (StringUtils.isNotBlank(answerDelta)) {
-                                streamedContent.append(answerDelta);
-                            }
-                            if (StringUtils.isNotBlank(reasoningDelta)) {
-                                streamedReasoning.append(reasoningDelta);
-                            }
-                        }
-                        synchronized (turnLock) {
-                            AgentStateTransition transition = null;
-                            if (StringUtils.isNotBlank(answerDelta)
-                                    && (stateMachine.getState() == AgentState.THINKING
-                                    || stateMachine.getState() == AgentState.CALLING_TOOL
-                                    || stateMachine.getState() == AgentState.LOAD_SKILL)) {
-                                transition = stateMachine.transit(AgentState.STREAMING_TEXT, "firstAnswerToken");
-                            }
-                            chatChatCallback.responseCall.accept(AgentEventBuilder.build(
-                                    contextId,
-                                    turnId,
-                                    seq.getAndIncrement(),
-                                    stateMachine.getState(),
-                                    transition,
-                                    AgentEventPhase.DELTA,
-                                    AgentEventType.MESSAGE,
-                                    chatResponseDto
-                            ));
-                        }
-                    }, chatChatCallback.errorCall, chatChatCallback.completeCall);
+            Runnable releaseSubAgentBridge = () -> SubAgentStreamBridge.unbind(turnId);
+            AgentStreamOptions agentStreamOptions = new AgentStreamOptions(
+                    aiAgent,
+                    agentRunContext,
+                    runLogSnapshot,
+                    stateMachine,
+                    streamedContent,
+                    streamedReasoning,
+                    streamedTextLock,
+                    turnLock,
+                    streamStartedAtMs,
+                    retryNo,
+                    () -> {
+                        unbindThinkingOverride.run();
+                        releaseSubAgentBridge.run();
+                    });
+            Disposable disposable = agentStreamSession.stream(agentStreamOptions)
+                    .subscribe(parts -> emitAnswerDelta(
+                            chatChatCallback,
+                            contextId,
+                            turnId,
+                            seq,
+                            stateMachine,
+                            turnLock,
+                            streamedContent,
+                            streamedReasoning,
+                            streamedTextLock,
+                            index,
+                            parts.answerDelta(),
+                            parts.reasoningDelta()),
+                            chatChatCallback.errorCall,
+                            chatChatCallback.completeCall);
             chatChatCallback.onWebsocketClose = () -> {
                 boolean claimedTermination = terminated.compareAndSet(false, true);
                 try {
@@ -467,6 +435,7 @@ public class ChatService {
                             streamedReasoning, streamedTextLock, streamedAssistantFlushed, true);
                     StreamedAssistantPersistence.disable(turnConversationId);
                     TurnRagSourceRegistry.clear(turnConversationId);
+                    SubAgentStreamBridge.unbind(turnId);
                     logTurnEnd(runLogSnapshot, streamStartedAtMs, turnStepRecorder, AgentState.CANCELLED);
                     // 关闭上游流，停止继续接收增量 token
                     if (!disposable.isDisposed()) {
@@ -512,6 +481,7 @@ public class ChatService {
                 ThinkingOverrideRegistry.unbind(failedConversationId);
                 StreamedAssistantPersistence.disable(failedConversationId);
                 TurnRagSourceRegistry.clear(failedConversationId);
+                SubAgentStreamBridge.unbind(turnId);
                 AgentRunLogContext.clear(failedConversationId);
             }
             Runnable releaseActiveTurnOnFailure = () -> {
@@ -524,6 +494,56 @@ public class ChatService {
             terminateTurnWithFailure(chatChatCallback, contextId, turnId, seq, stateMachine, turnLock,
                     terminated, originalCompleteCall, resolveErrorCode(t), t, null, flushTurnTrace,
                     releaseActiveTurnOnFailure);
+        }
+    }
+
+    private void emitAnswerDelta(ChatCallback<AgentUiEventEnvelope> chatChatCallback,
+                                 String contextId,
+                                 String turnId,
+                                 AtomicLong seq,
+                                 AgentTurnStateMachine stateMachine,
+                                 Object turnLock,
+                                 StringBuilder streamedContent,
+                                 StringBuilder streamedReasoning,
+                                 Object streamedTextLock,
+                                 int index,
+                                 String answerDelta,
+                                 String reasoningDelta) {
+        if (StringUtils.isNotBlank(answerDelta)
+                && StringUtils.isNotBlank(reasoningDelta)
+                && answerDelta.equals(reasoningDelta)) {
+            reasoningDelta = null;
+        }
+        if (!StringUtils.isNotBlank(answerDelta) && !StringUtils.isNotBlank(reasoningDelta)) {
+            return;
+        }
+        ChatResponseDto chatResponseDto = buildChatResponseDto(answerDelta, reasoningDelta, index);
+        synchronized (streamedTextLock) {
+            if (StringUtils.isNotBlank(answerDelta)) {
+                streamedContent.append(answerDelta);
+            }
+            if (StringUtils.isNotBlank(reasoningDelta)) {
+                streamedReasoning.append(reasoningDelta);
+            }
+        }
+        synchronized (turnLock) {
+            AgentStateTransition transition = null;
+            if (StringUtils.isNotBlank(answerDelta)
+                    && (stateMachine.getState() == AgentState.THINKING
+                    || stateMachine.getState() == AgentState.CALLING_TOOL
+                    || stateMachine.getState() == AgentState.LOAD_SKILL)) {
+                transition = stateMachine.transit(AgentState.STREAMING_TEXT, "firstAnswerToken");
+            }
+            chatChatCallback.responseCall.accept(AgentEventBuilder.build(
+                    contextId,
+                    turnId,
+                    seq.getAndIncrement(),
+                    stateMachine.getState(),
+                    transition,
+                    AgentEventPhase.DELTA,
+                    AgentEventType.MESSAGE,
+                    chatResponseDto
+            ));
         }
     }
 
@@ -718,43 +738,6 @@ public class ChatService {
     }
 
     /**
-     * 模型流式输出片段：回答正文与 Spring AI 推理 metadata 可同 chunk 到达。
-     */
-    private record StreamingTextParts(String answerDelta, String reasoningDelta) {
-    }
-
-    /**
-     * 从 ReactAgent 节点输出中提取模型流式文本，忽略工具和 Hook 节点输出。
-     */
-    private StreamingTextParts extractStreamingParts(NodeOutput nodeOutput,
-                                                     ReasoningSnapshotTracker reasoningTracker,
-                                                     ThinkingStreamSplitter thinkingStreamSplitter) {
-        if (!(nodeOutput instanceof StreamingOutput<?> streamingOutput)) {
-            return null;
-        }
-        if (streamingOutput.getOutputType() != OutputType.AGENT_MODEL_STREAMING) {
-            return null;
-        }
-        Message message = streamingOutput.message();
-        if (message instanceof AssistantMessage assistantMessage) {
-            AssistantMessageReasoningExtractor.TextParts parts =
-                    AssistantMessageReasoningExtractor.splitStreamingDelta(
-                            assistantMessage, null, reasoningTracker);
-            if (parts == null) {
-                return null;
-            }
-            return new StreamingTextParts(parts.answerDelta(), parts.reasoningDelta());
-        }
-        String chunk = streamingOutput.chunk();
-        AssistantMessageReasoningExtractor.TextParts parts =
-                AssistantMessageReasoningExtractor.splitRawChunk(chunk, thinkingStreamSplitter);
-        if (parts == null) {
-            return null;
-        }
-        return new StreamingTextParts(parts.answerDelta(), parts.reasoningDelta());
-    }
-
-    /**
      * 构造前端沿用的 ChatResponseDto 增量消息。
      */
     private ChatResponseDto buildChatResponseDto(String answerDelta, String reasoningDelta, int index) {
@@ -802,69 +785,5 @@ public class ChatService {
             return message.substring(0, maxLen);
         }
         return message;
-    }
-
-    /**
-     * 判断是否为上游主动重置连接（常见于偶发网络断连/网关抖动或连接池复用失效连接）。
-     * 需遍历 cause 链：Spring AI Advisor 常将 {@link WebClientRequestException} 包装为 {@link IllegalStateException}。
-     */
-    static boolean isConnectionResetByPeer(Throwable t) {
-        Throwable current = t;
-        int depth = 0;
-        while (current != null && depth < 16) {
-            if (isConnectionResetSignal(current)) {
-                return true;
-            }
-            if (current.getCause() == null || current.getCause() == current) {
-                break;
-            }
-            current = current.getCause();
-            depth++;
-        }
-        return false;
-    }
-
-    private static boolean isConnectionResetSignal(Throwable t) {
-        if (t instanceof WebClientRequestException) {
-            return messageIndicatesConnectionReset(t.getMessage())
-                    || (t.getCause() != null && messageIndicatesConnectionReset(t.getCause().getMessage()));
-        }
-        String className = t.getClass().getName();
-        if (className.contains("NativeIoException")) {
-            return messageIndicatesConnectionReset(t.getMessage());
-        }
-        return messageIndicatesConnectionReset(t.getMessage())
-                || String.valueOf(t).contains("Connection reset by peer");
-    }
-
-    private static boolean messageIndicatesConnectionReset(String message) {
-        if (message == null) {
-            return false;
-        }
-        return message.contains("Connection reset by peer")
-                || message.contains("Connection reset")
-                || message.contains("recvAddress");
-    }
-
-    /**
-     * 仅在“首 token 之前”且未落入工具调用/文本流式输出阶段时重试，避免重复 tool 调用/重复落库。
-     */
-    private static boolean isStillThinkingAndEmpty(StringBuilder streamedContent,
-                                                   StringBuilder streamedReasoning,
-                                                   AgentTurnStateMachine stateMachine,
-                                                   Object streamedTextLock,
-                                                   Object turnLock) {
-        int contentLen;
-        int reasoningLen;
-        synchronized (streamedTextLock) {
-            contentLen = streamedContent.length();
-            reasoningLen = streamedReasoning.length();
-        }
-        if (contentLen != 0 || reasoningLen != 0) {
-            return false;
-        }
-        synchronized (turnLock) {
-            return stateMachine.getState() == AgentState.THINKING;
-        }
     }
 }

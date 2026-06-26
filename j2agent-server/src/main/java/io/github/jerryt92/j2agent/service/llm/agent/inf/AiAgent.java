@@ -41,6 +41,7 @@ import org.springframework.ai.rag.retrieval.join.DocumentJoiner;
 import org.springframework.ai.rag.retrieval.search.DocumentRetriever;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.aop.support.AopUtils;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -66,13 +67,27 @@ public abstract class AiAgent {
      * Agent 内部 {@code resources/skills/} 在 classpath 上的路径段。
      */
     private static final String INTERNAL_SKILLS_CLASSPATH = "skills";
-    private static final String QA_TEMPLATE_RESOURCE = "qa-template.json";
+    private static final String DEFAULT_QA_TEMPLATE_RESOURCE = "qa-template.json";
 
     public abstract String getAgentId();
 
     public abstract String getAgentName();
 
     public abstract String getAgentDescription();
+
+    /**
+     * 调度提示词：仅供通用助手意图路由等内部调度使用，不展示到界面。
+     * 未 override 或返回空时，{@link #resolveDispatchPrompt()} 回退为 {@link #getAgentDescription()}。
+     */
+    public String getDispatchPrompt() {
+        return null;
+    }
+
+    /** 路由侧实际使用的调度文案。 */
+    public final String resolveDispatchPrompt() {
+        String dispatch = getDispatchPrompt();
+        return StringUtils.hasText(dispatch) ? dispatch.trim() : getAgentDescription();
+    }
 
     public abstract String loadSystemPrompt();
 
@@ -113,10 +128,20 @@ public abstract class AiAgent {
     }
 
     /**
-     * 从 Agent 所在 ClassLoader 读取 qa-template.json，按 locale 返回问题文案列表。
+     * 热门问题模板资源路径（相对 Agent 定义类 ClassLoader）。
+     * 插件 Agent 默认 JAR 根 {@code qa-template.json}；内置 Agent 可 override 为独立路径。
+     */
+    protected String getQaTemplateResourcePath() {
+        return DEFAULT_QA_TEMPLATE_RESOURCE;
+    }
+
+    /**
+     * 从 Agent 定义类 ClassLoader 读取问答模板，按 locale 返回问题文案列表。
      */
     protected List<String> loadQaTemplateQuestions(String locale) {
-        try (InputStream inputStream = getClass().getClassLoader().getResourceAsStream(QA_TEMPLATE_RESOURCE)) {
+        Class<?> owner = AopUtils.getTargetClass(this);
+        String resourcePath = getQaTemplateResourcePath();
+        try (InputStream inputStream = owner.getClassLoader().getResourceAsStream(resourcePath)) {
             if (inputStream == null) {
                 return Collections.emptyList();
             }
@@ -226,20 +251,33 @@ public abstract class AiAgent {
      * {@link ChatMemory#CONVERSATION_ID} 放在首条 {@link UserMessage} 的 metadata 中以便跨线程解析。
      */
     public Flux<NodeOutput> stream(AgentRunContext context) throws GraphRunnerException {
+        if (this.agent == null) {
+            throw new IllegalStateException("Agent not initialized: " + getAgentId());
+        }
         RunnableConfig runnableConfig = RunnableConfig.builder()
                 .threadId(context.conversationId())
                 .build();
-        runnableConfig.context().put(AgentUiToolEventInterceptor.CONTEXT_KEY_TOOL_EVENT_EMITTER, context.toolEventEmitter());
+        if (context.toolEventEmitter() != null) {
+            runnableConfig.context().put(
+                    AgentUiToolEventInterceptor.CONTEXT_KEY_TOOL_EVENT_EMITTER, context.toolEventEmitter());
+        }
         runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_CHAT_CONVERSATION_ID, context.conversationId());
         runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_CONTEXT_ID, context.contextId());
         runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_TURN_ID, context.turnId());
         runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_USER_ID, context.userId());
         runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_AGENT_ID, context.agentId());
+        if (context.subAgentCallRun()) {
+            runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_SUB_AGENT_CALL_RUN, Boolean.TRUE);
+        }
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put(ChatMemory.CONVERSATION_ID, context.conversationId());
+        metadata.put("attachments", context.attachments());
+        if (context.subAgentCallRun()) {
+            metadata.put(ReactCompatibleMessageChatMemoryAdvisor.META_SUB_AGENT_CALL_RUN, Boolean.TRUE);
+        }
         var userMessageBuilder = UserMessage.builder()
                 .text(context.text())
-                .metadata(Map.of(
-                        ChatMemory.CONVERSATION_ID, context.conversationId(),
-                        "attachments", context.attachments()));
+                .metadata(metadata);
         if (!context.attachments().isEmpty()) {
             var attachmentService = chatAttachmentServiceProvider.getIfAvailable();
             if (attachmentService == null) {

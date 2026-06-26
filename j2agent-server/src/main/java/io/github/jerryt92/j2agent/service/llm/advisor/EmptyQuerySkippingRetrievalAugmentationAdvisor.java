@@ -130,19 +130,26 @@ public final class EmptyQuerySkippingRetrievalAugmentationAdvisor implements Bas
             return null;
         }
         for (Message message : request.prompt().getInstructions()) {
-            if (!(message instanceof UserMessage userMessage) || userMessage.getMetadata() == null) {
+            if (!(message instanceof UserMessage userMessage)) {
                 continue;
             }
-            Object fromMeta = userMessage.getMetadata().get(ChatMemory.CONVERSATION_ID);
+            Map<String, Object> metadata = userMessage.getMetadata();
+            if (metadata == null) {
+                continue;
+            }
+            Object fromMeta = metadata.get(ChatMemory.CONVERSATION_ID);
             if (fromMeta != null && StringUtils.hasText(fromMeta.toString())) {
                 return fromMeta.toString();
             }
         }
         UserMessage lastUser = request.prompt().getUserMessage();
-        if (lastUser != null && lastUser.getMetadata() != null) {
-            Object fromMeta = lastUser.getMetadata().get(ChatMemory.CONVERSATION_ID);
-            if (fromMeta != null && StringUtils.hasText(fromMeta.toString())) {
-                return fromMeta.toString();
+        if (lastUser != null) {
+            Map<String, Object> metadata = lastUser.getMetadata();
+            if (metadata != null) {
+                Object fromMeta = metadata.get(ChatMemory.CONVERSATION_ID);
+                if (fromMeta != null && StringUtils.hasText(fromMeta.toString())) {
+                    return fromMeta.toString();
+                }
             }
         }
         return null;

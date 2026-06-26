@@ -1,0 +1,16 @@
+{
+  "zh_CN": [
+    "J2Agent 平台有哪些核心能力？",
+    "如何开发并接入一个插件 Agent？",
+    "J2Agent 的 RAG 检索机制是怎样的？",
+    "如何配置 LLM 提供商？",
+    "通用助手和文档问答助手有什么区别？"
+  ],
+  "en_US": [
+    "What are the core capabilities of the J2Agent platform?",
+    "How do I develop and integrate a plugin Agent?",
+    "How does J2Agent RAG retrieval work?",
+    "How do I configure an LLM provider?",
+    "What is the difference between the universal assistant and the doc QA assistant?"
+  ]
+}
