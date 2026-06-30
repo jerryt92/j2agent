@@ -12,6 +12,7 @@ import io.github.jerryt92.j2agent.service.llm.AgentTurnStateMachine;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import java.util.Map;
 
 /**
  * 单轮会话内工具与技能加载事件发射器：分别维护 {@link AgentState#CALLING_TOOL} 与 {@link AgentState#LOAD_SKILL} 的并发计数与状态进出。
@@ -51,6 +52,24 @@ public class ToolEventEmitter {
         this.stateMachine = stateMachine;
         this.turnLock = turnLock;
         this.sink = sink;
+    }
+
+    /**
+     * 编排 Hook 开始调度：迁移至 {@link AgentState#AGENT_SCHEDULING}。
+     */
+    public void onAgentSchedulingStart() {
+        synchronized (turnLock) {
+            AgentStateTransition transition = stateMachine.transit(AgentState.AGENT_SCHEDULING, "orchestrationStart");
+            sink.accept(AgentEventBuilder.build(
+                    contextId,
+                    turnId,
+                    seq.getAndIncrement(),
+                    stateMachine.getState(),
+                    transition,
+                    AgentEventPhase.START,
+                    AgentEventType.SYSTEM,
+                    Map.of("notice", "agent-scheduling-started")));
+        }
     }
 
     /**

@@ -1,7 +1,7 @@
 package io.github.jerryt92.j2agent.service.llm.agent.core;
 
-import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
 import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
+import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
 
 import java.util.List;
 
@@ -17,17 +17,6 @@ public record AgentRunContext(
         String agentId,
         List<ChatAttachmentDto> attachments,
         ToolEventEmitter toolEventEmitter,
-        boolean subAgentCallRun) {
-
-    public AgentRunContext(
-            String text,
-            String contextId,
-            String userId,
-            String turnId,
-            String conversationId,
-            String agentId,
-            List<ChatAttachmentDto> attachments,
-            ToolEventEmitter toolEventEmitter) {
-        this(text, contextId, userId, turnId, conversationId, agentId, attachments, toolEventEmitter, false);
-    }
+        boolean subAgentCallRun,
+        boolean userMessagePrePersisted) {
 }

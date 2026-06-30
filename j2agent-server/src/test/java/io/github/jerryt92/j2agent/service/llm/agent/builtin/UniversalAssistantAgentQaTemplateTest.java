@@ -18,8 +18,7 @@ class UniversalAssistantAgentQaTemplateTest {
     @BeforeEach
     void setUp() {
         universalAssistantAgent = new UniversalAssistantAgent(
-                Mockito.mock(UniversalIntentQueryTool.class),
-                Mockito.mock(UniversalSubAgentCallTool.class));
+                Mockito.mock(UniversalAssistantOrchestratorHook.class));
     }
 
     @Test
@@ -45,8 +44,7 @@ class UniversalAssistantAgentQaTemplateTest {
     @Test
     void qaTemplateDisabledAgentsReturnEmpty() {
         UniversalAssistantAgent disabled = new UniversalAssistantAgent(
-                Mockito.mock(UniversalIntentQueryTool.class),
-                Mockito.mock(UniversalSubAgentCallTool.class)) {
+                Mockito.mock(UniversalAssistantOrchestratorHook.class)) {
             @Override
             public boolean isQaTemplateEnabled() {
                 return false;
