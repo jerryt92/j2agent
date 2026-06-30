@@ -1,21 +1,57 @@
 package io.github.jerryt92.j2agent.service.llm.agent.builtin;
 
 import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
+import io.github.jerryt92.j2agent.service.llm.LlmSyncService;
+import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRouter;
 import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
+import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnCancellationRegistry;
+import io.github.jerryt92.j2agent.service.llm.chat.TurnCancelledException;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.prompt.Prompt;
 
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 class UniversalIntentQueryServiceTest {
+
+    @AfterEach
+    void tearDown() {
+        ChatTurnCancellationRegistry.clear("turn-1");
+    }
+
+    @Test
+    void queryIntentAgentsThrowsWhenCancelledBeforeLlm() {
+        UniversalIntentQueryService service = new UniversalIntentQueryService(null, null);
+        ChatTurnCancellationRegistry.cancel("turn-1");
+        assertThrows(TurnCancelledException.class,
+                () -> service.queryIntentAgents("conv", "question", "turn-1"));
+    }
+
+    @Test
+    void queryIntentAgentsThrowsWhenCancelledAfterLlmReturns() {
+        AgentRouter router = Mockito.mock(AgentRouter.class);
+        LlmSyncService llmSyncService = Mockito.mock(LlmSyncService.class);
+        AiAgent agent = new StubAgent("a1", "Name", "desc", "dispatch");
+        when(router.listCallableSubAgents()).thenReturn(List.of(agent));
+        when(llmSyncService.callAssistantText(any(Prompt.class))).thenAnswer(invocation -> {
+            ChatTurnCancellationRegistry.cancel("turn-1");
+            return "[]";
+        });
+        UniversalIntentQueryService service = new UniversalIntentQueryService(router, llmSyncService);
+        assertThrows(TurnCancelledException.class,
+                () -> service.queryIntentAgents("conv", "question", "turn-1"));
+    }
 
     @Test
     void sanitizeCandidateJsonFiltersUnknownAgents() {

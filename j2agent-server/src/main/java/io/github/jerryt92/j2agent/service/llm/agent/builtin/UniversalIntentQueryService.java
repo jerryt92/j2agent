@@ -7,6 +7,8 @@ import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
 import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
 import io.github.jerryt92.j2agent.service.llm.LlmSyncService;
+import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnCancellationRegistry;
+import io.github.jerryt92.j2agent.service.llm.chat.TurnCancelledException;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRouter;
 import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
 import io.github.jerryt92.j2agent.service.llm.memory.ChatMemoryMessageCodec;
@@ -252,7 +254,7 @@ public class UniversalIntentQueryService {
      * 对路由查询执行开放召回，返回清洗后的候选 JSON 数组字符串。
      */
     public String queryIntentAgents(String routingQuery) {
-        return queryIntentAgents(null, routingQuery);
+        return queryIntentAgents(null, routingQuery, null);
     }
 
     /**
@@ -261,6 +263,19 @@ public class UniversalIntentQueryService {
      * @param conversationId 父回合会话键，用于写入 {@code agent-run.log}；可为 null（单测等场景）
      */
     public String queryIntentAgents(String conversationId, String routingQuery) {
+        return queryIntentAgents(conversationId, routingQuery, null);
+    }
+
+    /**
+     * 对路由查询执行开放召回，返回清洗后的候选 JSON 数组字符串。
+     *
+     * @param conversationId 父回合会话键，用于写入 {@code agent-run.log}；可为 null（单测等场景）
+     * @param turnId         回合 ID，用于中断检查；可为 null
+     */
+    public String queryIntentAgents(String conversationId, String routingQuery, String turnId) {
+        if (ChatTurnCancellationRegistry.isCancelled(turnId)) {
+            throw new TurnCancelledException(turnId);
+        }
         if (StringUtils.isBlank(routingQuery)) {
             return "[]";
         }
@@ -284,10 +299,15 @@ public class UniversalIntentQueryService {
                     new SystemMessage(INTENT_QUERY_SYSTEM_PROMPT),
                     new UserMessage(userBlock)));
             String raw = llmSyncService.callAssistantText(prompt);
+            if (ChatTurnCancellationRegistry.isCancelled(turnId)) {
+                throw new TurnCancelledException(turnId);
+            }
             String sanitized = sanitizeCandidateJson(raw, candidates, conversationId);
             logIntentRecall(conversationId, "raw", truncateForLog(raw));
             logIntentRecall(conversationId, "sanitized", truncateForLog(sanitized));
             return sanitized;
+        } catch (TurnCancelledException ex) {
+            throw ex;
         } catch (Exception ex) {
             AgentRunLogger.warnByConversationId(
                     conversationId,

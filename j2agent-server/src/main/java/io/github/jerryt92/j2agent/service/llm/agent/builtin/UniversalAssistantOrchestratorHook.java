@@ -9,6 +9,8 @@ import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRouter;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunnableContextKeys;
 import io.github.jerryt92.j2agent.service.llm.tool.AgentUiToolEventInterceptor;
 import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
+import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnCancellationRegistry;
+import io.github.jerryt92.j2agent.service.llm.chat.TurnCancelledException;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.Message;
@@ -68,6 +70,9 @@ public class UniversalAssistantOrchestratorHook extends AgentHook {
             markDone(config, false, false);
             return CompletableFuture.completedFuture(Map.of());
         }
+        if (ChatTurnCancellationRegistry.isCancelled(turnKeys.turnId())) {
+            return abortOnCancel(turnKeys.turnId(), config, false, false);
+        }
 
         @SuppressWarnings("unchecked")
         List<Message> messages = (List<Message>) state.value("messages").orElse(List.of());
@@ -79,7 +84,13 @@ public class UniversalAssistantOrchestratorHook extends AgentHook {
 
         String routingQuery = intentQueryService.buildRoutingQuery(
                 chatMemory, turnKeys.parentConversationId(), messages, formatTrace(trace));
-        String candidates = intentQueryService.queryIntentAgents(turnKeys.parentConversationId(), routingQuery);
+        String candidates;
+        try {
+            candidates = intentQueryService.queryIntentAgents(
+                    turnKeys.parentConversationId(), routingQuery, turnKeys.turnId());
+        } catch (TurnCancelledException ex) {
+            return abortOnCancel(turnKeys.turnId(), config, false, false);
+        }
 
         if (UniversalIntentQueryService.isCandidatesEmpty(candidates)) {
             markSkipped(config, turnKeys.turnId());
@@ -88,15 +99,24 @@ public class UniversalAssistantOrchestratorHook extends AgentHook {
 
         ToolEventEmitter emitter = turnKeys.toolEventEmitter();
         boolean schedulingEmitted = false;
+        boolean delivered = false;
         int round = 0;
         while (round < MAX_ORCHESTRATION_ROUNDS) {
+            if (ChatTurnCancellationRegistry.isCancelled(turnKeys.turnId())) {
+                return abortOnCancel(turnKeys.turnId(), config, false, delivered);
+            }
             if (!schedulingEmitted && emitter != null) {
                 emitter.onAgentSchedulingStart();
                 schedulingEmitted = true;
             }
             boolean forceComplete = round >= MAX_ORCHESTRATION_ROUNDS - 1;
-            UniversalDispatchDecisionService.DispatchDecision decision = dispatchDecisionService.decide(
-                    candidates, routingQuery, trace, invokedAgentIds, forceComplete);
+            UniversalDispatchDecisionService.DispatchDecision decision;
+            try {
+                decision = dispatchDecisionService.decide(
+                        candidates, routingQuery, trace, invokedAgentIds, forceComplete, turnKeys.turnId());
+            } catch (TurnCancelledException ex) {
+                return abortOnCancel(turnKeys.turnId(), config, false, delivered);
+            }
             if (decision.isComplete()) {
                 break;
             }
@@ -108,6 +128,9 @@ public class UniversalAssistantOrchestratorHook extends AgentHook {
             if (StringUtils.isBlank(routingQuery)) {
                 break;
             }
+            if (ChatTurnCancellationRegistry.isCancelled(turnKeys.turnId())) {
+                return abortOnCancel(turnKeys.turnId(), config, false, delivered);
+            }
 
             String callId = UUID.randomUUID().toString();
             String argumentsJson = "{\"agentId\":\"" + trimmedAgentId + "\",\"query\":"
@@ -116,16 +139,21 @@ public class UniversalAssistantOrchestratorHook extends AgentHook {
             if (emitter != null) {
                 emitter.onToolStart(callId, SubAgentCallNames.TOOL_NAME, argumentsJson);
             }
-            String result = subAgentCallService.call(
-                    trimmedAgentId,
-                    routingQuery,
-                    new UniversalSubAgentCallService.SubAgentCallRequest(
-                            turnKeys.contextId(),
-                            turnKeys.turnId(),
-                            turnKeys.userId(),
-                            turnKeys.parentConversationId(),
-                            emitter,
-                            turnAttachments));
+            String result;
+            try {
+                result = subAgentCallService.call(
+                        trimmedAgentId,
+                        routingQuery,
+                        new UniversalSubAgentCallService.SubAgentCallRequest(
+                                turnKeys.contextId(),
+                                turnKeys.turnId(),
+                                turnKeys.userId(),
+                                turnKeys.parentConversationId(),
+                                emitter,
+                                turnAttachments));
+            } catch (TurnCancelledException ex) {
+                return abortOnCancel(turnKeys.turnId(), config, false, delivered);
+            }
             if (emitter != null) {
                 emitter.onToolSuccess(callId, SubAgentCallNames.TOOL_NAME, result,
                         System.currentTimeMillis() - startedAt);
@@ -133,18 +161,24 @@ public class UniversalAssistantOrchestratorHook extends AgentHook {
 
             trace.add(new OrchestrationTraceEntry(trimmedAgentId, routingQuery, result));
             invokedAgentIds.add(trimmedAgentId);
+            delivered = true;
 
             routingQuery = intentQueryService.buildRoutingQuery(
                     chatMemory, turnKeys.parentConversationId(), messages, formatTrace(trace));
-            candidates = intentQueryService.queryIntentAgents(turnKeys.parentConversationId(), routingQuery);
+            try {
+                candidates = intentQueryService.queryIntentAgents(
+                        turnKeys.parentConversationId(), routingQuery, turnKeys.turnId());
+            } catch (TurnCancelledException ex) {
+                return abortOnCancel(turnKeys.turnId(), config, false, delivered);
+            }
             round++;
         }
 
-        boolean delivered = !invokedAgentIds.isEmpty();
-        markDone(config, false, delivered);
+        boolean deliveredFinal = !invokedAgentIds.isEmpty();
+        markDone(config, false, deliveredFinal);
         UniversalOrchestrationRunHolder.bind(
                 turnKeys.turnId(),
-                new UniversalOrchestrationRunHolder.Flags(false, delivered));
+                new UniversalOrchestrationRunHolder.Flags(false, deliveredFinal));
         return CompletableFuture.completedFuture(Map.of());
     }
 
@@ -172,6 +206,12 @@ public class UniversalAssistantOrchestratorHook extends AgentHook {
         if (delivered) {
             config.context().put(UniversalOrchestrationContextKeys.ORCHESTRATION_DELIVERED, Boolean.TRUE);
         }
+    }
+
+    private static CompletableFuture<Map<String, Object>> abortOnCancel(
+            String turnId, RunnableConfig config, boolean skipped, boolean delivered) {
+        markDone(config, skipped, delivered);
+        return CompletableFuture.failedFuture(new TurnCancelledException(turnId));
     }
 
     private static String formatTrace(List<OrchestrationTraceEntry> trace) {

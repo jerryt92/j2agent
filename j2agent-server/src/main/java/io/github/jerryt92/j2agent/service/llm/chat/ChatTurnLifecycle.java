@@ -91,6 +91,9 @@ public final class ChatTurnLifecycle {
                                        int index,
                                        String answerDelta,
                                        String reasoningDelta) {
+        if (ChatTurnCancellationRegistry.isCancelled(turnId)) {
+            return;
+        }
         if (StringUtils.isNotBlank(answerDelta)
                 && StringUtils.isNotBlank(reasoningDelta)
                 && answerDelta.equals(reasoningDelta)) {

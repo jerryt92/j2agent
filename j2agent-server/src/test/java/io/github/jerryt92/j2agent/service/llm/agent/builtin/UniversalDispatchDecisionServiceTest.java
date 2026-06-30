@@ -1,12 +1,46 @@
 package io.github.jerryt92.j2agent.service.llm.agent.builtin;
 
+import io.github.jerryt92.j2agent.service.llm.LlmSyncService;
+import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnCancellationRegistry;
+import io.github.jerryt92.j2agent.service.llm.chat.TurnCancelledException;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.springframework.ai.chat.prompt.Prompt;
+
+import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
 class UniversalDispatchDecisionServiceTest {
+
+    @AfterEach
+    void tearDown() {
+        ChatTurnCancellationRegistry.clear("turn-1");
+    }
+
+    @Test
+    void decideThrowsWhenCancelledAfterLlmReturns() {
+        LlmSyncService llmSyncService = Mockito.mock(LlmSyncService.class);
+        when(llmSyncService.callAssistantText(any(Prompt.class))).thenAnswer(invocation -> {
+            ChatTurnCancellationRegistry.cancel("turn-1");
+            return "{\"action\":\"complete\",\"reason\":\"ok\"}";
+        });
+        UniversalDispatchDecisionService service = new UniversalDispatchDecisionService(llmSyncService);
+        assertThrows(TurnCancelledException.class, () -> service.decide(
+                "[{\"agentId\":\"wiki\"}]",
+                "routing",
+                List.of(),
+                Set.of(),
+                false,
+                "turn-1"));
+    }
 
     @Test
     void parseInvokeDecisionWithoutQuery() {
