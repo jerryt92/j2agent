@@ -5,18 +5,23 @@ import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ModelCallHandler;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ModelRequest;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ModelResponse;
+import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRouter;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunnableContextKeys;
 import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.UserMessage;
 
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -42,12 +47,14 @@ class UniversalOrchestratorHookTest {
                 Mockito.mock(UniversalDispatchDecisionService.class);
         UniversalSubAgentCallService subAgentCallService = Mockito.mock(UniversalSubAgentCallService.class);
         AgentRouter agentRouter = Mockito.mock(AgentRouter.class);
+        ChatMemory chatMemory = Mockito.mock(ChatMemory.class);
         when(agentRouter.listCallableSubAgents()).thenReturn(List.of(Mockito.mock(AiAgent.class)));
-        when(intentQueryService.buildRoutingQueryFromMessages(anyList(), anyString())).thenReturn("routing");
+        when(intentQueryService.buildRoutingQuery(
+                ArgumentMatchers.eq(chatMemory), anyString(), anyList(), anyString())).thenReturn("routing");
         when(intentQueryService.queryIntentAgents(anyString(), eq("routing"))).thenReturn("[]");
 
         UniversalAssistantOrchestratorHook hook = new UniversalAssistantOrchestratorHook(
-                intentQueryService, dispatchDecisionService, subAgentCallService, agentRouter);
+                intentQueryService, dispatchDecisionService, subAgentCallService, agentRouter, chatMemory);
 
         OverAllState state = new OverAllState(Map.of("messages", List.of(new UserMessage("hello"))));
         RunnableConfig config = RunnableConfig.builder().build();
@@ -75,24 +82,30 @@ class UniversalOrchestratorHookTest {
     }
 
     @Test
-    void deliveredPathDoesNotPersistUserMessageInHook() throws Exception {
+    void deliveredPathPassesRoutingQueryAndAttachments() throws Exception {
         UniversalIntentQueryService intentQueryService = Mockito.mock(UniversalIntentQueryService.class);
         UniversalDispatchDecisionService dispatchDecisionService =
                 Mockito.mock(UniversalDispatchDecisionService.class);
         UniversalSubAgentCallService subAgentCallService = Mockito.mock(UniversalSubAgentCallService.class);
         AgentRouter agentRouter = Mockito.mock(AgentRouter.class);
+        ChatMemory chatMemory = Mockito.mock(ChatMemory.class);
+        ChatAttachmentDto attachment = new ChatAttachmentDto().objectKey("chat/u/c/a.png").name("a.png");
+        UserMessage userMessage = UserMessage.builder()
+                .text("用户原问题")
+                .metadata(Map.of("attachments", List.of(attachment)))
+                .build();
         when(agentRouter.listCallableSubAgents()).thenReturn(List.of(Mockito.mock(AiAgent.class)));
-        when(intentQueryService.buildRoutingQueryFromMessages(anyList(), anyString())).thenReturn("routing");
+        when(intentQueryService.buildRoutingQuery(
+                ArgumentMatchers.eq(chatMemory), anyString(), anyList(), anyString())).thenReturn("routing");
         when(intentQueryService.queryIntentAgents(anyString(), anyString())).thenReturn("[{\"agentId\":\"wiki\"}]");
         when(dispatchDecisionService.decide(anyString(), anyString(), anyList(), anySet(), anyBoolean()))
-                .thenReturn(UniversalDispatchDecisionService.DispatchDecision.invoke("wiki", "查文档", "ok"))
+                .thenReturn(UniversalDispatchDecisionService.DispatchDecision.invoke("wiki", null, "ok"))
                 .thenReturn(UniversalDispatchDecisionService.DispatchDecision.complete("done"));
         when(subAgentCallService.call(anyString(), anyString(), any())).thenReturn("answer");
 
         UniversalAssistantOrchestratorHook hook = new UniversalAssistantOrchestratorHook(
-                intentQueryService, dispatchDecisionService, subAgentCallService, agentRouter);
+                intentQueryService, dispatchDecisionService, subAgentCallService, agentRouter, chatMemory);
 
-        UserMessage userMessage = new UserMessage("用户原问题");
         OverAllState state = new OverAllState(Map.of("messages", List.of(userMessage)));
         RunnableConfig config = RunnableConfig.builder().build();
         config.context().put(AgentRunnableContextKeys.CONTEXT_KEY_TURN_ID, "turn-1");
@@ -102,6 +115,11 @@ class UniversalOrchestratorHookTest {
 
         hook.beforeAgent(state, config).join();
 
+        ArgumentCaptor<UniversalSubAgentCallService.SubAgentCallRequest> requestCaptor =
+                ArgumentCaptor.forClass(UniversalSubAgentCallService.SubAgentCallRequest.class);
+        verify(subAgentCallService).call(eq("wiki"), eq("routing"), requestCaptor.capture());
+        assertEquals(1, requestCaptor.getValue().attachments().size());
+        assertEquals("chat/u/c/a.png", requestCaptor.getValue().attachments().get(0).getObjectKey());
         assertTrue(Boolean.TRUE.equals(config.context().get(UniversalOrchestrationContextKeys.ORCHESTRATION_DELIVERED)));
     }
 

@@ -4,11 +4,13 @@ import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.hook.AgentHook;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ModelInterceptor;
+import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRouter;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunnableContextKeys;
 import io.github.jerryt92.j2agent.service.llm.tool.AgentUiToolEventInterceptor;
 import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.stereotype.Component;
 
@@ -32,17 +34,20 @@ public class UniversalAssistantOrchestratorHook extends AgentHook {
     private final UniversalDispatchDecisionService dispatchDecisionService;
     private final UniversalSubAgentCallService subAgentCallService;
     private final AgentRouter agentRouter;
+    private final ChatMemory chatMemory;
     private final OrchestrationModelInterceptor orchestrationModelInterceptor = new OrchestrationModelInterceptor();
 
     public UniversalAssistantOrchestratorHook(
             UniversalIntentQueryService intentQueryService,
             UniversalDispatchDecisionService dispatchDecisionService,
             UniversalSubAgentCallService subAgentCallService,
-            AgentRouter agentRouter) {
+            AgentRouter agentRouter,
+            ChatMemory chatMemory) {
         this.intentQueryService = intentQueryService;
         this.dispatchDecisionService = dispatchDecisionService;
         this.subAgentCallService = subAgentCallService;
         this.agentRouter = agentRouter;
+        this.chatMemory = chatMemory;
     }
 
     @Override
@@ -69,7 +74,11 @@ public class UniversalAssistantOrchestratorHook extends AgentHook {
         List<OrchestrationTraceEntry> trace = new ArrayList<>();
         Set<String> invokedAgentIds = new LinkedHashSet<>();
 
-        String routingQuery = intentQueryService.buildRoutingQueryFromMessages(messages, formatTrace(trace));
+        List<ChatAttachmentDto> turnAttachments = UniversalIntentQueryService.resolveLatestAttachments(
+                messages, chatMemory, turnKeys.parentConversationId());
+
+        String routingQuery = intentQueryService.buildRoutingQuery(
+                chatMemory, turnKeys.parentConversationId(), messages, formatTrace(trace));
         String candidates = intentQueryService.queryIntentAgents(turnKeys.parentConversationId(), routingQuery);
 
         if (UniversalIntentQueryService.isCandidatesEmpty(candidates)) {
@@ -96,36 +105,37 @@ public class UniversalAssistantOrchestratorHook extends AgentHook {
                 break;
             }
             String trimmedAgentId = agentId.trim();
-            String trimmedQuery = decision.query() == null ? "" : decision.query().trim();
-            if (StringUtils.isBlank(trimmedQuery)) {
+            if (StringUtils.isBlank(routingQuery)) {
                 break;
             }
 
             String callId = UUID.randomUUID().toString();
             String argumentsJson = "{\"agentId\":\"" + trimmedAgentId + "\",\"query\":"
-                    + jsonString(trimmedQuery) + "}";
+                    + jsonString(routingQuery) + "}";
             long startedAt = System.currentTimeMillis();
             if (emitter != null) {
                 emitter.onToolStart(callId, SubAgentCallNames.TOOL_NAME, argumentsJson);
             }
             String result = subAgentCallService.call(
                     trimmedAgentId,
-                    trimmedQuery,
+                    routingQuery,
                     new UniversalSubAgentCallService.SubAgentCallRequest(
                             turnKeys.contextId(),
                             turnKeys.turnId(),
                             turnKeys.userId(),
                             turnKeys.parentConversationId(),
-                            emitter));
+                            emitter,
+                            turnAttachments));
             if (emitter != null) {
                 emitter.onToolSuccess(callId, SubAgentCallNames.TOOL_NAME, result,
                         System.currentTimeMillis() - startedAt);
             }
 
-            trace.add(new OrchestrationTraceEntry(trimmedAgentId, trimmedQuery, result));
+            trace.add(new OrchestrationTraceEntry(trimmedAgentId, routingQuery, result));
             invokedAgentIds.add(trimmedAgentId);
 
-            routingQuery = intentQueryService.buildRoutingQueryFromMessages(messages, formatTrace(trace));
+            routingQuery = intentQueryService.buildRoutingQuery(
+                    chatMemory, turnKeys.parentConversationId(), messages, formatTrace(trace));
             candidates = intentQueryService.queryIntentAgents(turnKeys.parentConversationId(), routingQuery);
             round++;
         }

@@ -23,10 +23,10 @@ public class UniversalDispatchDecisionService {
 
     private static final String DECISION_SYSTEM_PROMPT = """
             你是通用助手的子智能体调度决策器。根据候选列表、对话上下文与已执行的子智能体调用记录，输出唯一 JSON 对象（不要 Markdown）：
-            {"action":"invoke"|"complete","agentId":"...","query":"...","reason":"..."}
+            {"action":"invoke"|"complete","agentId":"...","reason":"..."}
             规则：
-            1. action=invoke 时 agentId、query 必填；query 为传给子智能体的提炼问题
-            2. action=complete 时表示无需再调用子智能体；agentId、query 可省略
+            1. action=invoke 时 agentId 必填；子智能体将直接接收完整父会话上下文，无需提炼 query
+            2. action=complete 时表示无需再调用子智能体；agentId 可省略
             3. 已调用过的 agentId 不得再次 invoke（见已执行列表）
             4. 候选均不适用或问题已由子智能体充分回答时选 complete
             5. 使用与用户相同的语言撰写 reason""";
@@ -98,10 +98,10 @@ public class UniversalDispatchDecisionService {
             String action = StringUtils.defaultIfBlank(obj.getString("action"), "complete").trim().toLowerCase();
             if ("invoke".equals(action)) {
                 String agentId = StringUtils.trimToNull(obj.getString("agentId"));
-                String query = StringUtils.trimToNull(obj.getString("query"));
-                if (agentId == null || query == null) {
+                if (agentId == null) {
                     return DispatchDecision.complete("incomplete invoke");
                 }
+                String query = StringUtils.trimToNull(obj.getString("query"));
                 return DispatchDecision.invoke(agentId, query, StringUtils.defaultString(obj.getString("reason")));
             }
             return DispatchDecision.complete(StringUtils.defaultString(obj.getString("reason")));

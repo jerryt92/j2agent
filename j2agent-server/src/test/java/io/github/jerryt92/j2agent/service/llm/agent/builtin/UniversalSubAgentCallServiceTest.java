@@ -1,5 +1,6 @@
 package io.github.jerryt92.j2agent.service.llm.agent.builtin;
 
+import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
 import io.github.jerryt92.j2agent.service.llm.AgentTurnStateMachine;
 import io.github.jerryt92.j2agent.service.llm.agent.AgentStreamOptions;
 import io.github.jerryt92.j2agent.service.llm.agent.AgentStreamSession;
@@ -84,6 +85,29 @@ class UniversalSubAgentCallServiceTest {
         AgentRunContext runContext = optionsCaptor.getValue().agentRunContext();
         assertEquals("user-1:ctx-1:j2agent-qa-assistant", runContext.conversationId());
         assertTrue(runContext.subAgentCallRun());
+    }
+
+    @Test
+    void callForwardsAttachmentsToAgentRunContext() {
+        AiAgent wikiAgent = Mockito.mock(AiAgent.class);
+        when(wikiAgent.getAgentId()).thenReturn("j2agent-qa-assistant");
+        when(agentRouter.listCallableSubAgents()).thenReturn(List.of(wikiAgent));
+        when(agentRouter.route("j2agent-qa-assistant")).thenReturn(wikiAgent);
+
+        ArgumentCaptor<AgentStreamOptions> optionsCaptor = ArgumentCaptor.forClass(AgentStreamOptions.class);
+        when(agentStreamSession.stream(optionsCaptor.capture()))
+                .thenReturn(Flux.just(new StreamingTextParts("wiki answer", null)));
+
+        ChatAttachmentDto attachment = new ChatAttachmentDto().objectKey("chat/u/c/a.png").name("a.png");
+        String result = subAgentCallService.call(
+                "j2agent-qa-assistant",
+                "routing",
+                new UniversalSubAgentCallService.SubAgentCallRequest(
+                        "ctx-1", "turn-1", "user-1", "user-1:ctx-1:universal_assistant", null, List.of(attachment)));
+
+        assertEquals("wiki answer", result);
+        assertEquals(1, optionsCaptor.getValue().agentRunContext().attachments().size());
+        assertEquals("chat/u/c/a.png", optionsCaptor.getValue().agentRunContext().attachments().get(0).getObjectKey());
     }
 
     @Test
