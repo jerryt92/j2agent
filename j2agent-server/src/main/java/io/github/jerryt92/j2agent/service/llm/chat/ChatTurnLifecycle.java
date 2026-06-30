@@ -9,10 +9,12 @@ import io.github.jerryt92.j2agent.model.AgentEventType;
 import io.github.jerryt92.j2agent.model.AgentState;
 import io.github.jerryt92.j2agent.model.AgentStateTransition;
 import io.github.jerryt92.j2agent.model.AgentUiEventEnvelope;
+import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
 import io.github.jerryt92.j2agent.model.ChatCallback;
 import io.github.jerryt92.j2agent.model.ChatResponseDto;
 import io.github.jerryt92.j2agent.model.MessageDto;
 import io.github.jerryt92.j2agent.service.llm.AgentEventBuilder;
+import io.github.jerryt92.j2agent.service.llm.advisor.ReactCompatibleMessageChatMemoryAdvisor;
 import io.github.jerryt92.j2agent.service.llm.AgentTurnStateMachine;
 import io.github.jerryt92.j2agent.service.llm.LlmProviderErrorFormatter;
 import io.github.jerryt92.j2agent.service.llm.TurnStepRecorder;
@@ -24,7 +26,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.UserMessage;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -108,6 +112,7 @@ public final class ChatTurnLifecycle {
             AgentStateTransition transition = null;
             if (StringUtils.isNotBlank(answerDelta)
                     && (stateMachine.getState() == AgentState.THINKING
+                    || stateMachine.getState() == AgentState.AGENT_SCHEDULING
                     || stateMachine.getState() == AgentState.CALLING_TOOL
                     || stateMachine.getState() == AgentState.LOAD_SKILL)) {
                 transition = stateMachine.transit(AgentState.STREAMING_TEXT, "firstAnswerToken");
@@ -241,6 +246,27 @@ public final class ChatTurnLifecycle {
                         "elapsedMs", elapsedMs,
                         "stepCount", turnStepRecorder == null ? 0 : turnStepRecorder.getSteps().size()),
                 "turn finished");
+    }
+
+    /**
+     * 回合开始时将用户消息写入记忆（通用助手在编排/子智能体阶段前落库，避免刷新后历史为空）。
+     */
+    public static void persistTurnUserMessage(ChatMemory chatMemory,
+                                            String conversationId,
+                                            String text,
+                                            List<ChatAttachmentDto> attachments) {
+        if (chatMemory == null || !StringUtils.isNotBlank(conversationId)) {
+            return;
+        }
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put(ChatMemory.CONVERSATION_ID, conversationId);
+        metadata.put("attachments", attachments == null ? List.of() : attachments);
+        metadata.put(ReactCompatibleMessageChatMemoryAdvisor.META_USER_MESSAGE_PRE_PERSISTED, Boolean.TRUE);
+        UserMessage userMessage = UserMessage.builder()
+                .text(text != null ? text : "")
+                .metadata(metadata)
+                .build();
+        chatMemory.add(conversationId, userMessage);
     }
 
     public static void persistStreamedAssistant(ChatMemory chatMemory,

@@ -41,6 +41,12 @@ import java.util.Map;
 public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMemoryAdvisor {
 
     /**
+     * 用户消息 metadata 键：回合开始时已由 {@link io.github.jerryt92.j2agent.service.llm.chat.ChatTurnLifecycle}
+     * 预落库，Advisor 跳过重复 user add。
+     */
+    public static final String META_USER_MESSAGE_PRE_PERSISTED = "userMessagePrePersisted";
+
+    /**
      * 用户消息 metadata 键：子智能体无状态调用时为 true，Advisor 跳过子智能体记忆读写。
      */
     public static final String META_SUB_AGENT_CALL_RUN = "subAgentCallRun";
@@ -198,6 +204,23 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
         return this.scheduler;
     }
 
+    private static boolean isUserMessagePrePersisted(List<Message> instructions) {
+        if (instructions == null) {
+            return false;
+        }
+        for (Message message : instructions) {
+            if (!(message instanceof UserMessage userMessage)) {
+                continue;
+            }
+            Map<String, Object> metadata = userMessage.getMetadata();
+            if (metadata != null
+                    && isTruthyMetadataFlag(metadata.get(META_USER_MESSAGE_PRE_PERSISTED))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean isSubAgentCallRun(List<Message> instructions) {
         if (instructions == null) {
             return false;
@@ -222,6 +245,10 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
         return Boolean.TRUE.equals(flag) || "true".equalsIgnoreCase(String.valueOf(flag));
     }
 
+    private static boolean isSubAgentCallRunFromContext(Map<String, Object> context) {
+        return context != null && isTruthyMetadataFlag(context.get(META_SUB_AGENT_CALL_RUN));
+    }
+
     @Override
     public ChatClientRequest before(ChatClientRequest chatClientRequest, AdvisorChain advisorChain) {
         ChatClientRequest requestWithConversationId = ensureConversationIdInContext(chatClientRequest);
@@ -229,7 +256,9 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
         if (isSubAgentCallRun(instructions)) {
             ACTIVE_SUB_AGENT_CALL_RUN.set(true);
             ACTIVE_CONVERSATION_ID.remove();
-            return requestWithConversationId;
+            var contextBuilder = new java.util.HashMap<>(requestWithConversationId.context());
+            contextBuilder.put(META_SUB_AGENT_CALL_RUN, Boolean.TRUE);
+            return requestWithConversationId.mutate().context(contextBuilder).build();
         }
         String conversationId = resolvePersistableConversationId(requestWithConversationId.context(), instructions);
         if (!StringUtils.hasText(conversationId)) {
@@ -261,7 +290,7 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
                 .build();
 
         Message userMessage = processedChatClientRequest.prompt().getLastUserOrToolResponseMessage();
-        if (userMessage != null) {
+        if (userMessage != null && !isUserMessagePrePersisted(instructions)) {
             this.chatMemory.add(conversationId, userMessage);
         }
 
@@ -279,7 +308,8 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
                     .toList();
         }
         try {
-            if (Boolean.TRUE.equals(ACTIVE_SUB_AGENT_CALL_RUN.get())) {
+            if (Boolean.TRUE.equals(ACTIVE_SUB_AGENT_CALL_RUN.get())
+                    || isSubAgentCallRunFromContext(chatClientResponse.context())) {
                 return chatClientResponse;
             }
             String conversationId = resolvePersistableConversationId(chatClientResponse.context(), null);
@@ -329,8 +359,10 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
                 .map(request -> this.before(request, streamAdvisorChain))
                 .flatMapMany(processedRequest -> {
                     String conversationId = ACTIVE_CONVERSATION_ID.get();
+                    boolean subAgentCallRun = Boolean.TRUE.equals(ACTIVE_SUB_AGENT_CALL_RUN.get())
+                            || isSubAgentCallRunFromContext(processedRequest.context());
                     return streamAdvisorChain.nextStream(processedRequest)
-                            .map(response -> enrichResponseContext(response, conversationId));
+                            .map(response -> enrichResponseContext(response, conversationId, subAgentCallRun));
                 })
                 .transform(flux -> new ChatClientMessageAggregator().aggregateChatClientResponse(flux,
                         response -> this.after(response, streamAdvisorChain)))
@@ -343,14 +375,24 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
     /**
      * 将 {@link #before} 解析的会话键写入每个流式 chunk 的 context，供聚合后 {@link #after} 与 Graph 使用。
      */
-    private static ChatClientResponse enrichResponseContext(ChatClientResponse response, String conversationId) {
-        if (!StringUtils.hasText(conversationId)
-                || response.context().containsKey(ChatMemory.CONVERSATION_ID)) {
+    private static ChatClientResponse enrichResponseContext(ChatClientResponse response,
+                                                            String conversationId,
+                                                            boolean subAgentCallRun) {
+        if (!StringUtils.hasText(conversationId) && !subAgentCallRun) {
             return response;
         }
         var contextBuilder = new java.util.HashMap<>(response.context());
-        contextBuilder.put(ChatMemory.CONVERSATION_ID, conversationId);
-        return response.mutate().context(contextBuilder).build();
+        boolean changed = false;
+        if (StringUtils.hasText(conversationId)
+                && !contextBuilder.containsKey(ChatMemory.CONVERSATION_ID)) {
+            contextBuilder.put(ChatMemory.CONVERSATION_ID, conversationId);
+            changed = true;
+        }
+        if (subAgentCallRun && !isSubAgentCallRunFromContext(contextBuilder)) {
+            contextBuilder.put(META_SUB_AGENT_CALL_RUN, Boolean.TRUE);
+            changed = true;
+        }
+        return changed ? response.mutate().context(contextBuilder).build() : response;
     }
 
     /**

@@ -816,7 +816,7 @@ components:
       properties:
         state:
           type: string
-          enum: [ "IDLE", "THINKING", "STREAMING_TEXT", "CALLING_TOOL", "LOAD_SKILL", "COMPLETED", "FAILED", "CANCELLED" ]
+          enum: [ "IDLE", "AGENT_SCHEDULING", "THINKING", "STREAMING_TEXT", "CALLING_TOOL", "LOAD_SKILL", "COMPLETED", "FAILED", "CANCELLED" ]
           description: Agent 状态
         toolName:
           type: string

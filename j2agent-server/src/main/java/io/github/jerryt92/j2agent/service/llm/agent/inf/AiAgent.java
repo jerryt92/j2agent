@@ -5,6 +5,7 @@ import com.alibaba.cloud.ai.graph.RunnableConfig;
 import com.alibaba.cloud.ai.graph.agent.Agent;
 import com.alibaba.cloud.ai.graph.agent.Builder;
 import com.alibaba.cloud.ai.graph.agent.ReactAgent;
+import com.alibaba.cloud.ai.graph.agent.hook.Hook;
 import com.alibaba.cloud.ai.graph.agent.interceptor.Interceptor;
 import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
 import com.alibaba.cloud.ai.graph.skills.SkillMetadata;
@@ -76,7 +77,7 @@ public abstract class AiAgent {
     public abstract String getAgentDescription();
 
     /**
-     * 调度提示词：仅供通用助手意图路由等内部调度使用，不展示到界面。
+     * 调度提示词：仅供通用助手被动意图召回等内部调度使用，不展示到界面。
      * 未 override 或返回空时，{@link #resolveDispatchPrompt()} 回退为 {@link #getAgentDescription()}。
      */
     public String getDispatchPrompt() {
@@ -254,9 +255,10 @@ public abstract class AiAgent {
         if (this.agent == null) {
             throw new IllegalStateException("Agent not initialized: " + getAgentId());
         }
-        RunnableConfig runnableConfig = RunnableConfig.builder()
+        RunnableConfig.Builder configBuilder = RunnableConfig.builder()
                 .threadId(context.conversationId())
-                .build();
+                .addMetadata(AgentRunnableContextKeys.CONTEXT_KEY_TURN_ID, context.turnId());
+        RunnableConfig runnableConfig = configBuilder.build();
         if (context.toolEventEmitter() != null) {
             runnableConfig.context().put(
                     AgentUiToolEventInterceptor.CONTEXT_KEY_TOOL_EVENT_EMITTER, context.toolEventEmitter());
@@ -274,6 +276,9 @@ public abstract class AiAgent {
         metadata.put("attachments", context.attachments());
         if (context.subAgentCallRun()) {
             metadata.put(ReactCompatibleMessageChatMemoryAdvisor.META_SUB_AGENT_CALL_RUN, Boolean.TRUE);
+        }
+        if (context.userMessagePrePersisted()) {
+            metadata.put(ReactCompatibleMessageChatMemoryAdvisor.META_USER_MESSAGE_PRE_PERSISTED, Boolean.TRUE);
         }
         var userMessageBuilder = UserMessage.builder()
                 .text(context.text())
@@ -369,6 +374,15 @@ public abstract class AiAgent {
     }
 
     /**
+     * 如需在 ReactAgent 上挂载 Hook（如意图注入、技能披露），请覆盖此方法。
+     *
+     * @return Hook 实例数组；默认无 Hook。内置技能目录存在时，基类另通过 {@link #buildSkillsAgentHook()} 自动挂载。
+     */
+    protected Hook[] buildHooks() {
+        return new Hook[0];
+    }
+
+    /**
      * 将 {@link #buildTools()} 转为 {@link ToolCallback}；子类可覆盖以自定义本地工具合并。
      * MCP 由 {@link #buildEffectiveToolCallbacks()} 在 {@link #buildAgent()} 中统一追加，不受本方法覆盖影响。
      *
@@ -450,6 +464,19 @@ public abstract class AiAgent {
         return environment != null ? environment.getProperty("j2agent.plugin.path") : null;
     }
 
+    private Hook[] buildEffectiveHooks() {
+        List<Hook> hooks = new ArrayList<>();
+        AgentSkillsAgentHook skillsHook = buildSkillsAgentHook();
+        if (skillsHook != null) {
+            hooks.add(skillsHook);
+        }
+        Hook[] customHooks = buildHooks();
+        if (customHooks != null) {
+            Arrays.stream(customHooks).filter(Objects::nonNull).forEach(hooks::add);
+        }
+        return hooks.toArray(new Hook[0]);
+    }
+
     /**
      * React 拦截器链；最外层为工具异常兜底，其内为 UI 事件与技能加载。
      *
@@ -517,9 +544,9 @@ public abstract class AiAgent {
                 .tools(withoutNullToolCallbacks(buildEffectiveToolCallbacks()))
                 .systemPrompt(loadSystemPrompt())
                 .interceptors(buildEffectiveInterceptors());
-        AgentSkillsAgentHook skillsHook = buildSkillsAgentHook();
-        if (skillsHook != null) {
-            builder = builder.hooks(skillsHook);
+        Hook[] effectiveHooks = buildEffectiveHooks();
+        if (effectiveHooks.length > 0) {
+            builder = builder.hooks(effectiveHooks);
         }
         return builder;
     }

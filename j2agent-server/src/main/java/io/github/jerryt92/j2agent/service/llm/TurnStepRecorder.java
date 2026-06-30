@@ -5,7 +5,7 @@ import io.github.jerryt92.j2agent.model.AgentEventType;
 import io.github.jerryt92.j2agent.model.AgentState;
 import io.github.jerryt92.j2agent.model.AgentUiEventEnvelope;
 import io.github.jerryt92.j2agent.model.ToolCallEventPayload;
-import io.github.jerryt92.j2agent.service.llm.agent.builtin.UniversalSubAgentCallTool;
+import io.github.jerryt92.j2agent.service.llm.agent.builtin.SubAgentCallNames;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -112,7 +112,7 @@ public final class TurnStepRecorder {
             }
         }
         String toolName = payload.toolName();
-        if (UniversalSubAgentCallTool.isSubAgentCallToolName(toolName)) {
+        if (SubAgentCallNames.isSubAgentCallToolName(toolName)) {
             String agentDisplayName = parseAgentIdFromCallAgentArguments(payload.arguments());
             if (agentDisplayName != null) {
                 return agentDisplayName;

@@ -17,5 +17,7 @@ public enum AgentRunEventType {
     RAG_RETRIEVE,
     RAG_SOURCE,
     LLM_RETRY,
+    /** 通用助手编排：开放意图召回 LLM */
+    INTENT_RECALL,
     ERROR
 }

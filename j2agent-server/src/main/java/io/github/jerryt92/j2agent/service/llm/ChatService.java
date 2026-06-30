@@ -27,7 +27,9 @@ import io.github.jerryt92.j2agent.logging.llm.AgentRunLogSnapshot;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
 import io.github.jerryt92.j2agent.service.llm.rag.TurnRagSourceRegistry;
 import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
+import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnLifecycle;
 import io.github.jerryt92.j2agent.service.llm.agent.builtin.SubAgentStreamBridge;
+import io.github.jerryt92.j2agent.service.llm.agent.builtin.UniversalOrchestrationRunHolder;
 import io.github.jerryt92.j2agent.service.llm.universal.UniversalAssistantConstants;
 import io.github.jerryt92.j2agent.utils.UUIDv7Utils;
 import lombok.extern.slf4j.Slf4j;
@@ -220,23 +222,6 @@ public class ChatService {
                         streamedTextLock,
                         userMessageIndex));
             }
-            AgentRunContext agentRunContext = new AgentRunContext(
-                    limitedUserMessage,
-                    contextId,
-                    userId,
-                    turnId,
-                    turnConversationId,
-                    resolvedAgentId,
-                    finalAttachments,
-                    toolEventEmitter);
-            AgentRunLogger.info(runLogSnapshot, AgentRunEventType.TURN_START,
-                    AgentRunLogger.kv(
-                            "userMsgLen", limitedUserMessage == null ? 0 : limitedUserMessage.length(),
-                            "attachmentCount", finalAttachments.size()),
-                    "turn started");
-            AgentRunLogger.info(runLogSnapshot, AgentRunEventType.CHAT,
-                    AgentRunLogger.kv("role", "user", "msgLen", latestUserMessage == null ? 0 : latestUserMessage.length()),
-                    "user message accepted");
             // 纯文本 assistant 由 streamedContent/streamedReasoning 落库；Advisor 仅写入 tool_calls 等结构化消息
             AiAgent aiAgent = aiAgentForConversation;
             AgentThinkingOverride effectiveThinking = ThinkingOverrideResolver.resolve(request, aiAgentForConversation);
@@ -249,6 +234,30 @@ public class ChatService {
             };
             agentChatMemoryRef.set(aiAgentForConversation.getChatMemory());
             final ChatMemory agentChatMemory = agentChatMemoryRef.get();
+            final boolean universalAssistant = UniversalAssistantConstants.isUniversalAssistant(resolvedAgentId);
+            if (universalAssistant) {
+                ChatTurnLifecycle.persistTurnUserMessage(
+                        agentChatMemory, turnConversationId, limitedUserMessage, finalAttachments);
+            }
+            AgentRunContext agentRunContext = new AgentRunContext(
+                    limitedUserMessage,
+                    contextId,
+                    userId,
+                    turnId,
+                    turnConversationId,
+                    resolvedAgentId,
+                    finalAttachments,
+                    toolEventEmitter,
+                    false,
+                    universalAssistant);
+            AgentRunLogger.info(runLogSnapshot, AgentRunEventType.TURN_START,
+                    AgentRunLogger.kv(
+                            "userMsgLen", limitedUserMessage == null ? 0 : limitedUserMessage.length(),
+                            "attachmentCount", finalAttachments.size()),
+                    "turn started");
+            AgentRunLogger.info(runLogSnapshot, AgentRunEventType.CHAT,
+                    AgentRunLogger.kv("role", "user", "msgLen", latestUserMessage == null ? 0 : latestUserMessage.length()),
+                    "user message accepted");
             AtomicLong streamStartedAtMs = new AtomicLong(0L);
             chatChatCallback.completeCall = () -> {
                 if (!terminated.compareAndSet(false, true)) {
@@ -312,6 +321,7 @@ public class ChatService {
                         StreamedAssistantPersistence.disable(turnConversationId);
                         TurnRagSourceRegistry.clear(turnConversationId);
                         SubAgentStreamBridge.unbind(turnId);
+                        UniversalOrchestrationRunHolder.unbind(turnId);
                         logTurnEnd(runLogSnapshot, streamStartedAtMs, turnStepRecorder, AgentState.COMPLETED);
                         flushTurnTrace.run();
                         runOriginalCompleteCall(originalCompleteCall);
@@ -357,6 +367,7 @@ public class ChatService {
                             StreamedAssistantPersistence.disable(turnConversationId);
                             TurnRagSourceRegistry.clear(turnConversationId);
                             SubAgentStreamBridge.unbind(turnId);
+                            UniversalOrchestrationRunHolder.unbind(turnId);
                         },
                         flushTurnTrace,
                         releaseActiveTurn);
@@ -392,7 +403,10 @@ public class ChatService {
                 }
             }
             AtomicInteger retryNo = new AtomicInteger(0);
-            Runnable releaseSubAgentBridge = () -> SubAgentStreamBridge.unbind(turnId);
+            Runnable releaseSubAgentBridge = () -> {
+                SubAgentStreamBridge.unbind(turnId);
+                UniversalOrchestrationRunHolder.unbind(turnId);
+            };
             AgentStreamOptions agentStreamOptions = new AgentStreamOptions(
                     aiAgent,
                     agentRunContext,
@@ -436,6 +450,7 @@ public class ChatService {
                     StreamedAssistantPersistence.disable(turnConversationId);
                     TurnRagSourceRegistry.clear(turnConversationId);
                     SubAgentStreamBridge.unbind(turnId);
+                    UniversalOrchestrationRunHolder.unbind(turnId);
                     logTurnEnd(runLogSnapshot, streamStartedAtMs, turnStepRecorder, AgentState.CANCELLED);
                     // 关闭上游流，停止继续接收增量 token
                     if (!disposable.isDisposed()) {
@@ -482,6 +497,7 @@ public class ChatService {
                 StreamedAssistantPersistence.disable(failedConversationId);
                 TurnRagSourceRegistry.clear(failedConversationId);
                 SubAgentStreamBridge.unbind(turnId);
+                UniversalOrchestrationRunHolder.unbind(turnId);
                 AgentRunLogContext.clear(failedConversationId);
             }
             Runnable releaseActiveTurnOnFailure = () -> {
@@ -530,6 +546,7 @@ public class ChatService {
             AgentStateTransition transition = null;
             if (StringUtils.isNotBlank(answerDelta)
                     && (stateMachine.getState() == AgentState.THINKING
+                    || stateMachine.getState() == AgentState.AGENT_SCHEDULING
                     || stateMachine.getState() == AgentState.CALLING_TOOL
                     || stateMachine.getState() == AgentState.LOAD_SKILL)) {
                 transition = stateMachine.transit(AgentState.STREAMING_TEXT, "firstAnswerToken");

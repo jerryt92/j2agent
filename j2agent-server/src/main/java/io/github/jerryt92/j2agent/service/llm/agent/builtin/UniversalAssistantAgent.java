@@ -1,5 +1,6 @@
 package io.github.jerryt92.j2agent.service.llm.agent.builtin;
 
+import com.alibaba.cloud.ai.graph.agent.hook.Hook;
 import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
 import io.github.jerryt92.j2agent.service.llm.universal.UniversalAssistantConstants;
 import org.springframework.stereotype.Component;
@@ -8,18 +9,15 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
 /**
- * 平台内置通用助手：ReAct + 意图查询 / 调用子智能体工具。
+ * 平台内置通用助手：编排 Hook 自动调度子智能体，主模型仅处理无子调用的通用对话。
  */
 @Component
 public class UniversalAssistantAgent extends AiAgent {
 
-    private final UniversalIntentQueryTool intentQueryTool;
-    private final UniversalSubAgentCallTool subAgentCallTool;
+    private final UniversalAssistantOrchestratorHook universalAssistantOrchestratorHook;
 
-    public UniversalAssistantAgent(UniversalIntentQueryTool intentQueryTool,
-                                   UniversalSubAgentCallTool subAgentCallTool) {
-        this.intentQueryTool = intentQueryTool;
-        this.subAgentCallTool = subAgentCallTool;
+    public UniversalAssistantAgent(UniversalAssistantOrchestratorHook universalAssistantOrchestratorHook) {
+        this.universalAssistantOrchestratorHook = universalAssistantOrchestratorHook;
     }
 
     @Override
@@ -34,7 +32,7 @@ public class UniversalAssistantAgent extends AiAgent {
 
     @Override
     public String getAgentDescription() {
-        return "平台通用助手，可识别意图并调用子智能体处理复杂问题。";
+        return "平台通用助手，可自动委派子智能体处理专业问题。";
     }
 
     @Override
@@ -54,7 +52,12 @@ public class UniversalAssistantAgent extends AiAgent {
 
     @Override
     protected Object[] buildTools() {
-        return new Object[] { intentQueryTool, subAgentCallTool };
+        return new Object[0];
+    }
+
+    @Override
+    protected Hook[] buildHooks() {
+        return new Hook[] { universalAssistantOrchestratorHook };
     }
 
     @Override
@@ -67,7 +70,6 @@ public class UniversalAssistantAgent extends AiAgent {
             // fallback below
         }
         return """
-                你是 AI 通用助手。复杂或专业问题先调用 query_intent_agents，再根据结果调用 call_sub_agent 或向用户澄清。
-                简单问题可直接回答。""";
+                你是 AI 通用助手。专业任务由平台自动委派子智能体；你仅在无子调用时直接回答用户。""";
     }
 }

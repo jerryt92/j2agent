@@ -14,10 +14,7 @@ import io.github.jerryt92.j2agent.service.llm.rag.TurnRagSourceRegistry;
 import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.ai.chat.model.ToolContext;
-import org.springframework.ai.tool.annotation.Tool;
-import org.springframework.ai.tool.annotation.ToolParam;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -26,49 +23,32 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 通用助手工具：调用子智能体，运行时切入其完整会话记忆并流式回传结果。
+ * 通用助手子智能体调用（无 {@code @Tool}），由编排 Hook 直接调用。
+ * 委派调用使用 {@code subAgentCallRun=true}，不读写子智能体会话记忆，避免聊天记录落入专业 Agent 键。
  */
 @Slf4j
-@Component
-public class UniversalSubAgentCallTool {
-
-    public static final String TOOL_NAME = "call_sub_agent";
-
-    /** 历史轨迹兼容 */
-    public static final String LEGACY_TOOL_NAME_DELEGATE = "delegate_to_agent";
-
-    public static final String LEGACY_TOOL_NAME_CALL_AGENT = "call_agent";
+@Service
+public class UniversalSubAgentCallService {
 
     private static final int MAX_SUB_AGENT_CALL_RESULT_LENGTH = ToolEventEmitter.MAX_TOOL_RESULT_LENGTH;
 
     private final AgentRouter agentRouter;
     private final AgentStreamSession agentStreamSession;
 
-    public UniversalSubAgentCallTool(AgentRouter agentRouter, AgentStreamSession agentStreamSession) {
+    public UniversalSubAgentCallService(AgentRouter agentRouter, AgentStreamSession agentStreamSession) {
         this.agentRouter = agentRouter;
         this.agentStreamSession = agentStreamSession;
     }
 
-    public static boolean isSubAgentCallToolName(String toolName) {
-        if (StringUtils.isBlank(toolName)) {
-            return false;
-        }
-        String trimmed = toolName.trim();
-        return TOOL_NAME.equals(trimmed)
-                || LEGACY_TOOL_NAME_DELEGATE.equals(trimmed)
-                || LEGACY_TOOL_NAME_CALL_AGENT.equals(trimmed);
-    }
-
-    @Tool(name = TOOL_NAME, description = "将用户问题交给指定子智能体处理；调用期间使用该子智能体的完整对话记忆。")
-    public String callSubAgent(
-            @ToolParam(description = "目标子智能体的 agentId") String agentId,
-            @ToolParam(description = "传给子智能体的提炼问题") String query,
-            ToolContext toolContext) {
+    public String call(String agentId, String query, SubAgentCallRequest request) {
         if (StringUtils.isBlank(agentId)) {
             return "Error: agentId is required";
         }
         if (StringUtils.isBlank(query)) {
             return "Error: query is required";
+        }
+        if (request == null) {
+            return "Error: missing turn context for sub-agent call";
         }
         String trimmedAgentId = agentId.trim();
         String trimmedQuery = query.trim();
@@ -76,12 +56,6 @@ public class UniversalSubAgentCallTool {
                 .anyMatch(a -> trimmedAgentId.equals(a.getAgentId()));
         if (!callable) {
             return "Error: unknown or non-callable agentId: " + trimmedAgentId;
-        }
-
-        TurnContext turnContext = resolveTurnContext(toolContext);
-        if (turnContext == null) {
-            log.warn("call_sub_agent missing turn context");
-            return "Error: missing turn context for sub-agent call";
         }
 
         AiAgent targetAgent;
@@ -92,15 +66,15 @@ public class UniversalSubAgentCallTool {
         }
 
         String specialistConversationId = ConversationIdCodec.format(
-                turnContext.userId(), turnContext.contextId(), trimmedAgentId);
-        AgentThinkingOverride parentThinking = ThinkingOverrideRegistry.get(turnContext.parentConversationId());
+                request.userId(), request.contextId(), trimmedAgentId);
+        AgentThinkingOverride parentThinking = ThinkingOverrideRegistry.get(request.parentConversationId());
         AgentThinkingOverride runtimeThinking = parentThinking != null
                 ? parentThinking
                 : targetAgent.getThinkingOverride();
         ThinkingOverrideRegistry.bind(specialistConversationId, runtimeThinking);
-        TurnRagSourceRegistry.shareHolder(specialistConversationId, turnContext.parentConversationId());
+        TurnRagSourceRegistry.shareHolder(specialistConversationId, request.parentConversationId());
 
-        SubAgentStreamBridge.Target bridge = SubAgentStreamBridge.lookup(turnContext.turnId());
+        SubAgentStreamBridge.Target bridge = SubAgentStreamBridge.lookup(request.turnId());
         StringBuilder content = bridge != null ? bridge.streamedContent() : new StringBuilder();
         StringBuilder reasoning = bridge != null ? bridge.streamedReasoning() : new StringBuilder();
         Object textLock = bridge != null ? bridge.streamedTextLock() : new Object();
@@ -109,13 +83,14 @@ public class UniversalSubAgentCallTool {
 
         AgentRunContext subContext = new AgentRunContext(
                 trimmedQuery,
-                turnContext.contextId(),
-                turnContext.userId(),
-                turnContext.turnId(),
+                request.contextId(),
+                request.userId(),
+                request.turnId(),
                 specialistConversationId,
                 trimmedAgentId,
                 List.of(),
-                turnContext.toolEventEmitter(),
+                request.toolEventEmitter(),
+                true,
                 false);
 
         try {
@@ -155,7 +130,7 @@ public class UniversalSubAgentCallTool {
 
             String text = content.toString().trim();
             if (StringUtils.isBlank(text)) {
-                log.warn("call_sub_agent empty result: agentId={}", trimmedAgentId);
+                log.warn("sub-agent call empty result: agentId={}", trimmedAgentId);
                 return "子智能体未返回有效内容，请稍后重试。";
             }
             if (MAX_SUB_AGENT_CALL_RESULT_LENGTH > 0 && text.length() > MAX_SUB_AGENT_CALL_RESULT_LENGTH) {
@@ -163,7 +138,7 @@ public class UniversalSubAgentCallTool {
             }
             return text;
         } catch (Exception ex) {
-            log.warn("call_sub_agent 失败: agentId={}", trimmedAgentId, ex);
+            log.warn("sub-agent call 失败: agentId={}", trimmedAgentId, ex);
             Throwable cause = ex instanceof RuntimeException runtime && runtime.getCause() != null
                     ? runtime.getCause()
                     : ex;
@@ -177,33 +152,7 @@ public class UniversalSubAgentCallTool {
         }
     }
 
-    private static TurnContext resolveTurnContext(ToolContext toolContext) {
-        String turnId = AgentToolContextSupport.turnId(toolContext);
-        SubAgentStreamBridge.Target bridge = SubAgentStreamBridge.lookup(turnId);
-        if (bridge != null
-                && StringUtils.isNoneBlank(bridge.contextId(), bridge.turnId(), bridge.userId(), bridge.parentConversationId())) {
-            return new TurnContext(
-                    bridge.contextId(),
-                    bridge.turnId(),
-                    bridge.userId(),
-                    bridge.parentConversationId(),
-                    bridge.toolEventEmitter());
-        }
-        String contextId = AgentToolContextSupport.contextId(toolContext);
-        String userId = AgentToolContextSupport.userId(toolContext);
-        String parentConversationId = AgentToolContextSupport.parentConversationId(toolContext);
-        if (StringUtils.isAnyBlank(contextId, turnId, userId, parentConversationId)) {
-            return null;
-        }
-        return new TurnContext(
-                contextId,
-                turnId,
-                userId,
-                parentConversationId,
-                AgentToolContextSupport.toolEventEmitter(toolContext));
-    }
-
-    private record TurnContext(
+    public record SubAgentCallRequest(
             String contextId,
             String turnId,
             String userId,

@@ -14,7 +14,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
-import org.springframework.ai.chat.model.ToolContext;
 import reactor.core.publisher.Flux;
 
 import java.util.HashMap;
@@ -23,21 +22,20 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
-class UniversalSubAgentCallToolTest {
+class UniversalSubAgentCallServiceTest {
 
     private AgentRouter agentRouter;
     private AgentStreamSession agentStreamSession;
-    private UniversalSubAgentCallTool subAgentCallTool;
+    private UniversalSubAgentCallService subAgentCallService;
 
     @BeforeEach
     void setUp() {
         agentRouter = Mockito.mock(AgentRouter.class);
         agentStreamSession = Mockito.mock(AgentStreamSession.class);
-        subAgentCallTool = new UniversalSubAgentCallTool(agentRouter, agentStreamSession);
+        subAgentCallService = new UniversalSubAgentCallService(agentRouter, agentStreamSession);
     }
 
     @AfterEach
@@ -46,7 +44,7 @@ class UniversalSubAgentCallToolTest {
     }
 
     @Test
-    void callSubAgentUsesSpecialistConversationIdAndFullMemory() {
+    void callUsesSpecialistConversationIdAndFullMemory() {
         AiAgent wikiAgent = Mockito.mock(AiAgent.class);
         when(wikiAgent.getAgentId()).thenReturn("j2agent-qa-assistant");
         when(agentRouter.listCallableSubAgents()).thenReturn(List.of(wikiAgent));
@@ -75,25 +73,27 @@ class UniversalSubAgentCallToolTest {
         ctx.put(AgentRunnableContextKeys.CONTEXT_KEY_USER_ID, "user-1");
         ctx.put(AgentRunnableContextKeys.CONTEXT_KEY_CHAT_CONVERSATION_ID, "user-1:ctx-1:universal_assistant");
         ctx.put(AgentUiToolEventInterceptor.CONTEXT_KEY_TOOL_EVENT_EMITTER, null);
-        ToolContext toolContext = new ToolContext(ctx);
 
-        String result = subAgentCallTool.callSubAgent("j2agent-qa-assistant", "查文档", toolContext);
+        String result = subAgentCallService.call(
+                "j2agent-qa-assistant",
+                "查文档",
+                new UniversalSubAgentCallService.SubAgentCallRequest(
+                        "ctx-1", "turn-1", "user-1", "user-1:ctx-1:universal_assistant", null));
 
         assertEquals("wiki answer", result);
         AgentRunContext runContext = optionsCaptor.getValue().agentRunContext();
         assertEquals("user-1:ctx-1:j2agent-qa-assistant", runContext.conversationId());
-        assertFalse(runContext.subAgentCallRun());
+        assertTrue(runContext.subAgentCallRun());
     }
 
     @Test
-    void callSubAgentRejectsUnknownAgent() {
+    void callRejectsUnknownAgent() {
         when(agentRouter.listCallableSubAgents()).thenReturn(List.of());
-        Map<String, Object> ctx = Map.of(
-                AgentRunnableContextKeys.CONTEXT_KEY_CONTEXT_ID, "ctx-1",
-                AgentRunnableContextKeys.CONTEXT_KEY_TURN_ID, "turn-1",
-                AgentRunnableContextKeys.CONTEXT_KEY_USER_ID, "user-1",
-                AgentRunnableContextKeys.CONTEXT_KEY_CHAT_CONVERSATION_ID, "user-1:ctx-1:universal_assistant");
-        String result = subAgentCallTool.callSubAgent("missing", "q", new ToolContext(ctx));
+        String result = subAgentCallService.call(
+                "missing",
+                "q",
+                new UniversalSubAgentCallService.SubAgentCallRequest(
+                        "ctx-1", "turn-1", "user-1", "user-1:ctx-1:universal_assistant", null));
         assertTrue(result.startsWith("Error:"));
     }
 }
