@@ -5,9 +5,12 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
+import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
 import io.github.jerryt92.j2agent.service.llm.LlmSyncService;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRouter;
 import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
+import io.github.jerryt92.j2agent.service.llm.memory.ChatMemoryMessageCodec;
+import io.github.jerryt92.j2agent.service.rag.query.QueryUserMessageSupport;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.memory.ChatMemory;
@@ -55,6 +58,9 @@ public class UniversalIntentQueryService {
     /** 路由上下文最多保留的对话轮数（user + assistant 各计一条）。 */
     private static final int MAX_ROUTING_CONTEXT_ROUNDS = 3;
 
+    /** 历史纯图用户消息在 routing 上下文中的占位行。 */
+    static final String IMAGE_ONLY_DIALOGUE_LINE = "用户: [图片]";
+
     private final AgentRouter agentRouter;
     private final LlmSyncService llmSyncService;
 
@@ -64,12 +70,22 @@ public class UniversalIntentQueryService {
     }
 
     /**
-     * 从图内 messages 与可选编排 Trace 构造路由查询文本。
+     * 结合会话记忆、图内 messages 与可选编排 Trace 构造路由查询文本（开放召回、调度决策与子智能体入参共用）。
      */
-    public String buildRoutingQueryFromMessages(List<Message> messages, String orchestrationTrace) {
-        List<String> contextLines = extractRecentDialogueLines(messages, MAX_ROUTING_CONTEXT_ROUNDS);
+    public String buildRoutingQuery(ChatMemory memory,
+                                    String conversationId,
+                                    List<Message> messages,
+                                    String orchestrationTrace) {
         String latestUser = extractLatestUserText(messages);
-        if (StringUtils.isBlank(latestUser) && contextLines.isEmpty() && StringUtils.isBlank(orchestrationTrace)) {
+        boolean hasAttachments = hasAttachmentsInMessages(messages);
+        List<String> contextLines = resolveContextLines(memory, conversationId, messages, latestUser);
+        if (StringUtils.isBlank(latestUser) && hasAttachments) {
+            contextLines = dedupeTrailingImageMarker(contextLines);
+        }
+        if (StringUtils.isBlank(latestUser)
+                && contextLines.isEmpty()
+                && StringUtils.isBlank(orchestrationTrace)
+                && !hasAttachments) {
             return "";
         }
         StringBuilder sb = new StringBuilder();
@@ -85,8 +101,63 @@ public class UniversalIntentQueryService {
         }
         if (StringUtils.isNotBlank(latestUser)) {
             sb.append("【本轮问题】\n").append(latestUser.trim());
+        } else if (hasAttachments) {
+            sb.append("【本轮问题】\n（无文字，含图片附件）");
         }
         return sb.toString().trim();
+    }
+
+    /**
+     * 从图内 messages 或会话记忆中解析本轮用户附件（优先图内最后一条 user）。
+     */
+    public static List<ChatAttachmentDto> resolveLatestAttachments(List<Message> messages,
+                                                                   ChatMemory memory,
+                                                                   String conversationId) {
+        UserMessage fromMessages = findLastUserMessage(messages);
+        if (fromMessages != null) {
+            List<ChatAttachmentDto> fromMessage = ChatMemoryMessageCodec.attachmentsFromUserMessage(fromMessages);
+            if (!fromMessage.isEmpty()) {
+                return List.copyOf(fromMessage);
+            }
+        }
+        if (memory == null || StringUtils.isBlank(conversationId)) {
+            return List.of();
+        }
+        List<Message> stored = memory.get(conversationId);
+        if (stored == null || stored.isEmpty()) {
+            return List.of();
+        }
+        for (int i = stored.size() - 1; i >= 0; i--) {
+            Message message = stored.get(i);
+            if (message instanceof UserMessage userMessage) {
+                List<ChatAttachmentDto> attachments = ChatMemoryMessageCodec.attachmentsFromUserMessage(userMessage);
+                if (!attachments.isEmpty()) {
+                    return List.copyOf(attachments);
+                }
+                return List.of();
+            }
+        }
+        return List.of();
+    }
+
+    private static UserMessage findLastUserMessage(List<Message> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return null;
+        }
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Message message = messages.get(i);
+            if (message instanceof UserMessage userMessage) {
+                return userMessage;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 从图内 messages 与可选编排 Trace 构造路由查询文本（无 ChatMemory 时回退）。
+     */
+    public String buildRoutingQueryFromMessages(List<Message> messages, String orchestrationTrace) {
+        return buildRoutingQuery(null, null, messages, orchestrationTrace);
     }
 
     static String extractLatestUserText(List<Message> messages) {
@@ -120,21 +191,61 @@ public class UniversalIntentQueryService {
         if (StringUtils.isBlank(latestUserMessage)) {
             return "";
         }
-        String trimmedLatest = latestUserMessage.trim();
-        if (memory == null || StringUtils.isBlank(conversationId)) {
-            return "【本轮问题】\n" + trimmedLatest;
+        return buildRoutingQuery(memory, conversationId, List.of(new UserMessage(latestUserMessage.trim())), null);
+    }
+
+    private static List<String> resolveContextLines(ChatMemory memory,
+                                                    String conversationId,
+                                                    List<Message> messages,
+                                                    String latestUser) {
+        List<String> contextLines;
+        if (memory != null && StringUtils.isNotBlank(conversationId)) {
+            List<Message> stored = memory.get(conversationId);
+            if (stored != null && !stored.isEmpty()) {
+                contextLines = extractRecentDialogueLines(stored, MAX_ROUTING_CONTEXT_ROUNDS);
+            } else {
+                contextLines = extractRecentDialogueLines(messages, MAX_ROUTING_CONTEXT_ROUNDS);
+            }
+        } else {
+            contextLines = extractRecentDialogueLines(messages, MAX_ROUTING_CONTEXT_ROUNDS);
         }
-        List<Message> stored = memory.get(conversationId);
-        List<String> contextLines = extractRecentDialogueLines(stored, MAX_ROUTING_CONTEXT_ROUNDS);
-        if (contextLines.isEmpty()) {
-            return "【本轮问题】\n" + trimmedLatest;
+        return dedupeTrailingUserLine(contextLines, latestUser);
+    }
+
+    static List<String> dedupeTrailingUserLine(List<String> contextLines, String latestUser) {
+        if (contextLines == null || contextLines.isEmpty() || StringUtils.isBlank(latestUser)) {
+            return contextLines == null ? List.of() : contextLines;
         }
-        StringBuilder sb = new StringBuilder("【对话上下文】\n");
-        for (String line : contextLines) {
-            sb.append(line).append('\n');
+        List<String> mutable = new ArrayList<>(contextLines);
+        String expected = "用户: " + latestUser.trim();
+        if (!mutable.isEmpty() && expected.equals(mutable.get(mutable.size() - 1))) {
+            mutable.remove(mutable.size() - 1);
         }
-        sb.append("\n【本轮问题】\n").append(trimmedLatest);
-        return sb.toString().trim();
+        return List.copyOf(mutable);
+    }
+
+    static List<String> dedupeTrailingImageMarker(List<String> contextLines) {
+        if (contextLines == null || contextLines.isEmpty()) {
+            return contextLines == null ? List.of() : contextLines;
+        }
+        List<String> mutable = new ArrayList<>(contextLines);
+        if (!mutable.isEmpty() && IMAGE_ONLY_DIALOGUE_LINE.equals(mutable.get(mutable.size() - 1))) {
+            mutable.remove(mutable.size() - 1);
+        }
+        return List.copyOf(mutable);
+    }
+
+    static boolean hasAttachmentsInMessages(List<Message> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return false;
+        }
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Message message = messages.get(i);
+            if (message instanceof UserMessage userMessage) {
+                return !ChatMemoryMessageCodec.attachmentsFromUserMessage(userMessage).isEmpty();
+            }
+        }
+        return false;
     }
 
     /**
@@ -219,7 +330,14 @@ public class UniversalIntentQueryService {
     private static String toDialogueLine(Message message) {
         if (message instanceof UserMessage userMessage) {
             String text = userMessage.getText();
-            return StringUtils.isNotBlank(text) ? "用户: " + text.trim() : null;
+            if (StringUtils.isNotBlank(text)
+                    && !QueryUserMessageSupport.isImageOnlyQueryPlaceholder(text.trim())) {
+                return "用户: " + text.trim();
+            }
+            if (!ChatMemoryMessageCodec.attachmentsFromUserMessage(userMessage).isEmpty()) {
+                return IMAGE_ONLY_DIALOGUE_LINE;
+            }
+            return null;
         }
         if (message instanceof AssistantMessage assistantMessage) {
             if (assistantMessage.hasToolCalls()) {

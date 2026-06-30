@@ -5,6 +5,7 @@ import io.github.jerryt92.j2agent.service.llm.AgentTurnStateMachine;
 import io.github.jerryt92.j2agent.service.llm.ThinkingOverrideRegistry;
 import io.github.jerryt92.j2agent.service.llm.agent.AgentStreamOptions;
 import io.github.jerryt92.j2agent.service.llm.agent.AgentStreamSession;
+import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRouter;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunContext;
 import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
@@ -81,6 +82,8 @@ public class UniversalSubAgentCallService {
         Object subAgentTurnLock = new Object();
         AgentTurnStateMachine subAgentStateMachine = new AgentTurnStateMachine();
 
+        List<ChatAttachmentDto> attachments = request.attachments() == null ? List.of() : request.attachments();
+
         AgentRunContext subContext = new AgentRunContext(
                 trimmedQuery,
                 request.contextId(),
@@ -88,7 +91,7 @@ public class UniversalSubAgentCallService {
                 request.turnId(),
                 specialistConversationId,
                 trimmedAgentId,
-                List.of(),
+                attachments,
                 request.toolEventEmitter(),
                 true,
                 false);
@@ -157,6 +160,16 @@ public class UniversalSubAgentCallService {
             String turnId,
             String userId,
             String parentConversationId,
-            ToolEventEmitter toolEventEmitter) {
+            ToolEventEmitter toolEventEmitter,
+            List<ChatAttachmentDto> attachments) {
+
+        public SubAgentCallRequest(
+                String contextId,
+                String turnId,
+                String userId,
+                String parentConversationId,
+                ToolEventEmitter toolEventEmitter) {
+            this(contextId, turnId, userId, parentConversationId, toolEventEmitter, List.of());
+        }
     }
 }

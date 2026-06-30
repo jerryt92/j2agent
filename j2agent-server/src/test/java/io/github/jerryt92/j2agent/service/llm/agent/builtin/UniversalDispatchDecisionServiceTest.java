@@ -9,6 +9,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class UniversalDispatchDecisionServiceTest {
 
     @Test
+    void parseInvokeDecisionWithoutQuery() {
+        String raw = """
+                {"action":"invoke","agentId":"wiki","reason":"需要知识库"}
+                """;
+        UniversalDispatchDecisionService.DispatchDecision decision =
+                UniversalDispatchDecisionService.parseDecision(raw);
+        assertTrue(decision.isInvoke());
+        assertEquals("wiki", decision.agentId());
+        assertEquals(null, decision.query());
+    }
+
+    @Test
     void parseInvokeDecision() {
         String raw = """
                 {"action":"invoke","agentId":"wiki","query":"查文档","reason":"需要知识库"}

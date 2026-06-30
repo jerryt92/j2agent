@@ -1,5 +1,6 @@
 package io.github.jerryt92.j2agent.service.llm.agent.builtin;
 
+import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
 import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -8,6 +9,7 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -102,6 +104,71 @@ class UniversalIntentQueryServiceTest {
         assertTrue(query.contains("用户: 上一轮"));
         assertTrue(query.contains("【本回合已执行子智能体调用】"));
         assertTrue(query.contains("【本轮问题】\n本轮"));
+    }
+
+    @Test
+    void buildRoutingQueryWithMemoryDedupesPrePersistedLatestUser() {
+        ChatMemory memory = Mockito.mock(ChatMemory.class);
+        when(memory.get("conv-1")).thenReturn(List.of(
+                new UserMessage("上一轮问题"),
+                new AssistantMessage("上一轮回答"),
+                new UserMessage("本轮问题")));
+        UniversalIntentQueryService service = new UniversalIntentQueryService(null, null);
+        String query = service.buildRoutingQuery(
+                memory,
+                "conv-1",
+                List.of(new UserMessage("本轮问题")),
+                "【本回合已执行子智能体调用】\n- agentId: wiki");
+        assertTrue(query.contains("用户: 上一轮问题"));
+        assertTrue(query.contains("助手: 上一轮回答"));
+        assertTrue(!query.contains("用户: 本轮问题"));
+        assertTrue(query.contains("【本回合已执行子智能体调用】"));
+        assertTrue(query.contains("【本轮问题】\n本轮问题"));
+    }
+
+    @Test
+    void dedupeTrailingUserLineRemovesMatchingLastLine() {
+        List<String> deduped = UniversalIntentQueryService.dedupeTrailingUserLine(
+                List.of("用户: 上一轮", "用户: 本轮"), "本轮");
+        assertEquals(1, deduped.size());
+        assertEquals("用户: 上一轮", deduped.get(0));
+    }
+
+    @Test
+    void buildRoutingQueryImageOnlyUsesAttachmentMarker() {
+        ChatAttachmentDto attachment = new ChatAttachmentDto().objectKey("chat/u/c/a.png").name("a.png");
+        UserMessage userMessage = UserMessage.builder()
+                .text("")
+                .metadata(Map.of("attachments", List.of(attachment)))
+                .build();
+        UniversalIntentQueryService service = new UniversalIntentQueryService(null, null);
+        String query = service.buildRoutingQuery(null, null, List.of(userMessage), "");
+        assertTrue(query.contains("【本轮问题】\n（无文字，含图片附件）"));
+    }
+
+    @Test
+    void resolveLatestAttachmentsFromMessageMetadata() {
+        ChatAttachmentDto attachment = new ChatAttachmentDto().objectKey("chat/u/c/a.png").name("a.png");
+        UserMessage userMessage = UserMessage.builder()
+                .text("")
+                .metadata(Map.of("attachments", List.of(attachment)))
+                .build();
+        List<ChatAttachmentDto> resolved = UniversalIntentQueryService.resolveLatestAttachments(
+                List.of(userMessage), null, "conv-1");
+        assertEquals(1, resolved.size());
+        assertEquals("chat/u/c/a.png", resolved.get(0).getObjectKey());
+    }
+
+    @Test
+    void extractRecentDialogueLinesIncludesImageOnlyUserMarker() {
+        ChatAttachmentDto attachment = new ChatAttachmentDto().objectKey("chat/u/c/a.png").name("a.png");
+        UserMessage userMessage = UserMessage.builder()
+                .text("")
+                .metadata(Map.of("attachments", List.of(attachment)))
+                .build();
+        List<String> lines = UniversalIntentQueryService.extractRecentDialogueLines(List.of(userMessage), 3);
+        assertEquals(1, lines.size());
+        assertEquals(UniversalIntentQueryService.IMAGE_ONLY_DIALOGUE_LINE, lines.get(0));
     }
 
     @Test
