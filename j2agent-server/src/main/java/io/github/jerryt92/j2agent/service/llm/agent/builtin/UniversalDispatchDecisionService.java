@@ -3,6 +3,8 @@ package io.github.jerryt92.j2agent.service.llm.agent.builtin;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import io.github.jerryt92.j2agent.service.llm.LlmSyncService;
+import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnCancellationRegistry;
+import io.github.jerryt92.j2agent.service.llm.chat.TurnCancelledException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.messages.SystemMessage;
@@ -43,6 +45,19 @@ public class UniversalDispatchDecisionService {
             List<OrchestrationTraceEntry> trace,
             Set<String> invokedAgentIds,
             boolean forceComplete) {
+        return decide(candidatesJson, routingQuery, trace, invokedAgentIds, forceComplete, null);
+    }
+
+    public DispatchDecision decide(
+            String candidatesJson,
+            String routingQuery,
+            List<OrchestrationTraceEntry> trace,
+            Set<String> invokedAgentIds,
+            boolean forceComplete,
+            String turnId) {
+        if (ChatTurnCancellationRegistry.isCancelled(turnId)) {
+            throw new TurnCancelledException(turnId);
+        }
         if (forceComplete) {
             return DispatchDecision.complete("max rounds reached");
         }
@@ -75,7 +90,12 @@ public class UniversalDispatchDecisionService {
                     new SystemMessage(DECISION_SYSTEM_PROMPT),
                     new UserMessage(userBlock)));
             String raw = llmSyncService.callAssistantText(prompt);
+            if (ChatTurnCancellationRegistry.isCancelled(turnId)) {
+                throw new TurnCancelledException(turnId);
+            }
             return parseDecision(raw);
+        } catch (TurnCancelledException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.warn("dispatch decision LLM failed: {}", ex.toString());
             return DispatchDecision.complete("decision LLM error");

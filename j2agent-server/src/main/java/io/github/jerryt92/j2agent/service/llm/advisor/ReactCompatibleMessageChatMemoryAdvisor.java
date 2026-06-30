@@ -1,6 +1,9 @@
 package io.github.jerryt92.j2agent.service.llm.advisor;
 
 import io.github.jerryt92.j2agent.service.llm.StreamedAssistantPersistence;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunLogContext;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunLogSnapshot;
+import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnCancellationRegistry;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunContext;
 import io.github.jerryt92.j2agent.service.llm.memory.ConversationIdCodec;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -317,6 +320,9 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
                 log.warn("ChatMemory conversationId unresolved in after(); skip persisting assistant messages");
                 return chatClientResponse;
             }
+            if (isTurnCancelledForConversation(conversationId)) {
+                return chatClientResponse;
+            }
             List<Message> toPersist = filterAssistantMessagesForPersistence(conversationId, assistantMessages);
             if (!toPersist.isEmpty()) {
                 this.chatMemory.add(conversationId, toPersist);
@@ -334,6 +340,9 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
      */
     private static List<Message> filterAssistantMessagesForPersistence(String conversationId,
                                                                        List<Message> assistantMessages) {
+        if (isTurnCancelledForConversation(conversationId)) {
+            return List.of();
+        }
         if (!StreamedAssistantPersistence.shouldSkipAdvisorTextAssistant(conversationId)) {
             return assistantMessages;
         }
@@ -347,6 +356,14 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
             toPersist.add(message);
         }
         return toPersist;
+    }
+
+    private static boolean isTurnCancelledForConversation(String conversationId) {
+        AgentRunLogSnapshot snapshot = AgentRunLogContext.lookup(conversationId);
+        if (snapshot == null || !StringUtils.hasText(snapshot.turnId())) {
+            return false;
+        }
+        return ChatTurnCancellationRegistry.isCancelled(snapshot.turnId());
     }
 
     @Override

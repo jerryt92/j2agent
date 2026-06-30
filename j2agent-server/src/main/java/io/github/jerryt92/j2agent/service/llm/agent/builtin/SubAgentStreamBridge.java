@@ -5,6 +5,7 @@ import io.github.jerryt92.j2agent.model.ChatCallback;
 import io.github.jerryt92.j2agent.service.llm.AgentTurnStateMachine;
 import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnLifecycle;
 import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,6 +38,7 @@ public final class SubAgentStreamBridge {
 
         public void emitDelta(String answerDelta, String reasoningDelta) {
             if (chatCallback == null) {
+                appendStreamedDelta(answerDelta, reasoningDelta);
                 return;
             }
             ChatTurnLifecycle.emitAnswerDelta(
@@ -52,6 +54,17 @@ public final class SubAgentStreamBridge {
                     messageIndex,
                     answerDelta,
                     reasoningDelta);
+        }
+
+        private void appendStreamedDelta(String answerDelta, String reasoningDelta) {
+            synchronized (streamedTextLock) {
+                if (StringUtils.isNotBlank(answerDelta)) {
+                    streamedContent.append(answerDelta);
+                }
+                if (StringUtils.isNotBlank(reasoningDelta)) {
+                    streamedReasoning.append(reasoningDelta);
+                }
+            }
         }
     }
 

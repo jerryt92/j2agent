@@ -27,7 +27,9 @@ import io.github.jerryt92.j2agent.logging.llm.AgentRunLogSnapshot;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
 import io.github.jerryt92.j2agent.service.llm.rag.TurnRagSourceRegistry;
 import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
+import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnCancellationRegistry;
 import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnLifecycle;
+import io.github.jerryt92.j2agent.service.llm.chat.TurnCancelledException;
 import io.github.jerryt92.j2agent.service.llm.agent.builtin.SubAgentStreamBridge;
 import io.github.jerryt92.j2agent.service.llm.agent.builtin.UniversalOrchestrationRunHolder;
 import io.github.jerryt92.j2agent.service.llm.universal.UniversalAssistantConstants;
@@ -40,6 +42,7 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import reactor.core.Disposable;
+import reactor.core.Exceptions;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -99,6 +102,7 @@ public class ChatService {
 
     public void handleChat(ChatCallback<AgentUiEventEnvelope> chatChatCallback, ChatRequestDto request, String userId, String agentId) {
         String turnId = UUIDv7Utils.randomUUIDv7();
+        ChatTurnCancellationRegistry.clear(turnId);
         AtomicLong seq = new AtomicLong(0L);
         AgentTurnStateMachine stateMachine = new AgentTurnStateMachine();
         Object turnLock = new Object();
@@ -138,6 +142,10 @@ public class ChatService {
             AtomicLong lastHeartbeatTouchMs = new AtomicLong(0L);
             int heartbeatTouchIntervalMs = activeChatTurnProperties.getHeartbeatTouchIntervalSeconds() * 1000;
             Consumer<AgentUiEventEnvelope> recordingResponseCall = envelope -> {
+                if (ChatTurnCancellationRegistry.isCancelled(turnId)) {
+                    turnStepRecorder.record(envelope);
+                    return;
+                }
                 turnStepRecorder.record(envelope);
                 long now = System.currentTimeMillis();
                 long last = lastHeartbeatTouchMs.get();
@@ -322,6 +330,7 @@ public class ChatService {
                         TurnRagSourceRegistry.clear(turnConversationId);
                         SubAgentStreamBridge.unbind(turnId);
                         UniversalOrchestrationRunHolder.unbind(turnId);
+                        ChatTurnCancellationRegistry.clear(turnId);
                         logTurnEnd(runLogSnapshot, streamStartedAtMs, turnStepRecorder, AgentState.COMPLETED);
                         flushTurnTrace.run();
                         runOriginalCompleteCall(originalCompleteCall);
@@ -330,6 +339,11 @@ public class ChatService {
                 }
             };
             chatChatCallback.errorCall = t -> {
+                if (isBenignTurnInterruption(t, turnId)) {
+                    ChatTurnCancellationRegistry.cancel(turnId);
+                    releaseActiveTurn.run();
+                    return;
+                }
                 int bufferedLen;
                 AgentState currentState;
                 synchronized (streamedTextLock) {
@@ -368,10 +382,50 @@ public class ChatService {
                             TurnRagSourceRegistry.clear(turnConversationId);
                             SubAgentStreamBridge.unbind(turnId);
                             UniversalOrchestrationRunHolder.unbind(turnId);
+                            ChatTurnCancellationRegistry.clear(turnId);
                         },
                         flushTurnTrace,
                         releaseActiveTurn);
             };
+            Runnable runWebsocketAbort = () -> {
+                ChatTurnCancellationRegistry.cancel(turnId);
+                boolean claimedTermination = terminated.compareAndSet(false, true);
+                try {
+                    if (!claimedTermination) {
+                        return;
+                    }
+                    unbindThinkingOverride.run();
+                    persistStreamedAssistant(agentChatMemory, turnConversationId, streamedContent,
+                            streamedReasoning, streamedTextLock, streamedAssistantFlushed, true);
+                    StreamedAssistantPersistence.disable(turnConversationId);
+                    TurnRagSourceRegistry.clear(turnConversationId);
+                    SubAgentStreamBridge.unbind(turnId);
+                    UniversalOrchestrationRunHolder.unbind(turnId);
+                    logTurnEnd(runLogSnapshot, streamStartedAtMs, turnStepRecorder, AgentState.CANCELLED);
+                    synchronized (turnLock) {
+                        if (stateMachine.getState() != AgentState.COMPLETED
+                                && stateMachine.getState() != AgentState.FAILED
+                                && stateMachine.getState() != AgentState.CANCELLED) {
+                            AgentStateTransition toCancelled = stateMachine.transit(AgentState.CANCELLED, "websocketClosed");
+                            recordingResponseCall.accept(AgentEventBuilder.build(
+                                    contextId,
+                                    turnId,
+                                    seq.getAndIncrement(),
+                                    stateMachine.getState(),
+                                    toCancelled,
+                                    AgentEventPhase.COMPLETE,
+                                    AgentEventType.SYSTEM,
+                                    Map.of("notice", "cancelled")
+                            ));
+                        }
+                    }
+                    flushTurnTrace.run();
+                    runOriginalCompleteCall(originalCompleteCall);
+                } finally {
+                    releaseActiveTurn.run();
+                }
+            };
+            chatChatCallback.onWebsocketClose = runWebsocketAbort;
             // 流式接收
             synchronized (turnLock) {
                 AgentStateTransition toThinking = stateMachine.transit(AgentState.THINKING, "userMessageAccepted");
@@ -421,6 +475,7 @@ public class ChatService {
                     () -> {
                         unbindThinkingOverride.run();
                         releaseSubAgentBridge.run();
+                        ChatTurnCancellationRegistry.clearDisposables(turnId);
                     });
             Disposable disposable = agentStreamSession.stream(agentStreamOptions)
                     .subscribe(parts -> emitAnswerDelta(
@@ -438,47 +493,7 @@ public class ChatService {
                             parts.reasoningDelta()),
                             chatChatCallback.errorCall,
                             chatChatCallback.completeCall);
-            chatChatCallback.onWebsocketClose = () -> {
-                boolean claimedTermination = terminated.compareAndSet(false, true);
-                try {
-                    if (!claimedTermination) {
-                        return;
-                    }
-                    unbindThinkingOverride.run();
-                    persistStreamedAssistant(agentChatMemory, turnConversationId, streamedContent,
-                            streamedReasoning, streamedTextLock, streamedAssistantFlushed, true);
-                    StreamedAssistantPersistence.disable(turnConversationId);
-                    TurnRagSourceRegistry.clear(turnConversationId);
-                    SubAgentStreamBridge.unbind(turnId);
-                    UniversalOrchestrationRunHolder.unbind(turnId);
-                    logTurnEnd(runLogSnapshot, streamStartedAtMs, turnStepRecorder, AgentState.CANCELLED);
-                    // 关闭上游流，停止继续接收增量 token
-                    if (!disposable.isDisposed()) {
-                        disposable.dispose();
-                    }
-                    synchronized (turnLock) {
-                        if (stateMachine.getState() != AgentState.COMPLETED
-                                && stateMachine.getState() != AgentState.FAILED
-                                && stateMachine.getState() != AgentState.CANCELLED) {
-                            AgentStateTransition toCancelled = stateMachine.transit(AgentState.CANCELLED, "websocketClosed");
-                            recordingResponseCall.accept(AgentEventBuilder.build(
-                                    contextId,
-                                    turnId,
-                                    seq.getAndIncrement(),
-                                    stateMachine.getState(),
-                                    toCancelled,
-                                    AgentEventPhase.COMPLETE,
-                                    AgentEventType.SYSTEM,
-                                    Map.of("notice", "cancelled")
-                            ));
-                        }
-                    }
-                    flushTurnTrace.run();
-                    runOriginalCompleteCall(originalCompleteCall);
-                } finally {
-                    releaseActiveTurn.run();
-                }
-            };
+            ChatTurnCancellationRegistry.registerDisposable(turnId, disposable);
         } catch (Throwable t) {
             String failedConversationId = conversationIdRef.get();
             AgentRunLogSnapshot failedSnapshot = failedConversationId == null
@@ -498,6 +513,7 @@ public class ChatService {
                 TurnRagSourceRegistry.clear(failedConversationId);
                 SubAgentStreamBridge.unbind(turnId);
                 UniversalOrchestrationRunHolder.unbind(turnId);
+                ChatTurnCancellationRegistry.clear(turnId);
                 AgentRunLogContext.clear(failedConversationId);
             }
             Runnable releaseActiveTurnOnFailure = () -> {
@@ -618,6 +634,30 @@ public class ChatService {
                 log.warn("WebSocket complete 回调执行异常: {}", closeErr.toString());
             }
         }
+    }
+
+    private static boolean isBenignTurnInterruption(Throwable t, String turnId) {
+        if (ChatTurnCancellationRegistry.isCancelled(turnId)) {
+            return true;
+        }
+        if (Exceptions.isCancel(t)) {
+            return true;
+        }
+        Throwable cursor = t;
+        while (cursor != null) {
+            if (cursor instanceof TurnCancelledException) {
+                return true;
+            }
+            if (cursor instanceof java.util.concurrent.CancellationException) {
+                return true;
+            }
+            String name = cursor.getClass().getName();
+            if (name.contains("CancelledSubscriber") || name.contains("AbortException")) {
+                return true;
+            }
+            cursor = cursor.getCause();
+        }
+        return false;
     }
 
     /**

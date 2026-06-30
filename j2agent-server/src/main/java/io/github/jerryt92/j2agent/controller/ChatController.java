@@ -250,6 +250,8 @@ public class ChatController extends AbstractWebSocketHandler implements ChatApi 
         ChatCallback<AgentUiEventEnvelope> chatCallback = getChatCallback(session);
         if (chatCallback.onWebsocketClose != null) {
             chatCallback.onWebsocketClose.run();
+        } else {
+            log.warn("WebSocket closed but onWebsocketClose is null (sessionId={})", session.getId());
         }
         super.afterConnectionClosed(session, status);
     }

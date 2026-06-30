@@ -10,18 +10,21 @@ import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRouter;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunContext;
 import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
 import io.github.jerryt92.j2agent.service.llm.agent.inf.constant.AgentThinkingOverride;
+import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnCancellationRegistry;
+import io.github.jerryt92.j2agent.service.llm.chat.TurnCancelledException;
 import io.github.jerryt92.j2agent.service.llm.memory.ConversationIdCodec;
 import io.github.jerryt92.j2agent.service.llm.rag.TurnRagSourceRegistry;
 import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
+import reactor.core.Disposable;
 
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 通用助手子智能体调用（无 {@code @Tool}），由编排 Hook 直接调用。
@@ -51,6 +54,10 @@ public class UniversalSubAgentCallService {
         if (request == null) {
             return "Error: missing turn context for sub-agent call";
         }
+        String turnId = request.turnId();
+        if (ChatTurnCancellationRegistry.isCancelled(turnId)) {
+            throw new TurnCancelledException(turnId);
+        }
         String trimmedAgentId = agentId.trim();
         String trimmedQuery = query.trim();
         boolean callable = agentRouter.listCallableSubAgents().stream()
@@ -75,7 +82,7 @@ public class UniversalSubAgentCallService {
         ThinkingOverrideRegistry.bind(specialistConversationId, runtimeThinking);
         TurnRagSourceRegistry.shareHolder(specialistConversationId, request.parentConversationId());
 
-        SubAgentStreamBridge.Target bridge = SubAgentStreamBridge.lookup(request.turnId());
+        SubAgentStreamBridge.Target bridge = SubAgentStreamBridge.lookup(turnId);
         StringBuilder content = bridge != null ? bridge.streamedContent() : new StringBuilder();
         StringBuilder reasoning = bridge != null ? bridge.streamedReasoning() : new StringBuilder();
         Object textLock = bridge != null ? bridge.streamedTextLock() : new Object();
@@ -88,7 +95,7 @@ public class UniversalSubAgentCallService {
                 trimmedQuery,
                 request.contextId(),
                 request.userId(),
-                request.turnId(),
+                turnId,
                 specialistConversationId,
                 trimmedAgentId,
                 attachments,
@@ -97,39 +104,12 @@ public class UniversalSubAgentCallService {
                 false);
 
         try {
-            Mono.fromCallable(() -> {
-                        agentStreamSession.stream(new AgentStreamOptions(
-                                        targetAgent,
-                                        subContext,
-                                        null,
-                                        subAgentStateMachine,
-                                        content,
-                                        reasoning,
-                                        textLock,
-                                        subAgentTurnLock,
-                                        new AtomicLong(0),
-                                        new AtomicInteger(0),
-                                        null))
-                                .doOnNext(parts -> {
-                                    if (StringUtils.isNotBlank(parts.answerDelta())) {
-                                        synchronized (textLock) {
-                                            content.append(parts.answerDelta());
-                                        }
-                                    }
-                                    if (StringUtils.isNotBlank(parts.reasoningDelta())) {
-                                        synchronized (textLock) {
-                                            reasoning.append(parts.reasoningDelta());
-                                        }
-                                    }
-                                    if (bridge != null) {
-                                        bridge.emitDelta(parts.answerDelta(), parts.reasoningDelta());
-                                    }
-                                })
-                                .blockLast();
-                        return content.toString().trim();
-                    })
-                    .subscribeOn(Schedulers.boundedElastic())
-                    .block();
+            streamSubAgentToCompletion(targetAgent, subContext, turnId, bridge, content, reasoning, textLock,
+                    subAgentTurnLock, subAgentStateMachine);
+
+            if (ChatTurnCancellationRegistry.isCancelled(turnId)) {
+                throw new TurnCancelledException(turnId);
+            }
 
             String text = content.toString().trim();
             if (StringUtils.isBlank(text)) {
@@ -140,6 +120,8 @@ public class UniversalSubAgentCallService {
                 return text.substring(0, MAX_SUB_AGENT_CALL_RESULT_LENGTH);
             }
             return text;
+        } catch (TurnCancelledException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.warn("sub-agent call 失败: agentId={}", trimmedAgentId, ex);
             Throwable cause = ex instanceof RuntimeException runtime && runtime.getCause() != null
@@ -152,6 +134,66 @@ public class UniversalSubAgentCallService {
         } finally {
             ThinkingOverrideRegistry.unbind(specialistConversationId);
             TurnRagSourceRegistry.unshareHolder(specialistConversationId);
+        }
+    }
+
+    private void streamSubAgentToCompletion(AiAgent targetAgent,
+                                            AgentRunContext subContext,
+                                            String turnId,
+                                            SubAgentStreamBridge.Target bridge,
+                                            StringBuilder content,
+                                            StringBuilder reasoning,
+                                            Object textLock,
+                                            Object subAgentTurnLock,
+                                            AgentTurnStateMachine subAgentStateMachine) throws InterruptedException {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<Throwable> errorRef = new AtomicReference<>();
+        Disposable disposable = agentStreamSession.stream(new AgentStreamOptions(
+                        targetAgent,
+                        subContext,
+                        null,
+                        subAgentStateMachine,
+                        content,
+                        reasoning,
+                        textLock,
+                        subAgentTurnLock,
+                        new AtomicLong(0),
+                        new AtomicInteger(0),
+                        null))
+                .takeWhile(parts -> !ChatTurnCancellationRegistry.isCancelled(turnId))
+                .doOnNext(parts -> {
+                    if (bridge != null) {
+                        bridge.emitDelta(parts.answerDelta(), parts.reasoningDelta());
+                        return;
+                    }
+                    if (StringUtils.isNotBlank(parts.answerDelta())) {
+                        synchronized (textLock) {
+                            content.append(parts.answerDelta());
+                        }
+                    }
+                    if (StringUtils.isNotBlank(parts.reasoningDelta())) {
+                        synchronized (textLock) {
+                            reasoning.append(parts.reasoningDelta());
+                        }
+                    }
+                })
+                .doOnError(errorRef::set)
+                .doFinally(signal -> latch.countDown())
+                .subscribe();
+        ChatTurnCancellationRegistry.registerDisposable(turnId, disposable);
+        try {
+            latch.await();
+        } catch (InterruptedException ex) {
+            disposable.dispose();
+            Thread.currentThread().interrupt();
+            throw ex;
+        }
+        Throwable error = errorRef.get();
+        if (error != null) {
+            if (error instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            throw new RuntimeException(error);
         }
     }
 

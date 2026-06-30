@@ -4,6 +4,8 @@ import com.alibaba.cloud.ai.graph.agent.interceptor.ModelCallHandler;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ModelRequest;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ModelResponse;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunnableContextKeys;
+import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnCancellationRegistry;
+import io.github.jerryt92.j2agent.service.llm.chat.TurnCancelledException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -15,6 +17,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OrchestrationModelInterceptorTest {
@@ -22,6 +25,7 @@ class OrchestrationModelInterceptorTest {
     @AfterEach
     void tearDown() {
         UniversalOrchestrationRunHolder.unbind("turn-1");
+        ChatTurnCancellationRegistry.clear("turn-1");
     }
 
     @Test
@@ -61,5 +65,18 @@ class OrchestrationModelInterceptorTest {
             return new ModelResponse(null);
         };
         interceptor.interceptModel(request, handler);
+    }
+
+    @Test
+    void throwsWhenTurnCancelled() {
+        ChatTurnCancellationRegistry.cancel("turn-1");
+        OrchestrationModelInterceptor interceptor = new OrchestrationModelInterceptor();
+        Map<String, Object> context = Map.of(AgentRunnableContextKeys.CONTEXT_KEY_TURN_ID, "turn-1");
+        ModelRequest request = ModelRequest.builder()
+                .messages(List.of())
+                .context(context)
+                .build();
+        assertThrows(TurnCancelledException.class,
+                () -> interceptor.interceptModel(request, req -> new ModelResponse(null)));
     }
 }

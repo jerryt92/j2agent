@@ -8,6 +8,7 @@ import io.github.jerryt92.j2agent.model.AgentUiEventEnvelope;
 import io.github.jerryt92.j2agent.model.ToolCallEventPayload;
 import io.github.jerryt92.j2agent.service.llm.AgentEventBuilder;
 import io.github.jerryt92.j2agent.service.llm.AgentTurnStateMachine;
+import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnCancellationRegistry;
 
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -54,10 +55,17 @@ public class ToolEventEmitter {
         this.sink = sink;
     }
 
+    private boolean skipIfCancelled() {
+        return ChatTurnCancellationRegistry.isCancelled(turnId);
+    }
+
     /**
      * 编排 Hook 开始调度：迁移至 {@link AgentState#AGENT_SCHEDULING}。
      */
     public void onAgentSchedulingStart() {
+        if (skipIfCancelled()) {
+            return;
+        }
         synchronized (turnLock) {
             AgentStateTransition transition = stateMachine.transit(AgentState.AGENT_SCHEDULING, "orchestrationStart");
             sink.accept(AgentEventBuilder.build(
@@ -76,6 +84,9 @@ public class ToolEventEmitter {
      * 工具即将执行：必要时迁移至 {@link AgentState#CALLING_TOOL} 并发送 START 事件。
      */
     public void onToolStart(String callId, String toolName, String argumentsJson) {
+        if (skipIfCancelled()) {
+            return;
+        }
         ToolCallEventPayload payload = new ToolCallEventPayload()
                 .setCallId(callId)
                 .setToolName(toolName)
@@ -103,6 +114,9 @@ public class ToolEventEmitter {
      * 工具执行成功：发送 COMPLETE，必要时从 CALLING_TOOL 回到 THINKING。
      */
     public void onToolSuccess(String callId, String toolName, String rawResult, long durationMs) {
+        if (skipIfCancelled()) {
+            return;
+        }
         String result = rawResult == null ? "" : rawResult;
         int fullLen = result.length();
         boolean truncated = fullLen > MAX_TOOL_RESULT_LENGTH;
@@ -146,6 +160,9 @@ public class ToolEventEmitter {
      * 工具执行失败：发送 ERROR，必要时从 CALLING_TOOL 回到 THINKING。
      */
     public void onToolFailure(String callId, String toolName, Throwable error, long durationMs) {
+        if (skipIfCancelled()) {
+            return;
+        }
         String msg = error == null ? null : error.getMessage();
         ToolCallEventPayload payload = new ToolCallEventPayload()
                 .setCallId(callId)
@@ -172,6 +189,9 @@ public class ToolEventEmitter {
      * read_skill 即将执行：必要时迁移至 {@link AgentState#LOAD_SKILL} 并发送 TOOL START（与工具调用事件类型一致，便于前端复用）。
      */
     public void onSkillLoadStart(String callId, String toolName, String argumentsJson, String skillName) {
+        if (skipIfCancelled()) {
+            return;
+        }
         ToolCallEventPayload payload = new ToolCallEventPayload()
                 .setCallId(callId)
                 .setToolName(toolName)
@@ -200,6 +220,9 @@ public class ToolEventEmitter {
      * read_skill 执行成功：发送 DELTA/COMPLETE，必要时从 LOAD_SKILL 回到 THINKING。
      */
     public void onSkillLoadSuccess(String callId, String toolName, String skillName, String rawResult, long durationMs) {
+        if (skipIfCancelled()) {
+            return;
+        }
         String result = rawResult == null ? "" : rawResult;
         int fullLen = result.length();
         boolean truncated = fullLen > MAX_TOOL_RESULT_LENGTH;
@@ -244,6 +267,9 @@ public class ToolEventEmitter {
      * read_skill 执行失败：发送 ERROR，必要时从 LOAD_SKILL 回到 THINKING。
      */
     public void onSkillLoadFailure(String callId, String toolName, String skillName, Throwable error, long durationMs) {
+        if (skipIfCancelled()) {
+            return;
+        }
         String msg = error == null ? null : error.getMessage();
         ToolCallEventPayload payload = new ToolCallEventPayload()
                 .setCallId(callId)
