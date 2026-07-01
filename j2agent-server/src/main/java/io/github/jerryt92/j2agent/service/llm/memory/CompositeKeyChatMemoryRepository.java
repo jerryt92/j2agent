@@ -5,10 +5,11 @@ import io.github.jerryt92.j2agent.mapper.ext.ChatMemoryExtMapper;
 import io.github.jerryt92.j2agent.mapper.mgb.ChatContextItemMapper;
 import io.github.jerryt92.j2agent.mapper.mgb.ChatContextRecordMapper;
 import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
+import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItem;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemExample;
-import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemWithBLOBs;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecord;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecordExample;
+import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecordKey;
 import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentCleanupService;
 import io.github.jerryt92.j2agent.service.file.oss.ObjectFileReferenceService;
 import io.github.jerryt92.j2agent.service.llm.reasoning.SpringAiReasoningMetadataAdapter;
@@ -91,9 +92,9 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
                 .andAgentIdEqualTo(parts.agentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : parts.agentId())
                 .andChatRoleNotEqualTo(0);
         example.setOrderByClause("message_index asc");
-        List<ChatContextItemWithBLOBs> items = chatContextItemMapper.selectByExampleWithBLOBs(example);
+        List<ChatContextItem> items = chatContextItemMapper.selectByExample(example);
         List<Message> messages = new ArrayList<>();
-        for (ChatContextItemWithBLOBs item : items) {
+        for (ChatContextItem item : items) {
             Message m = messageCodec.decode(item.getChatRole(), item.getContent(), item.getMetaJson(),
                     item.getRagInfos());
             if (m != null) {
@@ -188,7 +189,10 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
             attachmentCleanupService.cleanupOrphanFiles(fileIds);
         }
         chatContextItemMapper.deleteByExample(itemExample);
-        chatContextRecordMapper.deleteByPrimaryKey(parts.contextId(), agentId);
+        ChatContextRecordKey chatContextRecordKey = new ChatContextRecordKey();
+        chatContextRecordKey.setContextId(parts.contextId());
+        chatContextRecordKey.setAgentId(agentId);
+        chatContextRecordMapper.deleteByPrimaryKey(chatContextRecordKey);
     }
 
     /**
@@ -196,7 +200,10 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
      */
     private void ensureContextRecord(ConversationIdCodec.Parts parts, List<Message> messages) {
         String agentId = parts.agentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : parts.agentId();
-        ChatContextRecord existing = chatContextRecordMapper.selectByPrimaryKey(parts.contextId(), agentId);
+        ChatContextRecordKey chatContextRecordKey = new ChatContextRecordKey();
+        chatContextRecordKey.setContextId(parts.contextId());
+        chatContextRecordKey.setAgentId(agentId);
+        ChatContextRecord existing = chatContextRecordMapper.selectByPrimaryKey(chatContextRecordKey);
         if (existing != null) {
             return;
         }
@@ -226,7 +233,10 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
             return;
         }
         String agentId = parts.agentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : parts.agentId();
-        ChatContextRecord record = chatContextRecordMapper.selectByPrimaryKey(parts.contextId(), agentId);
+        ChatContextRecordKey chatContextRecordKey = new ChatContextRecordKey();
+        chatContextRecordKey.setContextId(parts.contextId());
+        chatContextRecordKey.setAgentId(agentId);
+        ChatContextRecord record = chatContextRecordMapper.selectByPrimaryKey(chatContextRecordKey);
         if (record == null) {
             return;
         }

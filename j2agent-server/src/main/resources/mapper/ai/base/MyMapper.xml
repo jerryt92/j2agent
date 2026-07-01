@@ -45,7 +45,7 @@
         </if>
         <if test="example.rows != null">
             <if test="example.offset != null">
-                limit ${example.offset}, ${example.rows}
+                limit ${example.rows} offset ${example.offset}
             </if>
             <if test="example.offset == null">
                 limit ${example.rows}

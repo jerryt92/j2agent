@@ -5,7 +5,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemWithBLOBs;
+import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItem;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecord;
 import io.github.jerryt92.j2agent.service.file.StaticFileService;
 import io.github.jerryt92.j2agent.service.llm.ChatContextBo;
@@ -162,9 +162,9 @@ public final class Translator {
         return chatRequestDto;
     }
 
-    public static ChatModelDto.Message translateToChatMessage(ChatContextItemWithBLOBs chatContextItemWithBLOBs) {
+    public static ChatModelDto.Message translateToChatMessage(ChatContextItem chatContextItem) {
         ChatModelDto.Message chatMessage = new ChatModelDto.Message();
-        switch (chatContextItemWithBLOBs.getChatRole()) {
+        switch (chatContextItem.getChatRole()) {
             case 0:
                 chatMessage.setRole(ChatModelDto.Role.SYSTEM);
                 break;
@@ -175,12 +175,12 @@ public final class Translator {
                 chatMessage.setRole(ChatModelDto.Role.ASSISTANT);
                 break;
             default:
-                throw new IllegalArgumentException("Invalid role: " + chatContextItemWithBLOBs.getChatRole());
+                throw new IllegalArgumentException("Invalid role: " + chatContextItem.getChatRole());
         }
-        chatMessage.setContent(chatContextItemWithBLOBs.getContent());
-        chatMessage.setFeedback(chatContextItemWithBLOBs.getFeedback() == null ? ChatModelDto.Feedback.NONE : ChatModelDto.Feedback.fromValue(chatContextItemWithBLOBs.getFeedback()));
+        chatMessage.setContent(chatContextItem.getContent());
+        chatMessage.setFeedback(chatContextItem.getFeedback() == null ? ChatModelDto.Feedback.NONE : ChatModelDto.Feedback.fromValue(chatContextItem.getFeedback()));
         chatMessage.setToolCalls(null);
-        chatMessage.setRagInfos(JSONArray.parseArray(chatContextItemWithBLOBs.getRagInfos(), RagInfoDto.class));
+        chatMessage.setRagInfos(JSONArray.parseArray(chatContextItem.getRagInfos(), RagInfoDto.class));
         return chatMessage;
     }
 
@@ -247,7 +247,7 @@ public final class Translator {
         return messageDto;
     }
 
-    public static MessageDto translateToChatMessageDto(ChatContextItemWithBLOBs chatContextItem) {
+    public static MessageDto translateToChatMessageDto(ChatContextItem chatContextItem) {
         MessageDto messageDto = new MessageDto();
         messageDto.setIndex(chatContextItem.getMessageIndex());
         messageDto.setDisplayInChat(Boolean.TRUE);
@@ -535,7 +535,7 @@ public final class Translator {
     }
 
     /**
-     * 判断 content 是否为 {@link ChatMemoryMessageCodec} 写入的 assistant_tool JSON。
+     * 判断 content 是否为 {@link io.github.jerryt92.j2agent.service.llm.memory.ChatMemoryMessageCodec} 写入的 assistant_tool JSON。
      */
     private static boolean isAssistantToolPersistenceJson(String text) {
         if (StringUtils.isEmpty(text)) {
@@ -554,7 +554,7 @@ public final class Translator {
     }
 
     /**
-     * 判断 content 是否为技能加载审计持久化 JSON（与 {@link ChatMemoryMessageCodec} 一致）。
+     * 判断 content 是否为技能加载审计持久化 JSON（与 {@link io.github.jerryt92.j2agent.service.llm.memory.ChatMemoryMessageCodec} 一致）。
      */
     private static boolean isSkillLoadAuditPersistenceJson(String text) {
         if (StringUtils.isEmpty(text)) {
@@ -566,7 +566,7 @@ public final class Translator {
         }
         try {
             JSONObject o = JSON.parseObject(t);
-            return ChatMemoryMessageCodec.KIND_SKILL_LOAD_AUDIT.equals(
+            return io.github.jerryt92.j2agent.service.llm.memory.ChatMemoryMessageCodec.KIND_SKILL_LOAD_AUDIT.equals(
                     o.getString("kind"));
         } catch (Exception e) {
             return false;
@@ -642,12 +642,12 @@ public final class Translator {
         return chatContextRecord;
     }
 
-    public static List<ChatContextItemWithBLOBs> translateToChatContextItemWithBLOBs(ChatContextBo chatContextBo) {
-        List<ChatContextItemWithBLOBs> chatContextItemWithBLOBs = new ArrayList<>();
+    public static List<ChatContextItem> translateToChatContextItem(ChatContextBo chatContextBo) {
+        List<ChatContextItem> chatContextItemList = new ArrayList<>();
         int msgIndex = 0;
         for (int i = 0; i < chatContextBo.getMessages().size(); i++) {
             Message message = chatContextBo.getMessages().get(i);
-            ChatContextItemWithBLOBs chatContextItem = new ChatContextItemWithBLOBs();
+            ChatContextItem chatContextItem = new ChatContextItem();
             chatContextItem.setMessageId(UUID.randomUUID().toString());
             chatContextItem.setContextId(chatContextBo.getContextId());
             if (message instanceof UserMessage) {
@@ -662,8 +662,8 @@ public final class Translator {
             chatContextItem.setContent(message.getText());
             chatContextItem.setFeedback(MessageDto.FeedbackEnum.NONE.getValue());
             chatContextItem.setAddTime(System.currentTimeMillis());
-            chatContextItemWithBLOBs.add(chatContextItem);
+            chatContextItemList.add(chatContextItem);
         }
-        return chatContextItemWithBLOBs;
+        return chatContextItemList;
     }
 }

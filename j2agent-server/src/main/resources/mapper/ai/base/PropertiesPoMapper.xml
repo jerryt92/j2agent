@@ -100,6 +100,12 @@
     <if test="orderByClause != null">
       order by ${orderByClause}
     </if>
+    <if test="limit != null and limit >= 0">
+      limit #{limit}
+    </if>
+    <if test="offset != null and offset >= 0">
+      offset #{offset}
+    </if>
   </select>
   <select id="selectByPrimaryKey" parameterType="java.lang.String" resultMap="BaseResultMap">
     <!--
