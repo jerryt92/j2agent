@@ -20,13 +20,13 @@ public interface KnowledgeTextChunkMapper {
             (id, heading_path, text_chunk, source_file, collection_name, file_sha256, created_at, updated_at)
             VALUES
             (#{id}, #{headingPath}, #{textChunk}, #{sourceFile}, #{collectionName}, #{fileSha256}, #{createdAt}, #{updatedAt})
-            ON DUPLICATE KEY UPDATE
-              heading_path = VALUES(heading_path),
-              text_chunk = VALUES(text_chunk),
-              source_file = VALUES(source_file),
-              collection_name = VALUES(collection_name),
-              file_sha256 = VALUES(file_sha256),
-              updated_at = VALUES(updated_at)
+            ON CONFLICT (id) DO UPDATE SET
+              heading_path = EXCLUDED.heading_path,
+              text_chunk = EXCLUDED.text_chunk,
+              source_file = EXCLUDED.source_file,
+              collection_name = EXCLUDED.collection_name,
+              file_sha256 = EXCLUDED.file_sha256,
+              updated_at = EXCLUDED.updated_at
             """)
     int upsert(KnowledgeTextChunkPo po);
 

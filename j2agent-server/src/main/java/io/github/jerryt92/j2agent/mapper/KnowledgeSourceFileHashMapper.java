@@ -54,16 +54,16 @@ public interface KnowledgeSourceFileHashMapper {
             (id, file_path, file_path_hash, file_sha256, info_json_hash, collection_name, partition_names, knowledge_count, file_size_bytes, last_scan_time, sync_status, created_at, updated_at)
             VALUES
             (#{id}, #{filePath}, #{filePathHash}, #{fileSha256}, #{infoJsonHash}, #{collectionName}, #{partitionNamesJson}, #{knowledgeCount}, #{fileSizeBytes}, #{lastScanTime}, #{syncStatus}, #{createdAt}, #{updatedAt})
-            ON DUPLICATE KEY UPDATE
-              file_sha256 = VALUES(file_sha256),
-              info_json_hash = VALUES(info_json_hash),
-              collection_name = VALUES(collection_name),
-              partition_names = VALUES(partition_names),
-              knowledge_count = VALUES(knowledge_count),
-              file_size_bytes = VALUES(file_size_bytes),
-              last_scan_time = VALUES(last_scan_time),
-              sync_status = VALUES(sync_status),
-              updated_at = VALUES(updated_at)
+            ON CONFLICT (file_path_hash) DO UPDATE SET
+              file_sha256 = EXCLUDED.file_sha256,
+              info_json_hash = EXCLUDED.info_json_hash,
+              collection_name = EXCLUDED.collection_name,
+              partition_names = EXCLUDED.partition_names,
+              knowledge_count = EXCLUDED.knowledge_count,
+              file_size_bytes = EXCLUDED.file_size_bytes,
+              last_scan_time = EXCLUDED.last_scan_time,
+              sync_status = EXCLUDED.sync_status,
+              updated_at = EXCLUDED.updated_at
             """)
     int upsert(KnowledgeSourceFileHashPo po);
 

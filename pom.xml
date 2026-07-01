@@ -186,9 +186,9 @@
                     <version>${mybatis-generator.version}</version>
                     <dependencies>
                         <dependency>
-                            <groupId>mysql</groupId>
-                            <artifactId>mysql-connector-java</artifactId>
-                            <version>${mybatis-generator-mysql.version}</version>
+                            <groupId>org.postgresql</groupId>
+                            <artifactId>postgresql</artifactId>
+                            <version>${postgresql.version}</version>
                         </dependency>
                         <dependency>
                             <groupId>com.itfsw</groupId>

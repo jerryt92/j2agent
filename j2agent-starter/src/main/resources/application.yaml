@@ -17,10 +17,10 @@ spring:
       # 生产前端由宿主机卷挂载；末尾 / 符合 Spring 6.2+ 资源路径约定
       static-locations: file:./docker/volumes/j2agent/ui/
   datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    driver-class-name: org.postgresql.Driver
     type: com.alibaba.druid.pool.DruidDataSource
-    url: jdbc:mysql://127.0.0.1:33306/j2agent?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&autoReconnect=true&autoReconnectForPools=true&useLocalSessionState=true&allowMultiQueries=true&allowPublicKeyRetrieval=true&serverTimezone=UTC
-    username: root
+    url: jdbc:postgresql://127.0.0.1:35432/j2agent
+    username: postgres
     # 关于明文密码的问题，后期打包时再做处理，包括url也是需要在部署时动态调整。
     password: j2apassword@2026#
     druid:
@@ -33,7 +33,7 @@ spring:
       timeBetweenEvictionRunsMillis: 60000
       # 配置一个连接在池中最小生存的时间，单位是毫秒
       minEvictableIdleTimeMillis: 30000
-      validationQuery: select 'x'
+      validationQuery: SELECT 1
       testWhileIdle: true
       testOnBorrow: false
       testOnReturn: false
@@ -61,7 +61,7 @@ spring:
     baseline-version: 0
     # sql 文件的位置
     # 文件名格式必须是 V{version}__{description}.sql、V{version}__{description}.java，version必须是整数
-    locations: classpath:/sql/migration/mysql/zh_CN,classpath:/com/nms/platsvc/inventory/db/migration/mysql
+    locations: classpath:/sql/migration/postgresql/zh_CN
   http:
     codec:
       max-in-memory-size: 1MB
@@ -71,7 +71,7 @@ spring:
       port: 36379
 mybatis:
   configLocation: classpath:mapper/mybatis-config.xml
-  mapperLocations: classpath*:mapper/ai/base/**/*.xml,classpath*:mapper/ai/mysql/**/*.xml
+  mapperLocations: classpath*:mapper/ai/base/**/*.xml
   file-path:
     export-file: /var/backup/ftp/virtual/exportfiles/logs
 j2agent:

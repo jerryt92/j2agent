@@ -276,7 +276,7 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
                                                    String agentId,
                                                    int messageIndex) {
         int contentLen = row.content() != null ? row.content().length() : 0;
-        if (contentLen <= ChatMemoryMessageCodec.MYSQL_TEXT_CHAR_SAFE_LIMIT) {
+        if (contentLen <= ChatMemoryMessageCodec.TEXT_CHAR_SAFE_LIMIT) {
             return;
         }
         log.warn(

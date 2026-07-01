@@ -2,7 +2,7 @@
 
 [![GitHub](https://img.shields.io/badge/GitHub-J2Agent-blue?logo=github)](https://github.com/j2agent-ai/j2agent)
 
-J2Agent is an Agent runtime platform built on Java Spring AI. Powered by Spring AI and Spring AI Alibaba, it provides agent execution, multi-agent routing, RAG retrieval augmentation, MCP / Skills tool integration, pluggable business agents, and infrastructure integration with MySQL, Redis, and Milvus.
+J2Agent is an Agent runtime platform built on Java Spring AI. Powered by Spring AI and Spring AI Alibaba, it provides agent execution, multi-agent routing, RAG retrieval augmentation, MCP / Skills tool integration, pluggable business agents, and infrastructure integration with PostgreSQL, Redis, and Milvus.
 
 ## Contributors
 
@@ -12,13 +12,13 @@ J2Agent is an Agent runtime platform built on Java Spring AI. Powered by Spring 
 
 ## One-Click Deployment with Docker
 
-All Docker configurations are located in the `docker/` directory. By default, it starts Milvus (v2.6.9), MySQL, Redis, and J2Agent.
+All Docker configurations are located in the `docker/` directory. By default, it starts Milvus (v2.6.9), PostgreSQL, Redis, and J2Agent.
 
 1. Pull all dependency images (optional)
 
 ```shell
 docker pull eclipse-temurin:21-jre
-docker pull mysql:8.0.36
+docker pull docker.io/postgres:18.4
 docker pull redis:7.4.2
 docker pull quay.io/coreos/etcd:v3.5.25
 docker pull minio/minio:RELEASE.2024-12-18T13-15-44Z
@@ -114,7 +114,7 @@ graph TD
     end
 
     subgraph infrastructure ["Infrastructure"]
-        mysql["MySQL"]
+        postgres["PostgreSQL"]
         redis["Redis"]
         milvus["Milvus"]
         springAiModel["Spring AI ChatModel"]
@@ -224,7 +224,7 @@ Most open-source Agent platforms are Python-based. J2Agent targets Java develope
 - **Skills progressive disclosure**: `SkillRegistry` + `read_skill` loads `SKILL.md` on demand; load events are auditable and pushed to AgentUi.
 - **Conversation memory**: Extensible `ChatMemory`; `RedissonCachingChatMemoryRepository` (Redis cache + JDBC persistence).
 - **AgentUi event stream**: WebSocket `AgentUiEventEnvelope`; `AgentTurnStateMachine`, tool calls, and skill loading visualization.
-- **JDK 21**: Virtual threads for concurrency; Docker Compose for MySQL / Redis / Milvus.
+- **JDK 21**: Virtual threads for concurrency; Docker Compose for PostgreSQL / Redis / Milvus.
 
 ## To Be Improved
 

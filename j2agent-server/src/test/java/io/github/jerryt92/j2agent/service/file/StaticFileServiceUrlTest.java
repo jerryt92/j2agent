@@ -27,13 +27,13 @@ class StaticFileServiceUrlTest {
 
     @Test
     void shouldNormalizeLegacyEncodedSlashRepoUrls() {
-        String legacy = "https://inc.raisecom.com.cn/v1/rest/ai-center/file/repo/"
+        String legacy = "https://xxx/file/repo/"
                 + "knowledge_base%2Fcommon%2Fassets%2F%E9%85%8D%E7%BD%AEiNC%E7%9A%84SNMP%E5%86%85%E7%BD%91%E7%A9%BF%E9%80%8F.png";
         String normalized = StaticFileService.normalizeRepoFileUrl(legacy);
 
         assertFalse(normalized.contains("%2F"));
         assertEquals(
-                "https://inc.raisecom.com.cn/v1/rest/ai-center/file/repo/"
+                "https://xxx/file/repo/"
                         + "knowledge_base/common/assets/%E9%85%8D%E7%BD%AEiNC%E7%9A%84SNMP%E5%86%85%E7%BD%91%E7%A9%BF%E9%80%8F.png",
                 normalized);
         assertEquals(

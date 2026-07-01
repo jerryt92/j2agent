@@ -78,16 +78,16 @@ public interface ObjectFileMapper {
             VALUES
             (#{id}, #{provider}, #{bucketName}, #{objectKey}, #{objectKeyHash}, #{etag}, #{sizeBytes},
              #{contentType}, #{objectModifiedAt}, #{operationStatus}, #{lastError}, #{createdAt}, #{updatedAt})
-            ON DUPLICATE KEY UPDATE
-              provider = VALUES(provider),
-              object_key = VALUES(object_key),
-              etag = VALUES(etag),
-              size_bytes = VALUES(size_bytes),
-              content_type = VALUES(content_type),
-              object_modified_at = VALUES(object_modified_at),
-              operation_status = VALUES(operation_status),
-              last_error = VALUES(last_error),
-              updated_at = VALUES(updated_at)
+            ON CONFLICT (bucket_name, object_key_hash) DO UPDATE SET
+              provider = EXCLUDED.provider,
+              object_key = EXCLUDED.object_key,
+              etag = EXCLUDED.etag,
+              size_bytes = EXCLUDED.size_bytes,
+              content_type = EXCLUDED.content_type,
+              object_modified_at = EXCLUDED.object_modified_at,
+              operation_status = EXCLUDED.operation_status,
+              last_error = EXCLUDED.last_error,
+              updated_at = EXCLUDED.updated_at
             """)
     int upsert(ObjectFilePo po);
 

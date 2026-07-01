@@ -21,36 +21,33 @@ import java.util.Set;
 @Configuration
 public class SqlBootstrapFlywayConfig {
 
-    private static final String SCHEMA_SCRIPT = "sql/schema/mysql/schemas.sql";
+    private static final String SCHEMA_SCRIPT = "sql/schema/postgresql/schemas.sql";
     private static final String CORE_TABLE = "api_key_info";
     private static final Set<String> ALLOWED_LOCALES = Set.of("zh_CN", "en_US");
 
     @Bean
     public FlywayMigrationStrategy flywayMigrationStrategy(
             DataSource dataSource,
-            @Value("${I18N:zh_CN}") String i18n,
-            @Value("${MYSQL_DATABASE:j2agent}") String databaseName) {
+            @Value("${I18N:zh_CN}") String i18n) {
         String locale = normalizeLocale(i18n);
         return flyway -> {
-            if (needsBootstrap(dataSource, databaseName)) {
-                log.info("Empty database detected (schema={}), applying SQL bootstrap (locale={})",
-                        databaseName, locale);
+            if (needsBootstrap(dataSource)) {
+                log.info("Empty database detected, applying SQL bootstrap (locale={})", locale);
                 runScript(dataSource, SCHEMA_SCRIPT);
-                runScript(dataSource, "sql/data/mysql/" + locale + ".sql");
+                runScript(dataSource, "sql/data/postgresql/" + locale + ".sql");
             }
             flyway.migrate();
         };
     }
 
-    private static boolean needsBootstrap(DataSource dataSource, String databaseName) {
+    private static boolean needsBootstrap(DataSource dataSource) {
         String sql = """
                 SELECT COUNT(*) FROM information_schema.tables
-                WHERE table_schema = ? AND table_name = ?
+                WHERE table_schema = 'public' AND table_name = ?
                 """;
         try (Connection connection = dataSource.getConnection();
              PreparedStatement ps = connection.prepareStatement(sql)) {
-            ps.setString(1, databaseName);
-            ps.setString(2, CORE_TABLE);
+            ps.setString(1, CORE_TABLE);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
                     return rs.getInt(1) == 0;

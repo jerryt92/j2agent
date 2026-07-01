@@ -2,6 +2,7 @@ package io.github.jerryt92.j2agent.config.provider;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.jerryt92.j2agent.event.ProviderConfigChangedEvent;
+import io.github.jerryt92.j2agent.mapper.ext.ApiProviderConfigExtMapper;
 import io.github.jerryt92.j2agent.mapper.mgb.ApiProviderConfigPoMapper;
 import io.github.jerryt92.j2agent.model.po.mgb.ApiProviderConfigPo;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +31,8 @@ class ApiProviderConfigServiceCopyTest {
     @Mock
     private ApiProviderConfigPoMapper mapper;
     @Mock
+    private ApiProviderConfigExtMapper extMapper;
+    @Mock
     private ApplicationEventPublisher eventPublisher;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -37,7 +40,7 @@ class ApiProviderConfigServiceCopyTest {
 
     @BeforeEach
     void setUp() {
-        service = new ApiProviderConfigService(mapper, objectMapper, eventPublisher);
+        service = new ApiProviderConfigService(mapper, extMapper, objectMapper, eventPublisher);
     }
 
     @Test
@@ -64,8 +67,8 @@ class ApiProviderConfigServiceCopyTest {
                 "modelName", "gpt-4o",
                 "apiKey", "sk-secret-key-1234",
                 "baseUrl", "https://api.openai.com")));
-        source.setEnabled((byte) 1);
-        source.setIsCurrent((byte) 1);
+        source.setEnabled((short) 1);
+        source.setIsCurrent((short) 1);
         source.setDescription("primary");
 
         when(mapper.selectByPrimaryKey(1L)).thenReturn(source);
@@ -87,8 +90,8 @@ class ApiProviderConfigServiceCopyTest {
         ArgumentCaptor<ApiProviderConfigPo> insertedCaptor = ArgumentCaptor.forClass(ApiProviderConfigPo.class);
         verify(mapper).insert(insertedCaptor.capture());
         ApiProviderConfigPo inserted = insertedCaptor.getValue();
-        assertEquals((byte) 1, inserted.getEnabled());
-        assertEquals((byte) 0, inserted.getIsCurrent());
+        assertEquals((short) 1, inserted.getEnabled());
+        assertEquals((short) 0, inserted.getIsCurrent());
 
         @SuppressWarnings("unchecked")
         Map<String, Object> storedConfig = objectMapper.readValue(inserted.getConfigJson(), Map.class);

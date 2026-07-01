@@ -43,7 +43,7 @@ public interface ChatMemoryExtMapper {
                               @Param("metaJson") String metaJson);
 
     @Select("""
-            select ifnull(last_message_index, -1)
+            select COALESCE(last_message_index, -1)
             from chat_context_record
             where context_id = #{contextId}
               and agent_id = #{agentId}

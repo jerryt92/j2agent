@@ -150,7 +150,7 @@ public class StaticFileService {
 
     /**
      * 将历史或外部写入的整段 {@code %2F} 知识库直链改写为按段编码，避免 Tomcat/网关 400。
-     * 支持相对路径、{@code /v1/rest/j2agent/...} 与部署网关前缀（如 {@code ai-center}）。
+     * 支持相对路径、{@code /v1/rest/j2agent/...} 与部署网关前缀。
      */
     public static String normalizeRepoFileUrl(String url) {
         if (StringUtils.isBlank(url) || !url.contains("%2F") || !url.contains(REPO_FILE_PATH_MARKER)) {

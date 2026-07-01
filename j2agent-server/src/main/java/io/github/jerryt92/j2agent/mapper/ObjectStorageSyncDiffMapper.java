@@ -68,10 +68,10 @@ public interface ObjectStorageSyncDiffMapper {
     int deleteByBucketExceptTask(@Param("bucket") String bucket, @Param("taskId") String taskId);
 
     @Delete("""
-            DELETE d
-            FROM object_storage_sync_diff d
-            INNER JOIN object_storage_sync_task t ON t.id = d.task_id
-            WHERE t.task_status IN ('FAILED', 'CANCELLED')
+            DELETE FROM object_storage_sync_diff d
+            USING object_storage_sync_task t
+            WHERE d.task_id = t.id
+              AND t.task_status IN ('FAILED', 'CANCELLED')
               AND t.completed_at IS NOT NULL
               AND t.completed_at < #{cutoff}
             """)
