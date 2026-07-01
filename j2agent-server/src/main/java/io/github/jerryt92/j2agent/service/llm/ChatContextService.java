@@ -1,32 +1,33 @@
 package io.github.jerryt92.j2agent.service.llm;
 
+import io.github.jerryt92.j2agent.constants.ErrorConstants;
 import io.github.jerryt92.j2agent.mapper.mgb.ChatContextItemMapper;
 import io.github.jerryt92.j2agent.mapper.mgb.ChatContextRecordMapper;
 import io.github.jerryt92.j2agent.model.HistoryContextItem;
 import io.github.jerryt92.j2agent.model.HistoryContextList;
 import io.github.jerryt92.j2agent.model.MessageFeedbackRequest;
 import io.github.jerryt92.j2agent.model.Translator;
-import io.github.jerryt92.j2agent.model.security.UserContextBo;
+import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItem;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemExample;
-import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItemWithBLOBs;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecord;
 import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecordExample;
-import io.github.jerryt92.j2agent.constants.ErrorConstants;
-import io.github.jerryt92.j2agent.service.llm.memory.ConversationIdCodec;
+import io.github.jerryt92.j2agent.model.po.mgb.ChatContextRecordKey;
+import io.github.jerryt92.j2agent.model.security.UserContextBo;
 import io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentCleanupService;
+import io.github.jerryt92.j2agent.service.llm.memory.ConversationIdCodec;
 import io.github.jerryt92.j2agent.service.security.LoginService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
 import org.springframework.ai.chat.messages.Message;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -98,7 +99,10 @@ public class ChatContextService {
      */
     public ChatContextBo getChatContext(String contextId, String userId, String agentId) {
         String aid = normalizeAgentId(agentId);
-        ChatContextRecord chatContextRecord = chatContextRecordMapper.selectByPrimaryKey(contextId, aid);
+        ChatContextRecordKey chatContextRecordKey = new ChatContextRecordKey();
+        chatContextRecordKey.setContextId(contextId);
+        chatContextRecordKey.setAgentId(aid);
+        ChatContextRecord chatContextRecord = chatContextRecordMapper.selectByPrimaryKey(chatContextRecordKey);
         if (chatContextRecord == null) {
             return null;
         }
@@ -189,7 +193,10 @@ public class ChatContextService {
     private void deleteOneContextRecord(String uid, String contextId, String agentId) {
         if (StringUtils.hasText(agentId)) {
             String aid = normalizeAgentId(agentId);
-            ChatContextRecord record = chatContextRecordMapper.selectByPrimaryKey(contextId, aid);
+            ChatContextRecordKey chatContextRecordKey = new ChatContextRecordKey();
+            chatContextRecordKey.setContextId(contextId);
+            chatContextRecordKey.setAgentId(aid);
+            ChatContextRecord record = chatContextRecordMapper.selectByPrimaryKey(chatContextRecordKey);
             if (record != null && uid.equals(record.getUserId())) {
                 chatMemoryRepository.deleteByConversationId(ConversationIdCodec.format(uid, contextId, aid));
             }
@@ -225,7 +232,8 @@ public class ChatContextService {
         }
         ChatContextRecordExample chatContextRecordExample = new ChatContextRecordExample();
         chatContextRecordExample.setOrderByClause("update_time desc");
-        chatContextRecordExample.limit(offset, limit);
+        chatContextRecordExample.setOffset(offset);
+        chatContextRecordExample.setLimit(limit);
         var criteria = chatContextRecordExample.createCriteria().andUserIdEqualTo(session.getUserId());
         if (StringUtils.hasText(agentIdFilter)) {
             criteria.andAgentIdEqualTo(normalizeAgentId(agentIdFilter));
@@ -257,11 +265,11 @@ public class ChatContextService {
                         .andAgentIdEqualTo(aid)
                         .andMessageIndexEqualTo(messageFeedbackRequest.getIndex());
                 example.setOrderByClause("add_time desc");
-                List<ChatContextItemWithBLOBs> rows = chatContextItemMapper.selectByExampleWithBLOBs(example);
+                List<ChatContextItem> rows = chatContextItemMapper.selectByExample(example);
                 if (CollectionUtils.isEmpty(rows)) {
                     return;
                 }
-                ChatContextItemWithBLOBs update = new ChatContextItemWithBLOBs();
+                ChatContextItem update = new ChatContextItem();
                 update.setMessageId(rows.get(0).getMessageId());
                 update.setFeedback(messageFeedbackRequest.getFeedback().getValue());
                 chatContextItemMapper.updateByPrimaryKeySelective(update);

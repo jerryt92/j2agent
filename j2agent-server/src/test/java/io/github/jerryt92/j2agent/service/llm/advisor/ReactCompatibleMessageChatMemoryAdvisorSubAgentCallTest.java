@@ -12,10 +12,15 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.content.Media;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.MediaType;
 
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -101,6 +106,68 @@ class ReactCompatibleMessageChatMemoryAdvisorSubAgentCallTest {
         verify(chatMemory).get("user:ctx:universal_assistant");
         verify(chatMemory, never()).add(anyString(), any(Message.class));
         verify(chatMemory, never()).add(anyString(), any(List.class));
+    }
+
+    @Test
+    void prePersistedUserMessageDoesNotDuplicateUserInPrompt() {
+        ChatMemory chatMemory = mock(ChatMemory.class);
+        when(chatMemory.get("user:ctx:universal_assistant")).thenReturn(List.of(
+                new UserMessage("上一轮"),
+                new AssistantMessage("上一轮回答"),
+                new UserMessage("hello")));
+        ReactCompatibleMessageChatMemoryAdvisor advisor =
+                ReactCompatibleMessageChatMemoryAdvisor.builder(chatMemory).build();
+        AdvisorChain chain = mock(AdvisorChain.class);
+
+        UserMessage userMessage = UserMessage.builder()
+                .text("hello")
+                .metadata(Map.of(
+                        ChatMemory.CONVERSATION_ID, "user:ctx:universal_assistant",
+                        ReactCompatibleMessageChatMemoryAdvisor.META_USER_MESSAGE_PRE_PERSISTED, Boolean.TRUE))
+                .build();
+        ChatClientRequest request = ChatClientRequest.builder()
+                .prompt(new Prompt(List.of(userMessage)))
+                .build();
+
+        ChatClientRequest processed = advisor.before(request, chain);
+        List<Message> messages = processed.prompt().getInstructions();
+
+        assertEquals(3, messages.size());
+        long userCount = messages.stream().filter(UserMessage.class::isInstance).count();
+        assertEquals(2, userCount);
+        assertEquals("hello", ((UserMessage) messages.get(2)).getText());
+        verify(chatMemory, never()).add(anyString(), any(Message.class));
+    }
+
+    @Test
+    void prePersistedUserMessageReplacesTrailingUserWithLiveMedia() {
+        ChatMemory chatMemory = mock(ChatMemory.class);
+        when(chatMemory.get("user:ctx:universal_assistant")).thenReturn(List.of(new UserMessage("")));
+        ReactCompatibleMessageChatMemoryAdvisor advisor =
+                ReactCompatibleMessageChatMemoryAdvisor.builder(chatMemory).build();
+        AdvisorChain chain = mock(AdvisorChain.class);
+        Media media = Media.builder()
+                .mimeType(MediaType.IMAGE_PNG)
+                .data(new ByteArrayResource(new byte[]{1}))
+                .build();
+
+        UserMessage userMessage = UserMessage.builder()
+                .text("")
+                .media(media)
+                .metadata(Map.of(
+                        ChatMemory.CONVERSATION_ID, "user:ctx:universal_assistant",
+                        ReactCompatibleMessageChatMemoryAdvisor.META_USER_MESSAGE_PRE_PERSISTED, Boolean.TRUE))
+                .build();
+        ChatClientRequest request = ChatClientRequest.builder()
+                .prompt(new Prompt(List.of(userMessage)))
+                .build();
+
+        ChatClientRequest processed = advisor.before(request, chain);
+        UserMessage lastUser = processed.prompt().getUserMessage();
+
+        assertEquals(1, processed.prompt().getInstructions().size());
+        assertFalse(lastUser.getMedia().isEmpty());
+        verify(chatMemory, never()).add(anyString(), any(Message.class));
     }
 
     @Test

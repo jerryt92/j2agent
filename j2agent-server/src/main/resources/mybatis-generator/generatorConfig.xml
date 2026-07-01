@@ -12,10 +12,8 @@
         <property name="endingDelimiter" value="&quot;"/>
         <!--生成mapper.xml时覆盖原文件-->
         <plugin type="org.mybatis.generator.plugins.UnmergeableXmlMappersPlugin"/>
-        <!-- 分页插件 -->
-        <plugin type="com.itfsw.mybatis.generator.plugins.LimitPlugin">
-            <property name="startPage" value="0"/>
-        </plugin>
+        <!-- PostgreSQL 分页（dolphin XMBG） -->
+        <plugin type="com.freetmp.mbg.plugin.page.PostgreSQLPaginationPlugin"/>
         <plugin type="com.itfsw.mybatis.generator.plugins.BatchInsertPlugin"/>
         <plugin type="com.itfsw.mybatis.generator.plugins.ModelColumnPlugin"/>
         <plugin type="org.mybatis.generator.plugins.MapperAnnotationPlugin"/>
@@ -76,14 +74,12 @@
 
         <!-- tableName：数据库中的表名或视图名；domainObjectName：生成的实体类的类名-->
         <table tableName="app_user" domainObjectName="UserPo"/>
-        <table tableName="context_record" domainObjectName="ContextRecordPo"/>
-        <table tableName="context_record_item" domainObjectName="ContextRecordItemPo">
-            <generatedKey column="id" sqlStatement="JDBC" identity="true"/>
-        </table>
         <table tableName="api_key_info" domainObjectName="ApiKeyInfoPo"/>
         <table tableName="ai_properties" domainObjectName="PropertiesPo"/>
         <table tableName="api_provider_config" domainObjectName="ApiProviderConfigPo">
             <generatedKey column="id" sqlStatement="JDBC" identity="true"/>
         </table>
+        <table tableName="chat_context_record" domainObjectName="ChatContextRecord"/>
+        <table tableName="chat_context_item" domainObjectName="ChatContextItem"/>
     </context>
 </generatorConfiguration>

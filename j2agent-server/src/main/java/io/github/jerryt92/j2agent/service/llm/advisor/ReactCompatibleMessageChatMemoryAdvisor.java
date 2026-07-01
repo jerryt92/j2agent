@@ -207,6 +207,35 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
         return this.scheduler;
     }
 
+    private static UserMessage findLastUserMessage(List<Message> instructions) {
+        if (instructions == null || instructions.isEmpty()) {
+            return null;
+        }
+        for (int i = instructions.size() - 1; i >= 0; i--) {
+            Message message = instructions.get(i);
+            if (message instanceof UserMessage userMessage) {
+                return userMessage;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 预落库回合：用图内 user（含多模态 Media）覆盖 memory 末尾 user，避免 memory + instructions 重复拼接。
+     */
+    private static void replaceTrailingUserMessage(List<Message> messages, UserMessage liveUser) {
+        if (messages == null || liveUser == null) {
+            return;
+        }
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if (messages.get(i) instanceof UserMessage) {
+                messages.set(i, liveUser);
+                return;
+            }
+        }
+        messages.add(liveUser);
+    }
+
     private static boolean isUserMessagePrePersisted(List<Message> instructions) {
         if (instructions == null) {
             return false;
@@ -274,6 +303,12 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
         List<Message> processedMessages;
         if (containsAssistantMessage(instructions)) {
             processedMessages = new ArrayList<>(instructions);
+        } else if (isUserMessagePrePersisted(instructions)) {
+            processedMessages = new ArrayList<>(this.chatMemory.get(conversationId));
+            UserMessage liveUser = findLastUserMessage(instructions);
+            if (liveUser != null) {
+                replaceTrailingUserMessage(processedMessages, liveUser);
+            }
         } else {
             List<Message> memoryMessages = this.chatMemory.get(conversationId);
             processedMessages = new ArrayList<>(memoryMessages);

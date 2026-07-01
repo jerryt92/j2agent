@@ -191,6 +191,11 @@
                             <version>${postgresql.version}</version>
                         </dependency>
                         <dependency>
+                            <groupId>com.freetmp</groupId>
+                            <artifactId>dolphin-mybatis-generator</artifactId>
+                            <version>${dolphin.mybatis.generator.version}</version>
+                        </dependency>
+                        <dependency>
                             <groupId>com.itfsw</groupId>
                             <artifactId>mybatis-generator-plugin</artifactId>
                             <version>${mybatis-generator-core.version}</version>
