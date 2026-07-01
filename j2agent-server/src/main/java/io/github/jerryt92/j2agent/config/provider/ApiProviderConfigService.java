@@ -2,6 +2,7 @@ package io.github.jerryt92.j2agent.config.provider;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.jerryt92.j2agent.event.ProviderConfigChangedEvent;
+import io.github.jerryt92.j2agent.mapper.ext.ApiProviderConfigExtMapper;
 import io.github.jerryt92.j2agent.mapper.mgb.ApiProviderConfigPoMapper;
 import io.github.jerryt92.j2agent.model.po.mgb.ApiProviderConfigPo;
 import lombok.extern.slf4j.Slf4j;
@@ -36,13 +37,16 @@ public class ApiProviderConfigService {
     private static final int API_KEY_TAIL_VISIBLE = 4;
 
     private final ApiProviderConfigPoMapper mapper;
+    private final ApiProviderConfigExtMapper extMapper;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
 
     public ApiProviderConfigService(ApiProviderConfigPoMapper mapper,
+                                    ApiProviderConfigExtMapper extMapper,
                                     ObjectMapper objectMapper,
                                     ApplicationEventPublisher eventPublisher) {
         this.mapper = mapper;
+        this.extMapper = extMapper;
         this.objectMapper = objectMapper;
         this.eventPublisher = eventPublisher;
     }
@@ -52,7 +56,7 @@ public class ApiProviderConfigService {
      */
     public List<ProviderConfigView> list(String apiType) {
         validateApiType(apiType);
-        List<ApiProviderConfigPo> rows = mapper.selectByApiType(apiType);
+        List<ApiProviderConfigPo> rows = extMapper.selectByApiType(apiType);
         return rows.stream().map(this::toView).toList();
     }
 
@@ -85,8 +89,8 @@ public class ApiProviderConfigService {
         po.setConfigName(configName);
         po.setProviderType(providerType);
         po.setConfigJson(writeJson(sanitizeConfig(config, apiType, providerType)));
-        po.setEnabled((byte) 1);
-        po.setIsCurrent((byte) 0);
+        po.setEnabled((short) 1);
+        po.setIsCurrent((short) 0);
         po.setDescription(description);
         po.setCreateTime(now);
         po.setUpdateTime(now);
@@ -95,9 +99,9 @@ public class ApiProviderConfigService {
         boolean switched = false;
         if (makeCurrent) {
             switched = true;
-            mapper.clearCurrentByApiType(apiType);
-            mapper.markCurrent(po.getId(), now);
-            po.setIsCurrent((byte) 1);
+            extMapper.clearCurrentByApiType(apiType);
+            extMapper.markCurrent(po.getId(), now);
+            po.setIsCurrent((short) 1);
         }
         boolean embeddingRuntimeChanged = isEmbeddingRuntimeChangedOnCreate(apiType, switched);
         publish(apiType, switched, embeddingRuntimeChanged);
@@ -121,7 +125,7 @@ public class ApiProviderConfigService {
 
         Map<String, Object> oldConfig = readJson(old.getConfigJson());
         String oldProviderType = old.getProviderType();
-        boolean wasCurrent = byteEquals(old.getIsCurrent(), 1);
+        boolean wasCurrent = shortEquals(old.getIsCurrent(), 1);
 
         Map<String, Object> merged = mergeConfigPreservingApiKey(old, config);
         merged = sanitizeConfig(merged, apiType, providerType);
@@ -130,7 +134,7 @@ public class ApiProviderConfigService {
         old.setConfigName(configName);
         old.setProviderType(providerType);
         old.setConfigJson(writeJson(merged));
-        old.setEnabled((byte) 1);
+        old.setEnabled((short) 1);
         old.setDescription(description);
         old.setUpdateTime(now);
         mapper.updateByPrimaryKey(old);
@@ -147,7 +151,7 @@ public class ApiProviderConfigService {
     @Transactional
     public void delete(Long id) {
         ApiProviderConfigPo po = requirePo(id);
-        if (byteEquals(po.getIsCurrent(), 1)) {
+        if (shortEquals(po.getIsCurrent(), 1)) {
             throw new IllegalStateException("当前生效配置不可删除，请先切换其他配置为当前");
         }
         mapper.deleteByPrimaryKey(id);
@@ -179,9 +183,9 @@ public class ApiProviderConfigService {
     public ProviderConfigView activate(Long id) {
         ApiProviderConfigPo po = requirePo(id);
         long now = System.currentTimeMillis();
-        mapper.clearCurrentByApiType(po.getApiType());
-        mapper.markCurrent(id, now);
-        po.setIsCurrent((byte) 1);
+        extMapper.clearCurrentByApiType(po.getApiType());
+        extMapper.markCurrent(id, now);
+        po.setIsCurrent((short) 1);
         po.setUpdateTime(now);
         boolean embeddingRuntimeChanged = ProviderTypes.API_TYPE_EMBEDDING.equals(po.getApiType());
         publish(po.getApiType(), true, embeddingRuntimeChanged);
@@ -238,8 +242,8 @@ public class ApiProviderConfigService {
                 po.getConfigName(),
                 po.getProviderType(),
                 config,
-                byteEquals(po.getEnabled(), 1),
-                byteEquals(po.getIsCurrent(), 1),
+                shortEquals(po.getEnabled(), 1),
+                shortEquals(po.getIsCurrent(), 1),
                 po.getDescription(),
                 po.getCreateTime(),
                 po.getUpdateTime()
@@ -478,11 +482,7 @@ public class ApiProviderConfigService {
         }
     }
 
-    private static byte toByte(boolean v) {
-        return (byte) (v ? 1 : 0);
-    }
-
-    private static boolean byteEquals(Byte v, int target) {
+    private static boolean shortEquals(Short v, int target) {
         return v != null && v == target;
     }
 

@@ -121,11 +121,15 @@
         </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-mysql</artifactId>
+            <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
         <dependency>
             <groupId>com.alibaba</groupId>
             <artifactId>druid-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
         </dependency>
         <dependency>
             <groupId>mysql</groupId>
@@ -265,7 +269,7 @@
                 <configuration>
                     <configurationFile>src/main/resources/mybatis-generator/generatorConfig.xml</configurationFile>
                     <outputDirectory>${project.build.directory}/generated-sources/mybatis-generator</outputDirectory>
-                    <jdbcDriver>com.mysql.cj.jdbc.Driver</jdbcDriver>
+                    <jdbcDriver>org.postgresql.Driver</jdbcDriver>
                     <overwrite>true</overwrite>
                     <verbose>true</verbose>
                 </configuration>

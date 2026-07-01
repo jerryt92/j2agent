@@ -1,7 +1,7 @@
 package io.github.jerryt92.j2agent.config.provider;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.jerryt92.j2agent.mapper.mgb.ApiProviderConfigPoMapper;
+import io.github.jerryt92.j2agent.mapper.ext.ApiProviderConfigExtMapper;
 import io.github.jerryt92.j2agent.model.po.mgb.ApiProviderConfigPo;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -23,14 +23,15 @@ import java.util.concurrent.atomic.AtomicReference;
 @DependsOn("flywayInitializer")
 public class ActiveProviderHolder {
 
-    private final ApiProviderConfigPoMapper mapper;
+    private final ApiProviderConfigExtMapper extMapper;
     private final ObjectMapper objectMapper;
 
     private final AtomicReference<LlmActiveConfig> activeLlm = new AtomicReference<>();
     private final AtomicReference<EmbeddingActiveConfig> activeEmbedding = new AtomicReference<>();
 
-    public ActiveProviderHolder(ApiProviderConfigPoMapper mapper, ObjectMapper objectMapper) {
-        this.mapper = mapper;
+    public ActiveProviderHolder(ApiProviderConfigExtMapper extMapper,
+                                ObjectMapper objectMapper) {
+        this.extMapper = extMapper;
         this.objectMapper = objectMapper;
     }
 
@@ -44,13 +45,13 @@ public class ActiveProviderHolder {
      */
     public synchronized void reloadFromDb() {
         try {
-            ApiProviderConfigPo llmPo = mapper.selectCurrentByApiType(ProviderTypes.API_TYPE_LLM);
+            ApiProviderConfigPo llmPo = extMapper.selectCurrentByApiType(ProviderTypes.API_TYPE_LLM);
             activeLlm.set(parseLlm(llmPo));
         } catch (Exception e) {
             log.error("加载 LLM 当前配置失败，保留旧值", e);
         }
         try {
-            ApiProviderConfigPo embPo = mapper.selectCurrentByApiType(ProviderTypes.API_TYPE_EMBEDDING);
+            ApiProviderConfigPo embPo = extMapper.selectCurrentByApiType(ProviderTypes.API_TYPE_EMBEDDING);
             activeEmbedding.set(parseEmbedding(embPo));
         } catch (Exception e) {
             log.error("加载 Embedding 当前配置失败，保留旧值", e);

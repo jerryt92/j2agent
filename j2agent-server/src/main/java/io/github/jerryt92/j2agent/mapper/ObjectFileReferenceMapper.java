@@ -12,10 +12,11 @@ import java.util.List;
 @Mapper
 public interface ObjectFileReferenceMapper {
     @Insert("""
-            INSERT IGNORE INTO object_file_reference
+            INSERT INTO object_file_reference
             (id, file_id, business_type, business_id, owner_id, created_at)
             VALUES
             (#{id}, #{fileId}, #{businessType}, #{businessId}, #{ownerId}, #{createdAt})
+            ON CONFLICT (file_id, business_type, business_id) DO NOTHING
             """)
     int insertIgnore(ObjectFileReferencePo po);
 

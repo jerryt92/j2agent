@@ -2,7 +2,7 @@
 
 [![GitHub](https://img.shields.io/badge/GitHub-J2Agent-blue?logo=github)](https://github.com/j2agent-ai/j2agent)
 
-J2Agent 是一个基于 Java Spring AI 的 Agent 运行平台。基于 Spring AI 与 Spring AI Alibaba，提供 Agent 推理执行、多智能体路由、RAG 检索增强、MCP / Skills 工具接入与可插拔业务 Agent 扩展，并集成 MySQL、Redis、Milvus 等基础设施。
+J2Agent 是一个基于 Java Spring AI 的 Agent 运行平台。基于 Spring AI 与 Spring AI Alibaba，提供 Agent 推理执行、多智能体路由、RAG 检索增强、MCP / Skills 工具接入与可插拔业务 Agent 扩展，并集成 PostgreSQL、Redis、Milvus 等基础设施。
 
 ## 贡献者
 
@@ -12,13 +12,13 @@ J2Agent 是一个基于 Java Spring AI 的 Agent 运行平台。基于 Spring AI
 
 ## Docker 一键部署
 
-Docker 配置都在 `docker/` 目录下，默认会启动 Milvus（v2.6.9）、MySQL、Redis 与 J2Agent。
+Docker 配置都在 `docker/` 目录下，默认会启动 Milvus（v2.6.9）、PostgreSQL、Redis 与 J2Agent。
 
 1. 拉取所有依赖镜像（可选）
 
 ```shell
 docker pull eclipse-temurin:21-jre
-docker pull mysql:8.0.36
+docker pull docker.io/postgres:18.4
 docker pull redis:7.4.2
 docker pull quay.io/coreos/etcd:v3.5.25
 docker pull minio/minio:RELEASE.2024-12-18T13-15-44Z
@@ -114,7 +114,7 @@ graph TD
     end
 
     subgraph infrastructure ["基础设施"]
-        mysql["MySQL"]
+        postgres["PostgreSQL"]
         redis["Redis"]
         milvus["Milvus"]
         springAiModel["Spring AI ChatModel"]
@@ -224,7 +224,7 @@ graph TD
 - **Skills 渐进式披露**：`SkillRegistry` + `read_skill` 按需加载 `SKILL.md`；加载过程可审计并推送 AgentUi 事件。
 - **对话记忆**：可扩展 `ChatMemory` 策略；`RedissonCachingChatMemoryRepository`（Redis 缓存 + JDBC 落库）。
 - **AgentUi 事件流**：WebSocket 推送 `AgentUiEventEnvelope`；`AgentTurnStateMachine`、工具调用与 Skill 加载可视化。
-- **JDK 21**：虚拟线程提升并发；Docker Compose 一键部署 MySQL / Redis / Milvus。
+- **JDK 21**：虚拟线程提升并发；Docker Compose 一键部署 PostgreSQL / Redis / Milvus。
 
 ## 待完善
 

@@ -103,18 +103,17 @@ public interface ObjectStorageSyncTaskMapper {
     ObjectStorageSyncTaskPo selectLatestSuccessful(@Param("bucket") String bucket);
 
     @Delete("""
-            DELETE t
-            FROM object_storage_sync_task t
-            LEFT JOIN object_storage_sync_diff d ON d.task_id = t.id
-            LEFT JOIN object_storage_sync_task newer
-              ON newer.bucket_name = t.bucket_name
-             AND newer.task_status = 'SUCCESS'
-             AND newer.completed_at > t.completed_at
+            DELETE FROM object_storage_sync_task t
             WHERE t.task_status IN ('SUCCESS', 'FAILED', 'CANCELLED')
               AND t.completed_at IS NOT NULL
               AND t.completed_at < #{cutoff}
-              AND d.id IS NULL
-              AND (t.task_status <> 'SUCCESS' OR newer.id IS NOT NULL)
+              AND NOT EXISTS (SELECT 1 FROM object_storage_sync_diff d WHERE d.task_id = t.id)
+              AND (t.task_status <> 'SUCCESS' OR EXISTS (
+                SELECT 1 FROM object_storage_sync_task newer
+                WHERE newer.bucket_name = t.bucket_name
+                  AND newer.task_status = 'SUCCESS'
+                  AND newer.completed_at > t.completed_at
+              ))
             """)
     int deleteCompletedBefore(@Param("cutoff") long cutoff);
 }

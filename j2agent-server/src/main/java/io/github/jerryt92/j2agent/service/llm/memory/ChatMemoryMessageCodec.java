@@ -37,9 +37,9 @@ public class ChatMemoryMessageCodec {
     public static final int CHAT_ROLE_TOOL = 3;
 
     /**
-     * MySQL TEXT 列安全上限（约 65535 字节），用于落库前诊断日志。
+     * TEXT 列安全上限（约 65535 字节），用于落库前诊断日志。
      */
-    public static final int MYSQL_TEXT_CHAR_SAFE_LIMIT = 65_535;
+    public static final int TEXT_CHAR_SAFE_LIMIT = 65_535;
 
     /**
      * 扩列 LONGTEXT 后 content 的应用层兜底上限。

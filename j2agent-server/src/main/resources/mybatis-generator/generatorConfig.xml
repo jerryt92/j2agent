@@ -8,8 +8,8 @@
     <context id="DB2Tables" targetRuntime="MyBatis3">
         <property name="javaFileEncoding" value="UTF-8"/>
         <property name="autoDelimitKeywords" value="true"/>
-        <property name="beginningDelimiter" value="`"/>
-        <property name="endingDelimiter" value="`"/>
+        <property name="beginningDelimiter" value="&quot;"/>
+        <property name="endingDelimiter" value="&quot;"/>
         <!--生成mapper.xml时覆盖原文件-->
         <plugin type="org.mybatis.generator.plugins.UnmergeableXmlMappersPlugin"/>
         <!-- 分页插件 -->
@@ -75,7 +75,7 @@
         </javaClientGenerator>
 
         <!-- tableName：数据库中的表名或视图名；domainObjectName：生成的实体类的类名-->
-        <table tableName="user" domainObjectName="UserPo"/>
+        <table tableName="app_user" domainObjectName="UserPo"/>
         <table tableName="context_record" domainObjectName="ContextRecordPo"/>
         <table tableName="context_record_item" domainObjectName="ContextRecordItemPo">
             <generatedKey column="id" sqlStatement="JDBC" identity="true"/>
