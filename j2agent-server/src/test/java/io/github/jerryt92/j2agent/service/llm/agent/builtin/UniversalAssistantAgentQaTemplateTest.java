@@ -3,7 +3,6 @@ package io.github.jerryt92.j2agent.service.llm.agent.builtin;
 import io.github.jerryt92.j2agent.constants.CommonConstants;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 import java.util.List;
 
@@ -17,8 +16,7 @@ class UniversalAssistantAgentQaTemplateTest {
 
     @BeforeEach
     void setUp() {
-        universalAssistantAgent = new UniversalAssistantAgent(
-                Mockito.mock(UniversalAssistantOrchestratorHook.class));
+        universalAssistantAgent = new UniversalAssistantAgent();
     }
 
     @Test
@@ -43,8 +41,7 @@ class UniversalAssistantAgentQaTemplateTest {
 
     @Test
     void qaTemplateDisabledAgentsReturnEmpty() {
-        UniversalAssistantAgent disabled = new UniversalAssistantAgent(
-                Mockito.mock(UniversalAssistantOrchestratorHook.class)) {
+        UniversalAssistantAgent disabled = new UniversalAssistantAgent() {
             @Override
             public boolean isQaTemplateEnabled() {
                 return false;

@@ -31,7 +31,7 @@ import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnCancellationRegistry;
 import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnLifecycle;
 import io.github.jerryt92.j2agent.service.llm.chat.TurnCancelledException;
 import io.github.jerryt92.j2agent.service.llm.agent.builtin.SubAgentStreamBridge;
-import io.github.jerryt92.j2agent.service.llm.agent.builtin.UniversalOrchestrationRunHolder;
+import io.github.jerryt92.j2agent.service.llm.agent.builtin.UniversalAssistantOrchestratorService;
 import io.github.jerryt92.j2agent.service.llm.universal.UniversalAssistantConstants;
 import io.github.jerryt92.j2agent.utils.UUIDv7Utils;
 import lombok.extern.slf4j.Slf4j;
@@ -70,6 +70,7 @@ public class ChatService {
     private final ObjectProvider<io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentService>
             chatAttachmentServiceProvider;
     private final AgentStreamSession agentStreamSession;
+    private final UniversalAssistantOrchestratorService universalAssistantOrchestratorService;
 
     public ChatService(ChatContextService chatContextService,
                        AgentRouter agentRouter,
@@ -80,7 +81,8 @@ public class ChatService {
                        ActiveChatTurnRegistry activeChatTurnRegistry,
                        ObjectProvider<io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentService>
                                chatAttachmentServiceProvider,
-                       AgentStreamSession agentStreamSession) {
+                       AgentStreamSession agentStreamSession,
+                       UniversalAssistantOrchestratorService universalAssistantOrchestratorService) {
         this.chatContextService = chatContextService;
         this.agentRouter = agentRouter;
         this.followUpSuggestionService = followUpSuggestionService;
@@ -90,6 +92,7 @@ public class ChatService {
         this.activeChatTurnRegistry = activeChatTurnRegistry;
         this.chatAttachmentServiceProvider = chatAttachmentServiceProvider;
         this.agentStreamSession = agentStreamSession;
+        this.universalAssistantOrchestratorService = universalAssistantOrchestratorService;
     }
 
     public static void registerContextChatCallback(String contextId, ChatCallback<AgentUiEventEnvelope> callback) {
@@ -329,7 +332,6 @@ public class ChatService {
                         StreamedAssistantPersistence.disable(turnConversationId);
                         TurnRagSourceRegistry.clear(turnConversationId);
                         SubAgentStreamBridge.unbind(turnId);
-                        UniversalOrchestrationRunHolder.unbind(turnId);
                         ChatTurnCancellationRegistry.clear(turnId);
                         logTurnEnd(runLogSnapshot, streamStartedAtMs, turnStepRecorder, AgentState.COMPLETED);
                         flushTurnTrace.run();
@@ -381,7 +383,6 @@ public class ChatService {
                             StreamedAssistantPersistence.disable(turnConversationId);
                             TurnRagSourceRegistry.clear(turnConversationId);
                             SubAgentStreamBridge.unbind(turnId);
-                            UniversalOrchestrationRunHolder.unbind(turnId);
                             ChatTurnCancellationRegistry.clear(turnId);
                         },
                         flushTurnTrace,
@@ -400,7 +401,6 @@ public class ChatService {
                     StreamedAssistantPersistence.disable(turnConversationId);
                     TurnRagSourceRegistry.clear(turnConversationId);
                     SubAgentStreamBridge.unbind(turnId);
-                    UniversalOrchestrationRunHolder.unbind(turnId);
                     logTurnEnd(runLogSnapshot, streamStartedAtMs, turnStepRecorder, AgentState.CANCELLED);
                     synchronized (turnLock) {
                         if (stateMachine.getState() != AgentState.COMPLETED
@@ -457,10 +457,30 @@ public class ChatService {
                 }
             }
             AtomicInteger retryNo = new AtomicInteger(0);
-            Runnable releaseSubAgentBridge = () -> {
-                SubAgentStreamBridge.unbind(turnId);
-                UniversalOrchestrationRunHolder.unbind(turnId);
-            };
+            Runnable releaseSubAgentBridge = () -> SubAgentStreamBridge.unbind(turnId);
+            if (universalAssistant) {
+                try {
+                    UniversalAssistantOrchestratorService.OrchestrationOutcome outcome =
+                            universalAssistantOrchestratorService.orchestrate(
+                                    new UniversalAssistantOrchestratorService.OrchestrationRequest(
+                                            contextId,
+                                            turnId,
+                                            userId,
+                                            turnConversationId,
+                                            toolEventEmitter,
+                                            finalAttachments,
+                                            limitedUserMessage));
+                    if (outcome == UniversalAssistantOrchestratorService.OrchestrationOutcome.DISPATCHED) {
+                        unbindThinkingOverride.run();
+                        ChatTurnCancellationRegistry.clearDisposables(turnId);
+                        chatChatCallback.completeCall.run();
+                        return;
+                    }
+                } catch (TurnCancelledException ex) {
+                    runWebsocketAbort.run();
+                    return;
+                }
+            }
             AgentStreamOptions agentStreamOptions = new AgentStreamOptions(
                     aiAgent,
                     agentRunContext,
@@ -512,7 +532,6 @@ public class ChatService {
                 StreamedAssistantPersistence.disable(failedConversationId);
                 TurnRagSourceRegistry.clear(failedConversationId);
                 SubAgentStreamBridge.unbind(turnId);
-                UniversalOrchestrationRunHolder.unbind(turnId);
                 ChatTurnCancellationRegistry.clear(turnId);
                 AgentRunLogContext.clear(failedConversationId);
             }

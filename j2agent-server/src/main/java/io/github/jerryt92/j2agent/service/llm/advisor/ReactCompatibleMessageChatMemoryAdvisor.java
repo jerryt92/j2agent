@@ -236,6 +236,31 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
         messages.add(liveUser);
     }
 
+    /**
+     * 预落库路径仅用 memory 拼 prompt，须保留图内 {@code instructions} 中的 {@link SystemMessage}
+     * （如 ReactAgent {@code systemPrompt}），记忆库本身不落库 system。
+     */
+    private static void prependSystemMessageFromInstructions(List<Message> messages, List<Message> instructions) {
+        SystemMessage systemMessage = findFirstSystemMessage(instructions);
+        if (systemMessage == null || messages == null) {
+            return;
+        }
+        messages.removeIf(SystemMessage.class::isInstance);
+        messages.add(0, systemMessage);
+    }
+
+    private static SystemMessage findFirstSystemMessage(List<Message> instructions) {
+        if (instructions == null) {
+            return null;
+        }
+        for (Message message : instructions) {
+            if (message instanceof SystemMessage systemMessage) {
+                return systemMessage;
+            }
+        }
+        return null;
+    }
+
     private static boolean isUserMessagePrePersisted(List<Message> instructions) {
         if (instructions == null) {
             return false;
@@ -309,6 +334,7 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
             if (liveUser != null) {
                 replaceTrailingUserMessage(processedMessages, liveUser);
             }
+            prependSystemMessageFromInstructions(processedMessages, instructions);
         } else {
             List<Message> memoryMessages = this.chatMemory.get(conversationId);
             processedMessages = new ArrayList<>(memoryMessages);
