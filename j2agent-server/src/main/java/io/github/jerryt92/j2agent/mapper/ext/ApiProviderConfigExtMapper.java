@@ -66,5 +66,5 @@ public interface ApiProviderConfigExtMapper {
                 update_time = #{updateTime}
             where id = #{id}
             """)
-    int markCurrent(@Param("id") Long id, @Param("updateTime") Long updateTime);
+    int markCurrent(@Param("id") String id, @Param("updateTime") Long updateTime);
 }

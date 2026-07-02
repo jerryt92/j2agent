@@ -11,7 +11,7 @@ public class ApiProviderConfigPo {
      *
      * @mbg.generated
      */
-    private Long id;
+    private String id;
 
     /**
      *
@@ -102,7 +102,7 @@ public class ApiProviderConfigPo {
      *
      * @mbg.generated
      */
-    public Long getId() {
+    public String getId() {
         return id;
     }
 
@@ -114,7 +114,7 @@ public class ApiProviderConfigPo {
      *
      * @mbg.generated
      */
-    public void setId(Long id) {
+    public void setId(String id) {
         this.id = id;
     }
 
@@ -341,7 +341,7 @@ public class ApiProviderConfigPo {
      * @mbg.generated
      */
     public enum Column {
-        id("id", "id", "BIGINT", false),
+        id("id", "id", "CHAR", false),
         apiType("api_type", "apiType", "VARCHAR", false),
         configName("config_name", "configName", "VARCHAR", false),
         providerType("provider_type", "providerType", "VARCHAR", false),

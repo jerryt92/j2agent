@@ -1020,9 +1020,8 @@ components:
       description: 模型提供商配置（LLM/Embedding），apiKey 已脱敏
       properties:
         id:
-          type: integer
-          format: int64
-          description: 主键
+          type: string
+          description: 主键（UUIDv7）
         apiType:
           type: string
           description: API 类型
