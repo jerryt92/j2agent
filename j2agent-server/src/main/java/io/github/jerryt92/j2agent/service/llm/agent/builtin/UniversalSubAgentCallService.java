@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * 通用助手子智能体调用（无 {@code @Tool}），由编排 Hook 直接调用。
+ * 通用助手子智能体调用（无 {@code @Tool}），由编排服务直接调用。
  * 委派调用使用 {@code subAgentCallRun=true}，不读写子智能体会话记忆，避免聊天记录落入专业 Agent 键。
  */
 @Slf4j

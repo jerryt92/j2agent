@@ -60,7 +60,7 @@ public class ToolEventEmitter {
     }
 
     /**
-     * 编排 Hook 开始分发：迁移至 {@link AgentState#AGENT_DISPATCHING}。
+     * 编排服务开始分发：迁移至 {@link AgentState#AGENT_DISPATCHING}。
      */
     public void onAgentDispatchingStart() {
         if (skipIfCancelled()) {
