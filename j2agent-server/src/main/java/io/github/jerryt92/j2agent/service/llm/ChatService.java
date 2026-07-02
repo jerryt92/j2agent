@@ -562,7 +562,7 @@ public class ChatService {
             AgentStateTransition transition = null;
             if (StringUtils.isNotBlank(answerDelta)
                     && (stateMachine.getState() == AgentState.THINKING
-                    || stateMachine.getState() == AgentState.AGENT_SCHEDULING
+                    || stateMachine.getState() == AgentState.AGENT_DISPATCHING
                     || stateMachine.getState() == AgentState.CALLING_TOOL
                     || stateMachine.getState() == AgentState.LOAD_SKILL)) {
                 transition = stateMachine.transit(AgentState.STREAMING_TEXT, "firstAnswerToken");

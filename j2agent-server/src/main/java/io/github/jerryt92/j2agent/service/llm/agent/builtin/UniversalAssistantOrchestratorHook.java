@@ -98,16 +98,16 @@ public class UniversalAssistantOrchestratorHook extends AgentHook {
         }
 
         ToolEventEmitter emitter = turnKeys.toolEventEmitter();
-        boolean schedulingEmitted = false;
+        boolean dispatchingEmitted = false;
         boolean delivered = false;
         int round = 0;
         while (round < MAX_ORCHESTRATION_ROUNDS) {
             if (ChatTurnCancellationRegistry.isCancelled(turnKeys.turnId())) {
                 return abortOnCancel(turnKeys.turnId(), config, false, delivered);
             }
-            if (!schedulingEmitted && emitter != null) {
-                emitter.onAgentSchedulingStart();
-                schedulingEmitted = true;
+            if (!dispatchingEmitted && emitter != null) {
+                emitter.onAgentDispatchingStart();
+                dispatchingEmitted = true;
             }
             boolean forceComplete = round >= MAX_ORCHESTRATION_ROUNDS - 1;
             UniversalDispatchDecisionService.DispatchDecision decision;
