@@ -29,7 +29,7 @@ public interface KnowledgeSourceFileHashMapper {
      * 查询根目录下 ACTIVE 文件与 collection 映射。
      */
     @Select("""
-            SELECT file_path AS filePath, collection_name AS collectionName
+            SELECT file_path AS "filePath", collection_name AS "collectionName"
             FROM knowledge_source_file_hash
             WHERE sync_status = 'ACTIVE'
             """)
@@ -39,7 +39,7 @@ public interface KnowledgeSourceFileHashMapper {
      * 查询根目录下各 collection 的 ACTIVE 文件数量。
      */
     @Select("""
-            SELECT collection_name AS collectionName, COUNT(1) AS fileCount
+            SELECT collection_name AS "collectionName", COUNT(1) AS "fileCount"
             FROM knowledge_source_file_hash
             WHERE sync_status = 'ACTIVE'
             GROUP BY collection_name
