@@ -32,7 +32,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 通用助手意图召回：由 {@link UniversalAssistantOrchestratorHook} 在 ReAct 前调用，
+ * 通用助手意图召回：由 {@link UniversalAssistantOrchestratorService} 在 ChatService 前置调用，
  * 结合图内 messages 与调度 LLM 返回子智能体候选 JSON。
  */
 @Slf4j

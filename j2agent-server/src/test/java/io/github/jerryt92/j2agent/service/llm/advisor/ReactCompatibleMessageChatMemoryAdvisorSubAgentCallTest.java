@@ -8,6 +8,7 @@ import org.springframework.ai.chat.client.advisor.api.AdvisorChain;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
@@ -21,6 +22,8 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -106,6 +109,35 @@ class ReactCompatibleMessageChatMemoryAdvisorSubAgentCallTest {
         verify(chatMemory).get("user:ctx:universal_assistant");
         verify(chatMemory, never()).add(anyString(), any(Message.class));
         verify(chatMemory, never()).add(anyString(), any(List.class));
+    }
+
+    @Test
+    void prePersistedUserMessagePreservesSystemMessageFromInstructions() {
+        ChatMemory chatMemory = mock(ChatMemory.class);
+        when(chatMemory.get("user:ctx:universal_assistant")).thenReturn(List.of(
+                new UserMessage("hello")));
+        ReactCompatibleMessageChatMemoryAdvisor advisor =
+                ReactCompatibleMessageChatMemoryAdvisor.builder(chatMemory).build();
+        AdvisorChain chain = mock(AdvisorChain.class);
+
+        SystemMessage systemMessage = new SystemMessage("你是 J2Agent AI 通用助手");
+        UserMessage userMessage = UserMessage.builder()
+                .text("hello")
+                .metadata(Map.of(
+                        ChatMemory.CONVERSATION_ID, "user:ctx:universal_assistant",
+                        ReactCompatibleMessageChatMemoryAdvisor.META_USER_MESSAGE_PRE_PERSISTED, Boolean.TRUE))
+                .build();
+        ChatClientRequest request = ChatClientRequest.builder()
+                .prompt(new Prompt(List.of(systemMessage, userMessage)))
+                .build();
+
+        ChatClientRequest processed = advisor.before(request, chain);
+        List<Message> messages = processed.prompt().getInstructions();
+
+        assertEquals(2, messages.size());
+        assertInstanceOf(SystemMessage.class, messages.get(0));
+        assertTrue(messages.get(0).getText().contains("J2Agent"));
+        verify(chatMemory, never()).add(anyString(), any(Message.class));
     }
 
     @Test
