@@ -11,7 +11,9 @@ class UniversalAssistantAgentSystemPromptTest {
     void loadSystemPromptContainsJ2AgentIdentity() {
         UniversalAssistantAgent agent = new UniversalAssistantAgent();
         String prompt = agent.loadSystemPrompt();
+        assertTrue(prompt.contains("J2Agent"));
         assertTrue(prompt.contains("AI 通用助手"));
+        assertTrue(prompt.contains("编排服务"));
         assertTrue(prompt.contains("子智能体"));
         assertFalse(prompt.isBlank());
     }

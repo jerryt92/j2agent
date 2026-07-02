@@ -5,6 +5,7 @@ import io.github.jerryt92.j2agent.event.ProviderConfigChangedEvent;
 import io.github.jerryt92.j2agent.mapper.ext.ApiProviderConfigExtMapper;
 import io.github.jerryt92.j2agent.mapper.mgb.ApiProviderConfigPoMapper;
 import io.github.jerryt92.j2agent.model.po.mgb.ApiProviderConfigPo;
+import io.github.jerryt92.j2agent.utils.UUIDv7Utils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.context.ApplicationEventPublisher;
@@ -63,7 +64,7 @@ public class ApiProviderConfigService {
     /**
      * 按 id 查询单条；apiKey 已脱敏。
      */
-    public ProviderConfigView getById(Long id) {
+    public ProviderConfigView getById(String id) {
         ApiProviderConfigPo po = requirePo(id);
         return toView(po);
     }
@@ -85,6 +86,7 @@ public class ApiProviderConfigService {
 
         long now = System.currentTimeMillis();
         ApiProviderConfigPo po = new ApiProviderConfigPo();
+        po.setId(UUIDv7Utils.randomUUIDv7());
         po.setApiType(apiType);
         po.setConfigName(configName);
         po.setProviderType(providerType);
@@ -112,7 +114,7 @@ public class ApiProviderConfigService {
      * 更新一条配置；apiKey 留空表示沿用原密钥。
      */
     @Transactional
-    public ProviderConfigView update(Long id,
+    public ProviderConfigView update(String id,
                                      String configName,
                                      String providerType,
                                      Map<String, Object> config,
@@ -149,7 +151,7 @@ public class ApiProviderConfigService {
      * 删除一条配置；当前生效的记录禁止删除，需先切换。
      */
     @Transactional
-    public void delete(Long id) {
+    public void delete(String id) {
         ApiProviderConfigPo po = requirePo(id);
         if (shortEquals(po.getIsCurrent(), 1)) {
             throw new IllegalStateException("当前生效配置不可删除，请先切换其他配置为当前");
@@ -162,7 +164,7 @@ public class ApiProviderConfigService {
      * 复制一条配置；新配置默认启用且非当前生效，完整保留源 config_json（含 apiKey）。
      */
     @Transactional
-    public ProviderConfigView copy(Long id) {
+    public ProviderConfigView copy(String id) {
         ApiProviderConfigPo source = requirePo(id);
         Map<String, Object> config = readJson(source.getConfigJson());
         String newName = deriveCopyName(source.getConfigName());
@@ -180,7 +182,7 @@ public class ApiProviderConfigService {
      * 将指定 id 设为该 api_type 下当前生效配置；目标必须启用。
      */
     @Transactional
-    public ProviderConfigView activate(Long id) {
+    public ProviderConfigView activate(String id) {
         ApiProviderConfigPo po = requirePo(id);
         long now = System.currentTimeMillis();
         extMapper.clearCurrentByApiType(po.getApiType());
@@ -296,7 +298,7 @@ public class ApiProviderConfigService {
         return value == null ? null : String.valueOf(value);
     }
 
-    private ApiProviderConfigPo requirePo(Long id) {
+    private ApiProviderConfigPo requirePo(String id) {
         if (id == null) {
             throw new IllegalArgumentException("id 不能为空");
         }
@@ -501,7 +503,7 @@ public class ApiProviderConfigService {
      * 视图对象：列表与详情接口返回的通用形态。
      */
     public record ProviderConfigView(
-            Long id,
+            String id,
             String apiType,
             String configName,
             String providerType,

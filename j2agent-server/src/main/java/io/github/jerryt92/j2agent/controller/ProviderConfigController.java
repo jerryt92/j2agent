@@ -63,7 +63,7 @@ public class ProviderConfigController implements ProviderConfigApi {
     }
 
     @Override
-    public ResponseEntity<ProviderConfigDto> updateProviderConfig(Long id, ProviderConfigUpsertDto body) {
+    public ResponseEntity<ProviderConfigDto> updateProviderConfig(String id, ProviderConfigUpsertDto body) {
         boolean enabled = true;
         ProviderConfigView view = service.update(
                 id,
@@ -76,18 +76,18 @@ public class ProviderConfigController implements ProviderConfigApi {
     }
 
     @Override
-    public ResponseEntity<Void> deleteProviderConfig(Long id) {
+    public ResponseEntity<Void> deleteProviderConfig(String id) {
         service.delete(id);
         return ResponseEntity.ok().build();
     }
 
     @Override
-    public ResponseEntity<ProviderConfigDto> activateProviderConfig(Long id) {
+    public ResponseEntity<ProviderConfigDto> activateProviderConfig(String id) {
         return ResponseEntity.ok(toDto(service.activate(id)));
     }
 
     @Override
-    public ResponseEntity<ProviderConfigDto> copyProviderConfig(Long id) {
+    public ResponseEntity<ProviderConfigDto> copyProviderConfig(String id) {
         return ResponseEntity.ok(toDto(service.copy(id)));
     }
 

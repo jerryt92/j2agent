@@ -59,7 +59,7 @@ class ApiProviderConfigServiceCopyTest {
     @Test
     void copy_createsEnabledNonCurrentConfigWithFullApiKey() throws Exception {
         ApiProviderConfigPo source = new ApiProviderConfigPo();
-        source.setId(1L);
+        source.setId("source-id");
         source.setApiType(ProviderTypes.API_TYPE_LLM);
         source.setConfigName("prod-openai");
         source.setProviderType(ProviderTypes.LLM_OPEN_AI);
@@ -71,16 +71,13 @@ class ApiProviderConfigServiceCopyTest {
         source.setIsCurrent((short) 1);
         source.setDescription("primary");
 
-        when(mapper.selectByPrimaryKey(1L)).thenReturn(source);
+        when(mapper.selectByPrimaryKey("source-id")).thenReturn(source);
         when(mapper.insert(any(ApiProviderConfigPo.class))).thenAnswer(invocation -> {
-            ApiProviderConfigPo inserted = invocation.getArgument(0);
-            inserted.setId(2L);
             return 1;
         });
 
-        ApiProviderConfigService.ProviderConfigView view = service.copy(1L);
+        ApiProviderConfigService.ProviderConfigView view = service.copy("source-id");
 
-        assertEquals(2L, view.id());
         assertEquals("prod-openai" + COPY_SUFFIX, view.configName());
         assertTrue(view.enabled());
         assertFalse(view.isCurrent());
@@ -92,6 +89,7 @@ class ApiProviderConfigServiceCopyTest {
         ApiProviderConfigPo inserted = insertedCaptor.getValue();
         assertEquals((short) 1, inserted.getEnabled());
         assertEquals((short) 0, inserted.getIsCurrent());
+        assertTrue(inserted.getId() != null && !inserted.getId().isBlank());
 
         @SuppressWarnings("unchecked")
         Map<String, Object> storedConfig = objectMapper.readValue(inserted.getConfigJson(), Map.class);
@@ -107,9 +105,9 @@ class ApiProviderConfigServiceCopyTest {
 
     @Test
     void copy_whenSourceMissing_throws() {
-        when(mapper.selectByPrimaryKey(99L)).thenReturn(null);
+        when(mapper.selectByPrimaryKey("missing-id")).thenReturn(null);
 
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> service.copy(99L));
-        assertTrue(ex.getMessage().contains("99"));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> service.copy("missing-id"));
+        assertTrue(ex.getMessage().contains("missing-id"));
     }
 }

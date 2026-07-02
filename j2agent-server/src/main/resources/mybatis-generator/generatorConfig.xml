@@ -76,9 +76,7 @@
         <table tableName="app_user" domainObjectName="UserPo"/>
         <table tableName="api_key_info" domainObjectName="ApiKeyInfoPo"/>
         <table tableName="ai_properties" domainObjectName="PropertiesPo"/>
-        <table tableName="api_provider_config" domainObjectName="ApiProviderConfigPo">
-            <generatedKey column="id" sqlStatement="JDBC" identity="true"/>
-        </table>
+        <table tableName="api_provider_config" domainObjectName="ApiProviderConfigPo"/>
         <table tableName="chat_context_record" domainObjectName="ChatContextRecord"/>
         <table tableName="chat_context_item" domainObjectName="ChatContextItem"/>
     </context>
