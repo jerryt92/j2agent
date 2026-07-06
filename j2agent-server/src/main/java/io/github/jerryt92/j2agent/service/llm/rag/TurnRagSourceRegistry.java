@@ -15,7 +15,10 @@ import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -23,6 +26,7 @@ import java.util.function.Consumer;
 /**
  * 单轮流式对话内 RAG 来源收集与 WebSocket 推送。
  * <p>使用 {@code conversationId} 作为键（非 ThreadLocal），因 RAG Advisor 常在 {@code publishOn} 后的工作线程执行。</p>
+ * <p>单回合内多次 RAG（含子智能体委派）按 {@code sourceFile} 路径累加去重后统一 PATCH 与落库。</p>
  */
 public final class TurnRagSourceRegistry {
 
@@ -31,6 +35,7 @@ public final class TurnRagSourceRegistry {
     private TurnRagSourceRegistry() {
     }
 
+    /** 绑定当前回合 Holder，用于采集 RAG 来源并推送 PATCH。 */
     public static void bind(String conversationId,
                             Consumer<AgentUiEventEnvelope> sink,
                             Object turnLock,
@@ -50,20 +55,41 @@ public final class TurnRagSourceRegistry {
         holder.seq = seq;
         holder.stateMachine = stateMachine;
         holder.assistantMessageIndex = assistantMessageIndex;
+        holder.persistConversationId = conversationId;
         BY_CONVERSATION.put(conversationId, holder);
     }
 
     /**
      * 子智能体调用运行时与直进使用相同 conversationId 键；共享 persist 回合 Holder 以推送 RAG 来源并落库。
+     *
+     * @return 是否成功关联到父回合 Holder
      */
-    public static void shareHolder(String runtimeConversationId, String persistConversationId) {
+    public static boolean shareHolder(String runtimeConversationId, String persistConversationId) {
         if (!StringUtils.hasText(runtimeConversationId) || !StringUtils.hasText(persistConversationId)) {
-            return;
+            return false;
         }
         Holder holder = BY_CONVERSATION.get(persistConversationId);
         if (holder != null) {
             BY_CONVERSATION.put(runtimeConversationId, holder);
+            return true;
         }
+        return false;
+    }
+
+    /** 当前 conversationId 是否已绑定或可解析到回合 Holder。 */
+    public static boolean hasHolder(String conversationId) {
+        return resolveHolder(conversationId) != null;
+    }
+
+    /**
+     * 返回回合持久化键（bind 时的父 conversationId）；未绑定时回退入参。
+     */
+    public static String persistConversationId(String conversationId) {
+        Holder holder = resolveHolder(conversationId);
+        if (holder != null && StringUtils.hasText(holder.persistConversationId)) {
+            return holder.persistConversationId;
+        }
+        return conversationId;
     }
 
     /**
@@ -79,12 +105,20 @@ public final class TurnRagSourceRegistry {
         if (conversationId == null || conversationId.isBlank()) {
             return null;
         }
-        return BY_CONVERSATION.get(conversationId);
+        Holder holder = BY_CONVERSATION.get(conversationId);
+        if (holder != null) {
+            return holder;
+        }
+        for (Holder candidate : BY_CONVERSATION.values()) {
+            if (conversationId.equals(candidate.persistConversationId)) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     /**
-     * 首次有非空来源时缓存 rag_infos JSON 供落库；{@code displayToFrontend=true} 时额外推送 WebSocket PATCH。
-     * 后续调用幂等忽略。
+     * 按路径累加 RAG 来源；{@code displayToFrontend=true} 时推送含全集的 WebSocket PATCH。
      */
     public static void publishSources(String conversationId,
                                       List<FileDto> srcFiles,
@@ -96,19 +130,100 @@ public final class TurnRagSourceRegistry {
         Holder holder = resolveHolder(conversationId);
         if (holder == null) {
             AgentRunLogger.warnByConversationId(conversationId, AgentRunEventType.RAG_SOURCE,
-                    AgentRunLogger.kv("rag", "skipped=registryMissing"),
+                    AgentRunLogger.kv("rag", "skipped=registryMissing,mdFiles=" + srcFiles.size()),
                     "RAG source collection skipped: turn registry missing");
             return;
         }
-        if (holder.collected) {
+        int before = holder.ragInfosByPath.size();
+        mergeRagInfos(holder, ragInfos);
+        int after = holder.ragInfosByPath.size();
+        if (after == 0) {
             return;
         }
-        holder.collected = true;
-        holder.ragInfosJson = JSON.toJSONString(ragInfos != null ? ragInfos : List.of());
+        holder.ragInfosJson = JSON.toJSONString(holder.mergedRagInfos());
+        boolean added = after > before;
         if (!displayToFrontend) {
-            AgentRunLogger.infoByConversationId(conversationId, AgentRunEventType.RAG_SOURCE,
-                    AgentRunLogger.kv("rag", "mdFiles=" + srcFiles.size() + ",display=false"),
-                    "RAG sources collected");
+            return;
+        }
+        if (!added && holder.displayPushed) {
+            return;
+        }
+        pushSrcFilePatch(holder);
+        holder.displayPushed = true;
+        AgentRunLogger.infoByConversationId(conversationId, AgentRunEventType.RAG_SOURCE,
+                AgentRunLogger.kv("rag", "files=" + after + ",display=true,added=" + (after - before)),
+                "RAG sources pushed to frontend");
+    }
+
+    /**
+     * 取出本回合 rag_infos JSON 供落库；未采集过来源时返回 null。
+     */
+    public static String drainRagInfosJson(String conversationId) {
+        if (conversationId == null || conversationId.isBlank()) {
+            return null;
+        }
+        Holder holder = resolveHolder(conversationId);
+        if (holder == null || holder.ragInfosByPath.isEmpty()) {
+            return null;
+        }
+        if (holder.ragInfosJson == null) {
+            holder.ragInfosJson = JSON.toJSONString(holder.mergedRagInfos());
+        }
+        return holder.ragInfosJson;
+    }
+
+    /** 清除 persist 键及其全部 runtime 别名。 */
+    public static void clear(String conversationId) {
+        if (conversationId == null || conversationId.isBlank()) {
+            return;
+        }
+        Holder holder = BY_CONVERSATION.remove(conversationId);
+        if (holder == null) {
+            return;
+        }
+        Iterator<Map.Entry<String, Holder>> iterator = BY_CONVERSATION.entrySet().iterator();
+        while (iterator.hasNext()) {
+            if (iterator.next().getValue() == holder) {
+                iterator.remove();
+            }
+        }
+    }
+
+    private static void mergeRagInfos(Holder holder, List<RagInfoDto> ragInfos) {
+        if (ragInfos == null || ragInfos.isEmpty()) {
+            return;
+        }
+        for (RagInfoDto ragInfo : ragInfos) {
+            if (ragInfo == null || ragInfo.getSrcFile() == null) {
+                continue;
+            }
+            String pathKey = pathKey(ragInfo.getSrcFile());
+            if (!StringUtils.hasText(pathKey)) {
+                continue;
+            }
+            holder.ragInfosByPath.putIfAbsent(pathKey, ragInfo);
+        }
+    }
+
+    private static String pathKey(FileDto fileDto) {
+        if (fileDto == null) {
+            return null;
+        }
+        if (StringUtils.hasText(fileDto.getRelativePath())) {
+            return fileDto.getRelativePath().replace('\\', '/');
+        }
+        if (StringUtils.hasText(fileDto.getUrl())) {
+            return fileDto.getUrl();
+        }
+        return null;
+    }
+
+    private static void pushSrcFilePatch(Holder holder) {
+        if (holder.sink == null) {
+            return;
+        }
+        List<FileDto> srcFiles = holder.mergedSrcFiles();
+        if (srcFiles.isEmpty()) {
             return;
         }
         ChatResponseDto payload = new ChatResponseDto();
@@ -129,40 +244,30 @@ public final class TurnRagSourceRegistry {
                     payload
             ));
         }
-        AgentRunLogger.infoByConversationId(conversationId, AgentRunEventType.RAG_SOURCE,
-                AgentRunLogger.kv("rag", "mdFiles=" + srcFiles.size() + ",display=true"),
-                "RAG sources pushed to frontend");
-    }
-
-    /**
-     * 取出本回合 rag_infos JSON 供落库；未采集过来源时返回 null。
-     */
-    public static String drainRagInfosJson(String conversationId) {
-        if (conversationId == null || conversationId.isBlank()) {
-            return null;
-        }
-        Holder holder = resolveHolder(conversationId);
-        if (holder == null) {
-            return null;
-        }
-        return holder.ragInfosJson;
-    }
-
-    public static void clear(String conversationId) {
-        if (conversationId != null && !conversationId.isBlank()) {
-            BY_CONVERSATION.remove(conversationId);
-        }
     }
 
     private static final class Holder {
-        private Consumer<AgentUiEventEnvelope> sink;
-        private Object turnLock;
-        private String contextId;
-        private String turnId;
-        private AtomicLong seq;
-        private AgentTurnStateMachine stateMachine;
-        private int assistantMessageIndex;
-        private boolean collected;
-        private String ragInfosJson;
+        Consumer<AgentUiEventEnvelope> sink;
+        Object turnLock;
+        String contextId;
+        String turnId;
+        AtomicLong seq;
+        AgentTurnStateMachine stateMachine;
+        int assistantMessageIndex;
+        String persistConversationId;
+        boolean displayPushed;
+        final LinkedHashMap<String, RagInfoDto> ragInfosByPath = new LinkedHashMap<>();
+        String ragInfosJson;
+
+        List<RagInfoDto> mergedRagInfos() {
+            return new ArrayList<>(ragInfosByPath.values());
+        }
+
+        List<FileDto> mergedSrcFiles() {
+            return mergedRagInfos().stream()
+                    .map(RagInfoDto::getSrcFile)
+                    .filter(file -> file != null)
+                    .toList();
+        }
     }
 }

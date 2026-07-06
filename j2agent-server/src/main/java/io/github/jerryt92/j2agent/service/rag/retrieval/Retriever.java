@@ -9,6 +9,7 @@ import io.github.jerryt92.j2agent.service.embedding.EmbeddingService;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
 import io.github.jerryt92.j2agent.service.rag.inf.AbstractCollectionKbRetriever;
+import io.github.jerryt92.j2agent.service.rag.RagSourcePathUtils;
 import io.github.jerryt92.j2agent.service.rag.knowledge.KnowledgeTextChunkService;
 import io.github.jerryt92.j2agent.service.rag.vdb.VectorDatabaseService;
 import io.github.jerryt92.j2agent.utils.MathCalculatorUtil;
@@ -267,6 +268,14 @@ public class Retriever {
             item.setTextChunk(po.getTextChunk());
             if (StringUtils.isBlank(item.getHeadingPath())) {
                 item.setHeadingPath(po.getHeadingPath());
+            }
+            if (StringUtils.isNotBlank(po.getSourceFile())) {
+                boolean milvusBlank = StringUtils.isBlank(item.getSourceFile());
+                boolean milvusNotKb = !milvusBlank
+                        && !RagSourcePathUtils.isKbSourceRelativePath(item.getSourceFile());
+                if (milvusBlank || milvusNotKb) {
+                    item.setSourceFile(po.getSourceFile());
+                }
             }
         }
     }

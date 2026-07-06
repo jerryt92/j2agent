@@ -438,15 +438,20 @@ public final class Translator {
         if (ragInfoDtos == null || ragInfoDtos.isEmpty()) {
             return List.of();
         }
-        Map<Integer, FileDto> deduped = new LinkedHashMap<>();
+        Map<String, FileDto> deduped = new LinkedHashMap<>();
         for (RagInfoDto ragInfoDto : ragInfoDtos) {
             if (ragInfoDto == null || ragInfoDto.getSrcFile() == null) {
                 continue;
             }
             FileDto srcFile = ragInfoDto.getSrcFile();
             normalizeRepoFileDto(srcFile);
-            Integer id = srcFile.getId();
-            deduped.putIfAbsent(id != null ? id : deduped.size(), srcFile);
+            String dedupeKey = StringUtils.isNotBlank(srcFile.getRelativePath())
+                    ? srcFile.getRelativePath().replace('\\', '/')
+                    : (StringUtils.isNotBlank(srcFile.getUrl()) ? srcFile.getUrl() : null);
+            if (dedupeKey == null) {
+                dedupeKey = "idx-" + deduped.size();
+            }
+            deduped.putIfAbsent(dedupeKey, srcFile);
         }
         return new ArrayList<>(deduped.values());
     }

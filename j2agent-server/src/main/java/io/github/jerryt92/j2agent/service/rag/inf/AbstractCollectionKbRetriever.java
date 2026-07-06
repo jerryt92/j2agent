@@ -4,6 +4,9 @@ import io.github.jerryt92.j2agent.model.EmbeddingModel;
 import io.github.jerryt92.j2agent.service.llm.PromptConversationIdExtractor;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
+import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunnableContextKeys;
+import io.github.jerryt92.j2agent.service.rag.RagSourcePublicationService;
+import io.github.jerryt92.j2agent.service.rag.RagSourcePathUtils;
 import io.github.jerryt92.j2agent.service.rag.query.QueryTransformContextKeys;
 import io.github.jerryt92.j2agent.service.rag.retrieval.Retriever;
 import lombok.extern.slf4j.Slf4j;
@@ -19,8 +22,10 @@ import org.springframework.ai.rag.retrieval.search.DocumentRetriever;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 与 collection 绑定的知识库检索器抽象基类。
@@ -71,13 +76,15 @@ public abstract class AbstractCollectionKbRetriever implements DocumentRetriever
                 queryText, boundCollection(), boundPartitions(), conversationId);
         if (ragChunksResult.status() == Retriever.RetrievalStatus.FAILED) {
             logRagRetrieve(conversationId, boundCollection(), ragChunksResult.status(),
-                    0, 0, ragChunksResult.failureMessage());
+                    0, 0, ragChunksResult.failureMessage(), List.of());
             return List.of(buildFallbackDocument());
         }
         List<EmbeddingModel.EmbeddingsQueryItem> embeddingsQueryItems = ragChunksResult.items();
         List<Document> documents = buildDocuments(embeddingsQueryItems);
         logRagRetrieve(conversationId, boundCollection(), ragChunksResult.status(),
-                embeddingsQueryItems.size(), documents.size(), null);
+                embeddingsQueryItems.size(), documents.size(), null, embeddingsQueryItems);
+        String agentId = extractAgentId(query);
+        RagSourcePublicationService.tryPublishFromRetriever(conversationId, agentId, documents);
         return documents;
     }
 
@@ -96,11 +103,13 @@ public abstract class AbstractCollectionKbRetriever implements DocumentRetriever
                                 Retriever.RetrievalStatus status,
                                 int hits,
                                 int docs,
-                                String failureMessage) {
+                                String failureMessage,
+                                List<EmbeddingModel.EmbeddingsQueryItem> items) {
         String ragSummary = "collection=" + collection
                 + ",status=" + status
                 + ",hits=" + hits
                 + ",docs=" + docs
+                + summarizeUniqueSourceFiles(items)
                 + (failureMessage == null ? "" : ",reason=" + AgentRunLogger.preview(failureMessage));
         if (conversationId != null) {
             if (status == Retriever.RetrievalStatus.FAILED) {
@@ -120,6 +129,19 @@ public abstract class AbstractCollectionKbRetriever implements DocumentRetriever
             log.info("RAG 对话检索: collection={}, status={}, 分片命中数={}, 生成Document数={}",
                     collection, status, hits, docs);
         }
+    }
+
+    /** 从 RAG Query 上下文读取 agentId，缺失时由发布服务从 conversationId 解析。 */
+    private static String extractAgentId(Query query) {
+        if (query == null || query.context() == null) {
+            return null;
+        }
+        Object raw = query.context().get(AgentRunnableContextKeys.CONTEXT_KEY_AGENT_ID);
+        if (raw == null) {
+            return null;
+        }
+        String agentId = raw.toString().trim();
+        return agentId.isEmpty() ? null : agentId;
     }
 
     private List<Document> buildDocuments(List<EmbeddingModel.EmbeddingsQueryItem> embeddingsQueryItems) {
@@ -176,5 +198,26 @@ public abstract class AbstractCollectionKbRetriever implements DocumentRetriever
             }
         }
         return false;
+    }
+
+    /** 统计命中分片中规范化后不重复的知识库文档源文件数。 */
+    private static String summarizeUniqueSourceFiles(List<EmbeddingModel.EmbeddingsQueryItem> items) {
+        if (items == null || items.isEmpty()) {
+            return "";
+        }
+        Set<String> kbPaths = new LinkedHashSet<>();
+        for (EmbeddingModel.EmbeddingsQueryItem item : items) {
+            if (item == null || StringUtils.isBlank(item.getSourceFile())) {
+                continue;
+            }
+            String normalized = RagSourcePathUtils.normalizeKbSourceRelativePath(item.getSourceFile().trim());
+            if (normalized != null) {
+                kbPaths.add(normalized);
+            }
+        }
+        if (kbPaths.isEmpty()) {
+            return "";
+        }
+        return ",uniqueSourceFiles=" + kbPaths.size();
     }
 }

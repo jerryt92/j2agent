@@ -12,6 +12,8 @@ import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
 import io.github.jerryt92.j2agent.service.llm.agent.inf.constant.AgentThinkingOverride;
 import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnCancellationRegistry;
 import io.github.jerryt92.j2agent.service.llm.chat.TurnCancelledException;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
 import io.github.jerryt92.j2agent.service.llm.memory.ConversationIdCodec;
 import io.github.jerryt92.j2agent.service.llm.rag.TurnRagSourceRegistry;
 import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
@@ -80,7 +82,12 @@ public class UniversalSubAgentCallService {
                 ? parentThinking
                 : targetAgent.getThinkingOverride();
         ThinkingOverrideRegistry.bind(specialistConversationId, runtimeThinking);
-        TurnRagSourceRegistry.shareHolder(specialistConversationId, request.parentConversationId());
+        if (!TurnRagSourceRegistry.shareHolder(specialistConversationId, request.parentConversationId())) {
+            AgentRunLogger.warnByConversationId(request.parentConversationId(), AgentRunEventType.RAG_SOURCE,
+                    AgentRunLogger.kv("rag", "skipped=shareHolderFailed,specialist=" + specialistConversationId
+                            + ",agentId=" + trimmedAgentId),
+                    "sub-agent RAG source bridge failed");
+        }
 
         SubAgentStreamBridge.Target bridge = SubAgentStreamBridge.lookup(turnId);
         StringBuilder content = bridge != null ? bridge.streamedContent() : new StringBuilder();
@@ -133,7 +140,6 @@ public class UniversalSubAgentCallService {
             return "调用子智能体时出现问题: " + ex.getMessage();
         } finally {
             ThinkingOverrideRegistry.unbind(specialistConversationId);
-            TurnRagSourceRegistry.unshareHolder(specialistConversationId);
         }
     }
 
