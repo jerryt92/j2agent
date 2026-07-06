@@ -51,7 +51,6 @@ public final class QueryUserMessageSupport {
         if (userMessage == null || StringUtils.hasText(userMessage.getText()) || !hasRetrievalInput(userMessage)) {
             return request;
         }
-        log.info("query transform: patching image-only user message with invisible placeholder for Query.text");
         QueryTransformAgentRunLog.infoByConversationId(conversationId, "patch",
                 "action=imageOnlyPlaceholder",
                 "patching image-only user message with invisible placeholder for Query.text");

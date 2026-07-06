@@ -534,8 +534,7 @@ public abstract class AiAgent {
             RetrievalAugmentationAdvisor ragAdvisor = ragAdvisorBuilder.build();
             chatClient = ChatClient.builder(chatModel)
                     .defaultAdvisors(memoryAdvisor,
-                            EmptyQuerySkippingRetrievalAugmentationAdvisor.wrap(
-                                    ragAdvisor, ragSourceFileService, isRagSourceDisplayEnabled()))
+                            EmptyQuerySkippingRetrievalAugmentationAdvisor.wrap(ragAdvisor))
                     .build();
         }
         Builder builder = ReactAgent.builder()
