@@ -7,6 +7,7 @@ import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallResponse;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolInterceptor;
 import com.alibaba.fastjson2.JSONObject;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunnableContextKeys;
+import io.github.jerryt92.j2agent.service.llm.advisor.ReactCompatibleMessageChatMemoryAdvisor;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
 import io.github.jerryt92.j2agent.service.llm.memory.ChatMemoryMessageCodec;
@@ -71,31 +72,36 @@ public class AgentUiSkillLoadToolInterceptor extends ToolInterceptor {
                 Throwable err = toFailureThrowable(response);
                 logSkillLoad(conversationId, skillName, "FAILED", durationMs, err.getMessage());
                 emitterOpt.ifPresent(e -> e.onSkillLoadFailure(callId, toolName, skillName, err, durationMs));
-                persistAudit(conversationIdOpt, skillName, false, fullLen, truncated, err.getMessage());
+                persistAudit(request, conversationIdOpt, skillName, false, fullLen, truncated, err.getMessage());
                 return response;
             }
             logSkillLoad(conversationId, skillName, "SUCCESS", durationMs, null);
             emitterOpt.ifPresent(e -> e.onSkillLoadSuccess(callId, toolName, skillName, rawResult, durationMs));
-            persistAudit(conversationIdOpt, skillName, true, fullLen, truncated, null);
+            persistAudit(request, conversationIdOpt, skillName, true, fullLen, truncated, null);
             return response;
         } catch (Throwable t) {
             long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
             logSkillLoad(conversationId, skillName, "FAILED", durationMs, t.getMessage());
             emitterOpt.ifPresent(e -> e.onSkillLoadFailure(callId, toolName, skillName, t, durationMs));
-            persistAudit(conversationIdOpt, skillName, false, 0, false, t.getMessage());
+            persistAudit(request, conversationIdOpt, skillName, false, 0, false, t.getMessage());
             throw t;
         }
     }
 
     /**
      * 将技能加载结果以审计形态写入 {@link ChatMemory}（底层 chat_context_item）。
+     * 子智能体无状态委派（{@code subAgentCallRun}）时不落库，避免在 specialist 键下产生孤儿历史行。
      */
-    private void persistAudit(Optional<String> conversationIdOpt,
+    private void persistAudit(ToolCallRequest request,
+                              Optional<String> conversationIdOpt,
                               String skillName,
                               boolean success,
                               int contentLength,
                               boolean truncated,
                               String errorMessage) {
+        if (isSubAgentCallRun(request)) {
+            return;
+        }
         if (conversationIdOpt.isEmpty()) {
             log.warn("RunnableConfig 缺少 chatConversationId，跳过技能加载审计落库");
             return;
@@ -107,6 +113,20 @@ public class AgentUiSkillLoadToolInterceptor extends ToolInterceptor {
         } catch (Exception e) {
             log.warn("技能加载审计落库失败: {}", e.getMessage(), e);
         }
+    }
+
+    /** 委派子智能体调用时不写入 specialist 会话记忆。 */
+    private static boolean isSubAgentCallRun(ToolCallRequest request) {
+        return request.getExecutionContext()
+                .map(ctx -> ctx.config().context())
+                .map(context -> isTruthySubAgentCallFlag(context.get(AgentRunnableContextKeys.CONTEXT_KEY_SUB_AGENT_CALL_RUN))
+                        || isTruthySubAgentCallFlag(context.get(AgentRunnableContextKeys.CONTEXT_KEY_DELEGATE_RUN))
+                        || isTruthySubAgentCallFlag(context.get(ReactCompatibleMessageChatMemoryAdvisor.META_SUB_AGENT_CALL_RUN)))
+                .orElse(false);
+    }
+
+    private static boolean isTruthySubAgentCallFlag(Object flag) {
+        return Boolean.TRUE.equals(flag) || "true".equalsIgnoreCase(String.valueOf(flag));
     }
 
     private static String parseSkillName(String argumentsJson) {

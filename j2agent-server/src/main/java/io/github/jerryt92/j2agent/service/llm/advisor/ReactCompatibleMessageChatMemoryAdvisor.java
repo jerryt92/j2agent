@@ -73,6 +73,11 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
 
     private static final ThreadLocal<Boolean> ACTIVE_SUB_AGENT_CALL_RUN = new ThreadLocal<>();
 
+    /**
+     * 单次 Agent stream 内子智能体委派标记，覆盖 ReAct 后续轮（prompt 可能不再含 UserMessage metadata）。
+     */
+    private static final ThreadLocal<Boolean> STREAM_SUB_AGENT_CALL_RUN = new ThreadLocal<>();
+
     private final ChatMemory chatMemory;
 
     private final String defaultConversationId;
@@ -106,6 +111,7 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
         THREAD_CONVERSATION_ID.remove();
         ACTIVE_CONVERSATION_ID.remove();
         ACTIVE_SUB_AGENT_CALL_RUN.remove();
+        STREAM_SUB_AGENT_CALL_RUN.remove();
     }
 
     /**
@@ -306,16 +312,40 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
         return context != null && isTruthyMetadataFlag(context.get(META_SUB_AGENT_CALL_RUN));
     }
 
+    /**
+     * 子智能体无状态委派：跳过记忆读写（含 ReAct 工具循环后续轮）。
+     */
+    private static boolean shouldSkipMemoryForSubAgentCall(Map<String, Object> context, List<Message> instructions) {
+        if (Boolean.TRUE.equals(STREAM_SUB_AGENT_CALL_RUN.get())) {
+            return true;
+        }
+        if (isSubAgentCallRunFromContext(context)) {
+            return true;
+        }
+        return isSubAgentCallRun(instructions);
+    }
+
+    private static ChatClientRequest markSubAgentCallRunAndReturn(ChatClientRequest requestWithConversationId) {
+        STREAM_SUB_AGENT_CALL_RUN.set(true);
+        ACTIVE_SUB_AGENT_CALL_RUN.set(true);
+        ACTIVE_CONVERSATION_ID.remove();
+        var contextBuilder = new java.util.HashMap<>(requestWithConversationId.context());
+        contextBuilder.put(META_SUB_AGENT_CALL_RUN, Boolean.TRUE);
+        return requestWithConversationId.mutate().context(contextBuilder).build();
+    }
+
+    private static boolean isSubAgentCallRunActive(Map<String, Object> context) {
+        return Boolean.TRUE.equals(STREAM_SUB_AGENT_CALL_RUN.get())
+                || Boolean.TRUE.equals(ACTIVE_SUB_AGENT_CALL_RUN.get())
+                || isSubAgentCallRunFromContext(context);
+    }
+
     @Override
     public ChatClientRequest before(ChatClientRequest chatClientRequest, AdvisorChain advisorChain) {
         ChatClientRequest requestWithConversationId = ensureConversationIdInContext(chatClientRequest);
         List<Message> instructions = requestWithConversationId.prompt().getInstructions();
-        if (isSubAgentCallRun(instructions)) {
-            ACTIVE_SUB_AGENT_CALL_RUN.set(true);
-            ACTIVE_CONVERSATION_ID.remove();
-            var contextBuilder = new java.util.HashMap<>(requestWithConversationId.context());
-            contextBuilder.put(META_SUB_AGENT_CALL_RUN, Boolean.TRUE);
-            return requestWithConversationId.mutate().context(contextBuilder).build();
+        if (shouldSkipMemoryForSubAgentCall(requestWithConversationId.context(), instructions)) {
+            return markSubAgentCallRunAndReturn(requestWithConversationId);
         }
         String conversationId = resolvePersistableConversationId(requestWithConversationId.context(), instructions);
         if (!StringUtils.hasText(conversationId)) {
@@ -372,8 +402,7 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
                     .toList();
         }
         try {
-            if (Boolean.TRUE.equals(ACTIVE_SUB_AGENT_CALL_RUN.get())
-                    || isSubAgentCallRunFromContext(chatClientResponse.context())) {
+            if (isSubAgentCallRunActive(chatClientResponse.context())) {
                 return chatClientResponse;
             }
             String conversationId = resolvePersistableConversationId(chatClientResponse.context(), null);
@@ -437,8 +466,7 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
                 .map(request -> this.before(request, streamAdvisorChain))
                 .flatMapMany(processedRequest -> {
                     String conversationId = ACTIVE_CONVERSATION_ID.get();
-                    boolean subAgentCallRun = Boolean.TRUE.equals(ACTIVE_SUB_AGENT_CALL_RUN.get())
-                            || isSubAgentCallRunFromContext(processedRequest.context());
+                    boolean subAgentCallRun = isSubAgentCallRunActive(processedRequest.context());
                     return streamAdvisorChain.nextStream(processedRequest)
                             .map(response -> enrichResponseContext(response, conversationId, subAgentCallRun));
                 })
@@ -447,6 +475,7 @@ public final class ReactCompatibleMessageChatMemoryAdvisor implements BaseChatMe
                 .doFinally(signalType -> {
                     ACTIVE_CONVERSATION_ID.remove();
                     ACTIVE_SUB_AGENT_CALL_RUN.remove();
+                    STREAM_SUB_AGENT_CALL_RUN.remove();
                 });
     }
 

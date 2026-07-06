@@ -9,6 +9,7 @@ import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
@@ -60,6 +61,68 @@ class ReactCompatibleMessageChatMemoryAdvisorSubAgentCallTest {
         verify(chatMemory, never()).get(anyString());
         verify(chatMemory, never()).add(anyString(), any(Message.class));
         verify(chatMemory, never()).add(anyString(), any(List.class));
+    }
+
+    @Test
+    void subAgentCallRunSkipsMemoryOnReactFollowUpRoundWithoutUserMessage() {
+        ChatMemory chatMemory = mock(ChatMemory.class);
+        ReactCompatibleMessageChatMemoryAdvisor advisor =
+                ReactCompatibleMessageChatMemoryAdvisor.builder(chatMemory).build();
+        AdvisorChain chain = mock(AdvisorChain.class);
+
+        UserMessage firstRoundUser = UserMessage.builder()
+                .text("query")
+                .metadata(Map.of(
+                        ChatMemory.CONVERSATION_ID, "user:ctx:rc_wiki_assistant",
+                        ReactCompatibleMessageChatMemoryAdvisor.META_SUB_AGENT_CALL_RUN, Boolean.TRUE))
+                .build();
+        advisor.before(ChatClientRequest.builder()
+                .prompt(new Prompt(List.of(firstRoundUser)))
+                .build(), chain);
+
+        ReactCompatibleMessageChatMemoryAdvisor.setConversationId("user:ctx:rc_wiki_assistant");
+        AssistantMessage toolCall = AssistantMessage.builder()
+                .content("")
+                .toolCalls(List.of(new AssistantMessage.ToolCall("call-1", "tool", "{}", "")))
+                .build();
+        ToolResponseMessage toolResponse = ToolResponseMessage.builder()
+                .responses(List.of(new ToolResponseMessage.ToolResponse("call-1", "tool", "ok")))
+                .build();
+        ChatClientRequest followUp = ChatClientRequest.builder()
+                .prompt(new Prompt(List.of(toolCall, toolResponse)))
+                .build();
+
+        advisor.before(followUp, chain);
+
+        verify(chatMemory, never()).get(anyString());
+        verify(chatMemory, never()).add(anyString(), any(Message.class));
+        verify(chatMemory, never()).add(anyString(), any(List.class));
+
+        ChatClientResponse response = ChatClientResponse.builder()
+                .chatResponse(new ChatResponse(List.of(new Generation(new AssistantMessage("done")))))
+                .build();
+        advisor.after(response, chain);
+
+        verify(chatMemory, never()).add(anyString(), any(List.class));
+    }
+
+    @Test
+    void subAgentCallRunSkipsMemoryWhenFlagOnlyInRequestContext() {
+        ChatMemory chatMemory = mock(ChatMemory.class);
+        ReactCompatibleMessageChatMemoryAdvisor advisor =
+                ReactCompatibleMessageChatMemoryAdvisor.builder(chatMemory).build();
+        AdvisorChain chain = mock(AdvisorChain.class);
+
+        ReactCompatibleMessageChatMemoryAdvisor.setConversationId("user:ctx:rc_wiki_assistant");
+        ChatClientRequest request = ChatClientRequest.builder()
+                .prompt(new Prompt(List.of(new AssistantMessage("tool round"))))
+                .context(Map.of(ReactCompatibleMessageChatMemoryAdvisor.META_SUB_AGENT_CALL_RUN, Boolean.TRUE))
+                .build();
+
+        advisor.before(request, chain);
+
+        verify(chatMemory, never()).get(anyString());
+        verify(chatMemory, never()).add(anyString(), any(Message.class));
     }
 
     @Test
