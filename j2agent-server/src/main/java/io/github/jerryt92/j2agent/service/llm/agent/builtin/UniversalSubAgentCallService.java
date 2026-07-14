@@ -77,10 +77,7 @@ public class UniversalSubAgentCallService {
 
         String specialistConversationId = ConversationIdCodec.format(
                 request.userId(), request.contextId(), trimmedAgentId);
-        AgentThinkingOverride parentThinking = ThinkingOverrideRegistry.get(request.parentConversationId());
-        AgentThinkingOverride runtimeThinking = parentThinking != null
-                ? parentThinking
-                : targetAgent.getThinkingOverride();
+        AgentThinkingOverride runtimeThinking = targetAgent.getThinkingOverride();
         ThinkingOverrideRegistry.bind(specialistConversationId, runtimeThinking);
         if (!TurnRagSourceRegistry.shareHolder(specialistConversationId, request.parentConversationId())) {
             AgentRunLogger.warnByConversationId(request.parentConversationId(), AgentRunEventType.RAG_SOURCE,

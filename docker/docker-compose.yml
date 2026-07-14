@@ -138,7 +138,7 @@ services:
       I18N: "${I18N}"
       JWT_SECRET: "${JWT_SECRET}"
       JAVA_OPTS: "${JAVA_OPTS}"
-      SPRING_OPTIONS: "${SPRING_OPTIONS}"
+      SPRING_OPTIONS: "${SPRING_OPTIONS} --server.ssl.enabled=${J2AGENT_HTTPS_ENABLED:-false} --server.ssl.certificate=/opt/j2agent/volume/certs/${J2AGENT_HTTPS_CERT_FILE:-j2agent.crt} --server.ssl.certificate-private-key=/opt/j2agent/volume/certs/${J2AGENT_HTTPS_KEY_FILE:-j2agent.key}"
       J2AGENT_PORT: "${J2AGENT_PORT}"
       J2AGENT_DB_HOST: "${J2AGENT_DB_HOST}"
       J2AGENT_DB_PORT: "${J2AGENT_DB_PORT}"
@@ -173,6 +173,7 @@ services:
     volumes:
       - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}j2agent:/opt/j2agent/volume
       - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}j2agent${DIR_PATH_SEPARATOR}knowledge-repo:/opt/j2agent/volume/knowledge-repo
+      - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}j2agent${DIR_PATH_SEPARATOR}certs:/opt/j2agent/volume/certs
       - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}j2agent${DIR_PATH_SEPARATOR}plugins${DIR_PATH_SEPARATOR}agents:/opt/j2agent/volume/plugins/agents
       - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}j2agent${DIR_PATH_SEPARATOR}plugins${DIR_PATH_SEPARATOR}skills:/opt/j2agent/volume/plugins/skills
     depends_on:

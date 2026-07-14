@@ -92,6 +92,8 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
                 (DefaultListableBeanFactory) applicationContext.getAutowireCapableBeanFactory();
         activatePluginAgents(beanFactory, true);
         applicationContext.getBean(AgentRouter.class).refresh();
+        applicationContext.getBean(io.github.jerryt92.j2agent.service.rag.SimpleRagStoreSyncService.class)
+                .synchronizeSimpleRagRetrievers();
         log.info("Plugin agents activated on application ready.");
     }
 

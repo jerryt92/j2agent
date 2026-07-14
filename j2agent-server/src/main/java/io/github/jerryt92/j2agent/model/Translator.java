@@ -304,7 +304,12 @@ public final class Translator {
         }
         if (chatContextItem.getChatRole() != null && chatContextItem.getChatRole() == 2) {
             String raw = chatContextItem.getContent();
-            if (isAssistantToolPersistenceJson(raw)) {
+            // turn_trace 审计行：单条翻译时也隐藏，避免无 meta 的历史行泄漏到列表
+            if (isTurnTracePersistenceJson(raw)) {
+                messageDto.setDisplayInChat(Boolean.FALSE);
+                messageDto.setMessageKind(MessageDto.MessageKindEnum.TOOL_ROUND);
+                messageDto.setContent("");
+            } else if (isAssistantToolPersistenceJson(raw)) {
                 messageDto.setDisplayInChat(Boolean.FALSE);
                 messageDto.setMessageKind(MessageDto.MessageKindEnum.TOOL_ROUND);
                 messageDto.setContent("");

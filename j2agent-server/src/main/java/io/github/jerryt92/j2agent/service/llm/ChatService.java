@@ -267,7 +267,10 @@ public class ChatService {
                             "attachmentCount", finalAttachments.size()),
                     "turn started");
             AgentRunLogger.info(runLogSnapshot, AgentRunEventType.CHAT,
-                    AgentRunLogger.kv("role", "user", "msgLen", latestUserMessage == null ? 0 : latestUserMessage.length()),
+                    AgentRunLogger.kv(
+                            "role", "user",
+                            "msgLen", latestUserMessage == null ? 0 : latestUserMessage.length(),
+                            "msgPreview", AgentRunLogger.preview(latestUserMessage)),
                     "user message accepted");
             AtomicLong streamStartedAtMs = new AtomicLong(0L);
             chatChatCallback.completeCall = () -> {

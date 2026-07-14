@@ -2,10 +2,13 @@ package io.github.jerryt92.j2agent.model;
 
 import com.alibaba.fastjson2.JSON;
 import io.github.jerryt92.j2agent.constants.CommonConstants;
+import io.github.jerryt92.j2agent.model.po.mgb.ChatContextItem;
 import io.github.jerryt92.j2agent.service.file.StaticFileService;
 import io.github.jerryt92.j2agent.service.llm.ChatContextBo;
+import io.github.jerryt92.j2agent.service.llm.TurnStepItem;
 import io.github.jerryt92.j2agent.service.llm.memory.ChatMemoryMessageCodec;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 
 import java.util.List;
@@ -13,13 +16,67 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Translator 历史消息中 RAG 来源回放测试。
  */
 class TranslatorRagSourceHistoryTest {
+
+    @Test
+    void shouldHideTurnTraceWhenTranslatingSingleChatContextItemWithoutMeta() {
+        ChatContextItem item = new ChatContextItem();
+        item.setMessageIndex(7);
+        item.setChatRole(2);
+        item.setContent("{\"v\":1,\"kind\":\"turn_trace\",\"turnId\":\"turn-1\",\"steps\":[{\"state\":\"IDLE\",\"ts\":1}]}");
+        item.setFeedback(0);
+
+        MessageDto messageDto = Translator.translateToChatMessageDto(item);
+
+        assertFalse(messageDto.getDisplayInChat());
+        assertEquals(MessageDto.MessageKindEnum.TOOL_ROUND, messageDto.getMessageKind());
+        assertEquals("", messageDto.getContent());
+    }
+
+    @Test
+    void shouldBackfillTurnStepsAndSkipTurnTraceMessageOnHistoryLoad() throws Exception {
+        ChatMemoryMessageCodec codec = new ChatMemoryMessageCodec(new com.fasterxml.jackson.databind.ObjectMapper());
+        Message answer = new AssistantMessage("answer text");
+        Message turnTrace = codec.buildTurnTraceAuditMessage("turn-1", List.of(
+                new TurnStepItem(AgentState.IDLE, null, 1L),
+                new TurnStepItem(AgentState.THINKING, null, 2L),
+                new TurnStepItem(AgentState.COMPLETED, null, 3L)));
+
+        ChatContextBo contextBo = new ChatContextBo(
+                "ctx-1", "user-1", "chat_assistant", "title", 1, 1,
+                System.currentTimeMillis(), List.of(answer, turnTrace));
+
+        ChatContextDto dto = Translator.translateToChatContextDto(contextBo);
+
+        assertEquals(1, dto.getMessages().size());
+        MessageDto messageDto = dto.getMessages().getFirst();
+        assertEquals("answer text", messageDto.getContent());
+        assertNotNull(messageDto.getTurnSteps());
+        assertEquals(3, messageDto.getTurnSteps().size());
+        assertEquals(TurnStepDto.StateEnum.IDLE, messageDto.getTurnSteps().getFirst().getState());
+        assertEquals(TurnStepDto.StateEnum.COMPLETED, messageDto.getTurnSteps().getLast().getState());
+    }
+
+    @Test
+    void shouldSkipOrphanTurnTraceMessageOnHistoryLoad() throws Exception {
+        ChatMemoryMessageCodec codec = new ChatMemoryMessageCodec(new com.fasterxml.jackson.databind.ObjectMapper());
+        Message turnTrace = codec.buildTurnTraceAuditMessage("turn-1", List.of(
+                new TurnStepItem(AgentState.IDLE, null, 1L),
+                new TurnStepItem(AgentState.COMPLETED, null, 2L)));
+
+        ChatContextBo contextBo = new ChatContextBo(
+                "ctx-1", "user-1", "chat_assistant", "title", 1, 1,
+                System.currentTimeMillis(), List.of(turnTrace));
+
+        ChatContextDto dto = Translator.translateToChatContextDto(contextBo);
+
+        assertEquals(0, dto.getMessages().size());
+    }
 
     @Test
     void shouldRestoreSrcFileWhenLoadingHistoryFromDecodedAssistant() {

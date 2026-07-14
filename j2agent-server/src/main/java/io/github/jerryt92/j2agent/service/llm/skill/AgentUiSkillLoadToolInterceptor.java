@@ -6,10 +6,12 @@ import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallRequest;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolCallResponse;
 import com.alibaba.cloud.ai.graph.agent.interceptor.ToolInterceptor;
 import com.alibaba.fastjson2.JSONObject;
-import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunnableContextKeys;
-import io.github.jerryt92.j2agent.service.llm.advisor.ReactCompatibleMessageChatMemoryAdvisor;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunLogContext;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunLogSnapshot;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
+import io.github.jerryt92.j2agent.service.llm.advisor.ReactCompatibleMessageChatMemoryAdvisor;
+import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunnableContextKeys;
 import io.github.jerryt92.j2agent.service.llm.memory.ChatMemoryMessageCodec;
 import io.github.jerryt92.j2agent.service.llm.tool.AgentUiToolEventInterceptor;
 import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
@@ -57,7 +59,8 @@ public class AgentUiSkillLoadToolInterceptor extends ToolInterceptor {
         Optional<ToolEventEmitter> emitterOpt = resolveEmitter(request);
         Optional<String> conversationIdOpt = resolveConversationId(request);
         String args = request.getArguments() == null ? "" : request.getArguments();
-        String skillName = parseSkillName(args);
+        ReadSkillCall skillCall = parseReadSkillCall(args);
+        String skillName = skillCall.skillName();
         String callId = request.getToolCallId();
         emitterOpt.ifPresent(e -> e.onSkillLoadStart(callId, toolName, args, skillName));
         long startNanos = System.nanoTime();
@@ -70,18 +73,18 @@ public class AgentUiSkillLoadToolInterceptor extends ToolInterceptor {
             boolean truncated = fullLen > ToolEventEmitter.MAX_TOOL_RESULT_LENGTH;
             if (response.isError()) {
                 Throwable err = toFailureThrowable(response);
-                logSkillLoad(conversationId, skillName, "FAILED", durationMs, err.getMessage());
+                logSkillLoad(request, conversationId, skillCall, "FAILED", durationMs, err.getMessage());
                 emitterOpt.ifPresent(e -> e.onSkillLoadFailure(callId, toolName, skillName, err, durationMs));
                 persistAudit(request, conversationIdOpt, skillName, false, fullLen, truncated, err.getMessage());
                 return response;
             }
-            logSkillLoad(conversationId, skillName, "SUCCESS", durationMs, null);
+            logSkillLoad(request, conversationId, skillCall, "SUCCESS", durationMs, null);
             emitterOpt.ifPresent(e -> e.onSkillLoadSuccess(callId, toolName, skillName, rawResult, durationMs));
             persistAudit(request, conversationIdOpt, skillName, true, fullLen, truncated, null);
             return response;
         } catch (Throwable t) {
             long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
-            logSkillLoad(conversationId, skillName, "FAILED", durationMs, t.getMessage());
+            logSkillLoad(request, conversationId, skillCall, "FAILED", durationMs, t.getMessage());
             emitterOpt.ifPresent(e -> e.onSkillLoadFailure(callId, toolName, skillName, t, durationMs));
             persistAudit(request, conversationIdOpt, skillName, false, 0, false, t.getMessage());
             throw t;
@@ -129,20 +132,23 @@ public class AgentUiSkillLoadToolInterceptor extends ToolInterceptor {
         return Boolean.TRUE.equals(flag) || "true".equalsIgnoreCase(String.valueOf(flag));
     }
 
-    private static String parseSkillName(String argumentsJson) {
+    private static ReadSkillCall parseReadSkillCall(String argumentsJson) {
         if (argumentsJson == null || argumentsJson.isBlank()) {
-            return "";
+            return new ReadSkillCall("", "");
         }
         try {
             JSONObject o = JSONObject.parseObject(argumentsJson);
             String n = o.getString("skillName");
-            if (n != null && !n.isBlank()) {
-                return n.trim();
+            if (n == null || n.isBlank()) {
+                n = o.getString("skill_name");
             }
-            n = o.getString("skill_name");
-            return n != null ? n.trim() : "";
+            String p = o.getString("relativePath");
+            if (p == null || p.isBlank()) {
+                p = o.getString("relative_path");
+            }
+            return new ReadSkillCall(n != null ? n.trim() : "", p != null ? p.trim() : "");
         } catch (Exception e) {
-            return "";
+            return new ReadSkillCall("", "");
         }
     }
 
@@ -160,14 +166,44 @@ public class AgentUiSkillLoadToolInterceptor extends ToolInterceptor {
                 .map(String.class::cast);
     }
 
-    private static void logSkillLoad(String conversationId,
-                                     String skillName,
+    private static void logSkillLoad(ToolCallRequest request,
+                                     String conversationId,
+                                     ReadSkillCall skillCall,
                                      String status,
                                      long durationMs,
                                      String errorMessage) {
-        AgentRunLogger.infoByConversationId(conversationId, AgentRunEventType.SKILL_LOAD,
-                AgentRunLogger.kv("skill", skillName, "status", status, "durationMs", durationMs),
+        AgentRunLogSnapshot snapshot = resolveSnapshot(request, conversationId);
+        if (snapshot == null) {
+            return;
+        }
+        AgentRunLogger.info(snapshot, AgentRunEventType.SKILL_LOAD,
+                AgentRunLogger.kv(
+                        "skill", skillCall.skillName(),
+                        "relativePath", skillCall.relativePath(),
+                        "status", status,
+                        "durationMs", durationMs),
                 errorMessage == null ? "skill loaded" : errorMessage);
+    }
+
+    private static AgentRunLogSnapshot resolveSnapshot(ToolCallRequest request, String conversationId) {
+        AgentRunLogSnapshot snapshot = AgentRunLogContext.lookup(conversationId);
+        if (snapshot != null) {
+            return snapshot;
+        }
+        return request.getExecutionContext()
+                .map(ctx -> ctx.config().context())
+                .map(context -> new AgentRunLogSnapshot(
+                        stringValue(context.get(AgentRunnableContextKeys.CONTEXT_KEY_CONTEXT_ID)),
+                        stringValue(context.get(AgentRunnableContextKeys.CONTEXT_KEY_TURN_ID)),
+                        stringValue(context.get(AgentRunnableContextKeys.CONTEXT_KEY_CHAT_CONVERSATION_ID)),
+                        stringValue(context.get(AgentRunnableContextKeys.CONTEXT_KEY_USER_ID)),
+                        stringValue(context.get(AgentRunnableContextKeys.CONTEXT_KEY_AGENT_ID))))
+                .filter(s -> s.conversationId() != null && !s.conversationId().isBlank())
+                .orElse(null);
+    }
+
+    private static String stringValue(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 
     private static Throwable toFailureThrowable(ToolCallResponse response) {
@@ -177,5 +213,9 @@ public class AgentUiSkillLoadToolInterceptor extends ToolInterceptor {
         }
         String result = response.getResult();
         return new RuntimeException(result != null ? result : "tool error");
+    }
+
+    /** read_skill 调用参数解析结果。 */
+    private record ReadSkillCall(String skillName, String relativePath) {
     }
 }
