@@ -472,7 +472,8 @@ public class ChatService {
                                             turnConversationId,
                                             toolEventEmitter,
                                             finalAttachments,
-                                            limitedUserMessage));
+                                            limitedUserMessage,
+                                            request.getManualDispatchAgentId()));
                     if (outcome == UniversalAssistantOrchestratorService.OrchestrationOutcome.DISPATCHED) {
                         unbindThinkingOverride.run();
                         ChatTurnCancellationRegistry.clearDisposables(turnId);

@@ -2,6 +2,7 @@ package io.github.jerryt92.j2agent.service.llm.agent.builtin;
 
 import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRouter;
+import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
 import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnCancellationRegistry;
 import io.github.jerryt92.j2agent.service.llm.chat.TurnCancelledException;
 import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
@@ -61,7 +62,8 @@ public class UniversalAssistantOrchestratorService {
             String parentConversationId,
             ToolEventEmitter toolEventEmitter,
             List<ChatAttachmentDto> attachments,
-            String userMessage) {
+            String userMessage,
+            String manualDispatchAgentId) {
     }
 
     /**
@@ -71,7 +73,12 @@ public class UniversalAssistantOrchestratorService {
         if (request == null) {
             return OrchestrationOutcome.CONTINUE;
         }
-        if (agentRouter.listCallableSubAgents().isEmpty()) {
+        String manualDispatchAgentId = StringUtils.trimToNull(request.manualDispatchAgentId());
+        List<AiAgent> callableSubAgents = agentRouter.listCallableSubAgents();
+        if (callableSubAgents.isEmpty()) {
+            if (manualDispatchAgentId != null) {
+                throw new IllegalArgumentException("Unsupported agentId: " + manualDispatchAgentId);
+            }
             return OrchestrationOutcome.CONTINUE;
         }
         if (StringUtils.isAnyBlank(
@@ -91,6 +98,40 @@ public class UniversalAssistantOrchestratorService {
 
         String routingQuery = intentQueryService.buildRoutingQuery(
                 chatMemory, request.parentConversationId(), messages, formatTrace(trace));
+        // 手动指定子智能体时跳过意图召回与调度决策，直接调用
+        if (manualDispatchAgentId != null) {
+            ensureCallableManualDispatchAgent(manualDispatchAgentId, callableSubAgents);
+            if (StringUtils.isBlank(routingQuery)) {
+                return OrchestrationOutcome.CONTINUE;
+            }
+            ToolEventEmitter emitter = request.toolEventEmitter();
+            if (emitter != null) {
+                emitter.onAgentDispatchingStart();
+            }
+            String callId = UUID.randomUUID().toString();
+            String argumentsJson = "{\"agentId\":\"" + manualDispatchAgentId + "\",\"query\":"
+                    + jsonString(routingQuery) + "}";
+            long startedAt = System.currentTimeMillis();
+            if (emitter != null) {
+                emitter.onToolStart(callId, SubAgentCallNames.TOOL_NAME, argumentsJson);
+            }
+            String result = subAgentCallService.call(
+                    manualDispatchAgentId,
+                    routingQuery,
+                    new UniversalSubAgentCallService.SubAgentCallRequest(
+                            request.contextId(),
+                            request.turnId(),
+                            request.userId(),
+                            request.parentConversationId(),
+                            emitter,
+                            turnAttachments));
+            if (emitter != null) {
+                emitter.onToolSuccess(callId, SubAgentCallNames.TOOL_NAME, result,
+                        System.currentTimeMillis() - startedAt);
+            }
+            return OrchestrationOutcome.DISPATCHED;
+        }
+
         String candidates = intentQueryService.queryIntentAgents(
                 request.parentConversationId(), routingQuery, request.turnId());
 
@@ -162,6 +203,16 @@ public class UniversalAssistantOrchestratorService {
         return invokedAgentIds.isEmpty()
                 ? OrchestrationOutcome.CONTINUE
                 : OrchestrationOutcome.DISPATCHED;
+    }
+
+    /** 校验手动直连目标必须是可调用的子智能体。 */
+    private void ensureCallableManualDispatchAgent(String agentId, List<AiAgent> callableSubAgents) {
+        boolean callable = callableSubAgents.stream()
+                .map(AiAgent::getAgentId)
+                .anyMatch(agentId::equals);
+        if (!callable) {
+            throw new IllegalArgumentException("Unsupported agentId: " + agentId);
+        }
     }
 
     private static List<Message> buildTurnMessages(OrchestrationRequest request) {
