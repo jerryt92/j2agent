@@ -7,6 +7,8 @@ import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
 import io.github.jerryt92.j2agent.service.llm.memory.ConversationIdCodec;
 import io.github.jerryt92.j2agent.service.llm.rag.TurnRagSourceRegistry;
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
 import org.springframework.stereotype.Service;
 
@@ -18,6 +20,7 @@ import java.util.List;
 @Service
 public class RagSourcePublicationService {
 
+    private static final Logger log = LoggerFactory.getLogger(RagSourcePublicationService.class);
     private static volatile RagSourcePublicationService instance;
 
     private final RagSourceFileService ragSourceFileService;
@@ -70,7 +73,9 @@ public class RagSourcePublicationService {
         if (!StringUtils.isNotBlank(resolvedAgentId) && StringUtils.isNotBlank(conversationId)) {
             try {
                 resolvedAgentId = ConversationIdCodec.parse(conversationId).agentId();
-            } catch (IllegalArgumentException ignored) {
+            } catch (IllegalArgumentException e) {
+                log.warn("Conversation id parse failed when resolving RAG source display flag: conversationId={}",
+                        conversationId, e);
                 return false;
             }
         }
@@ -80,8 +85,9 @@ public class RagSourcePublicationService {
         try {
             AiAgent agent = agentRouter.route(resolvedAgentId);
             return agent != null && agent.isRagSourceDisplayEnabled();
-        } catch (Exception ignored) {
-            return false;
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "Resolve RAG source display flag failed for agentId=" + resolvedAgentId, e);
         }
     }
 }

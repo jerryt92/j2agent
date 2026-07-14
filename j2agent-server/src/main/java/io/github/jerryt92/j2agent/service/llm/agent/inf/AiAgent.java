@@ -345,6 +345,13 @@ public abstract class AiAgent {
     }
 
     /**
+     * 平台生命周期服务用于发现 Agent 随附的 RAG retriever。
+     */
+    public final DocumentRetriever resolveDocumentRetriever() {
+        return buildDocumentRetriever();
+    }
+
+    /**
      * 是否向前端展示 RAG 命中的知识库文件来源（实时 WebSocket PATCH + 历史回放 srcFile）。
      * 默认关闭；{@code rag_infos} 仍正常落库，仅 UI 层按本开关过滤。
      */

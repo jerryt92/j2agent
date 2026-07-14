@@ -1,5 +1,6 @@
 package io.github.jerryt92.j2agent.service.llm.agent.core;
 
+import io.github.jerryt92.j2agent.service.rag.SimpleRagStoreSyncService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -16,13 +17,15 @@ class AgentPluginReloadServiceTest {
 
     private AgentPluginRegistry agentPluginRegistry;
     private AgentRouter agentRouter;
+    private SimpleRagStoreSyncService simpleRagStoreSyncService;
     private AgentPluginReloadService reloadService;
 
     @BeforeEach
     void setUp() {
         agentPluginRegistry = mock(AgentPluginRegistry.class);
         agentRouter = mock(AgentRouter.class);
-        reloadService = new AgentPluginReloadService(agentPluginRegistry, agentRouter);
+        simpleRagStoreSyncService = mock(SimpleRagStoreSyncService.class);
+        reloadService = new AgentPluginReloadService(agentPluginRegistry, agentRouter, simpleRagStoreSyncService);
     }
 
     @Test
@@ -35,6 +38,7 @@ class AgentPluginReloadServiceTest {
         assertTrue(outcome.success());
         verify(agentPluginRegistry).reload();
         verify(agentRouter).refresh();
+        verify(simpleRagStoreSyncService).synchronizeSimpleRagRetrievers();
     }
 
     @Test
@@ -47,5 +51,6 @@ class AgentPluginReloadServiceTest {
         assertFalse(outcome.success());
         verify(agentPluginRegistry).reload();
         verifyNoInteractions(agentRouter);
+        verifyNoInteractions(simpleRagStoreSyncService);
     }
 }

@@ -1,5 +1,6 @@
 package io.github.jerryt92.j2agent.service.llm.agent.core;
 
+import io.github.jerryt92.j2agent.service.rag.SimpleRagStoreSyncService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -12,10 +13,14 @@ public class AgentPluginReloadService {
 
     private final AgentPluginRegistry agentPluginRegistry;
     private final AgentRouter agentRouter;
+    private final SimpleRagStoreSyncService simpleRagStoreSyncService;
 
-    public AgentPluginReloadService(AgentPluginRegistry agentPluginRegistry, AgentRouter agentRouter) {
+    public AgentPluginReloadService(AgentPluginRegistry agentPluginRegistry,
+                                    AgentRouter agentRouter,
+                                    SimpleRagStoreSyncService simpleRagStoreSyncService) {
         this.agentPluginRegistry = agentPluginRegistry;
         this.agentRouter = agentRouter;
+        this.simpleRagStoreSyncService = simpleRagStoreSyncService;
     }
 
     /**
@@ -35,6 +40,7 @@ public class AgentPluginReloadService {
         }
         try {
             agentRouter.refresh();
+            simpleRagStoreSyncService.synchronizeSimpleRagRetrievers();
             log.info("Agent plugins reloaded. loadedAgentIds={}", outcome.loadedAgentIds());
             return outcome;
         } catch (RuntimeException ex) {
