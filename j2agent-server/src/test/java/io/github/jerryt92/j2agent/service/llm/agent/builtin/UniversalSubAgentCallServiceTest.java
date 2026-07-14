@@ -4,6 +4,7 @@ import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
 import io.github.jerryt92.j2agent.model.AgentUiEventEnvelope;
 import io.github.jerryt92.j2agent.model.ChatCallback;
 import io.github.jerryt92.j2agent.service.llm.AgentTurnStateMachine;
+import io.github.jerryt92.j2agent.service.llm.ThinkingOverrideRegistry;
 import io.github.jerryt92.j2agent.service.llm.agent.AgentStreamOptions;
 import io.github.jerryt92.j2agent.service.llm.agent.AgentStreamSession;
 import io.github.jerryt92.j2agent.service.llm.agent.StreamingTextParts;
@@ -11,6 +12,7 @@ import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRouter;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunContext;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunnableContextKeys;
 import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
+import io.github.jerryt92.j2agent.service.llm.agent.inf.constant.AgentThinkingOverride;
 import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnCancellationRegistry;
 import io.github.jerryt92.j2agent.service.llm.chat.TurnCancelledException;
 import io.github.jerryt92.j2agent.service.llm.tool.AgentUiToolEventInterceptor;
@@ -51,6 +53,8 @@ class UniversalSubAgentCallServiceTest {
     void tearDown() {
         SubAgentStreamBridge.unbind("turn-1");
         ChatTurnCancellationRegistry.clear("turn-1");
+        ThinkingOverrideRegistry.unbind("user-1:ctx-1:universal_assistant");
+        ThinkingOverrideRegistry.unbind("user-1:ctx-1:j2agent-qa-assistant");
     }
 
     @Test
@@ -117,6 +121,34 @@ class UniversalSubAgentCallServiceTest {
         assertEquals("wiki answer", result);
         assertEquals(1, optionsCaptor.getValue().agentRunContext().attachments().size());
         assertEquals("chat/u/c/a.png", optionsCaptor.getValue().agentRunContext().attachments().get(0).getObjectKey());
+    }
+
+    @Test
+    void callUsesTargetAgentThinkingOverrideInsteadOfParentOverride() {
+        AiAgent qaAgent = Mockito.mock(AiAgent.class);
+        when(qaAgent.getAgentId()).thenReturn("j2agent-qa-assistant");
+        when(qaAgent.getThinkingOverride()).thenReturn(AgentThinkingOverride.ON);
+        when(agentRouter.listCallableSubAgents()).thenReturn(List.of(qaAgent));
+        when(agentRouter.route("j2agent-qa-assistant")).thenReturn(qaAgent);
+
+        ThinkingOverrideRegistry.bind("user-1:ctx-1:universal_assistant", AgentThinkingOverride.OFF);
+
+        when(agentStreamSession.stream(Mockito.any()))
+                .thenAnswer(invocation -> {
+                    AgentStreamOptions options = invocation.getArgument(0);
+                    AgentThinkingOverride bound = ThinkingOverrideRegistry.get(
+                            options.agentRunContext().conversationId());
+                    assertEquals(AgentThinkingOverride.ON, bound);
+                    return Flux.just(new StreamingTextParts("qa answer", null));
+                });
+
+        String result = subAgentCallService.call(
+                "j2agent-qa-assistant",
+                "routing",
+                new UniversalSubAgentCallService.SubAgentCallRequest(
+                        "ctx-1", "turn-1", "user-1", "user-1:ctx-1:universal_assistant", null));
+
+        assertEquals("qa answer", result);
     }
 
     @Test
