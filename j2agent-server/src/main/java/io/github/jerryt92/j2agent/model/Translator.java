@@ -300,10 +300,15 @@ public final class Translator {
                                     meta.getList("attachments", ChatAttachmentDto.class));
                     messageDto.setAttachments(attachments);
                 }
+                if (meta.containsKey(ChatMemoryMessageCodec.META_PENDING_QUESTION)) {
+                    applyPendingQuestionFromJson(meta.getString(ChatMemoryMessageCodec.META_PENDING_QUESTION),
+                            messageDto);
+                }
             }
         }
         if (chatContextItem.getChatRole() != null && chatContextItem.getChatRole() == 2) {
             String raw = chatContextItem.getContent();
+            boolean hasPendingQuestion = messageDto.getPendingQuestion() != null;
             // turn_trace 审计行：单条翻译时也隐藏，避免无 meta 的历史行泄漏到列表
             if (isTurnTracePersistenceJson(raw)) {
                 messageDto.setDisplayInChat(Boolean.FALSE);
@@ -313,7 +318,7 @@ public final class Translator {
                 messageDto.setDisplayInChat(Boolean.FALSE);
                 messageDto.setMessageKind(MessageDto.MessageKindEnum.TOOL_ROUND);
                 messageDto.setContent("");
-            } else if (!StringUtils.isNotBlank(raw)) {
+            } else if (!StringUtils.isNotBlank(raw) && !hasPendingQuestion) {
                 messageDto.setDisplayInChat(Boolean.FALSE);
                 messageDto.setMessageKind(MessageDto.MessageKindEnum.TOOL_ROUND);
                 messageDto.setContent("");
@@ -378,17 +383,20 @@ public final class Translator {
                 String assistantText = am.getText() != null ? am.getText() : "";
                 messageDto.setContent(assistantText);
                 applyReasoningFromAssistant(am, messageDto);
+                applyPendingQuestionFromAssistant(am, messageDto);
                 if (ragSourceDisplayEnabled) {
                     applySrcFileFromAssistant(am, messageDto);
                 }
                 boolean hasReasoning = StringUtils.isNotBlank(messageDto.getReasoningContent());
                 boolean hasSrcFile = ragSourceDisplayEnabled
                         && !CollectionUtils.isEmpty(messageDto.getSrcFile());
-                // 含 tool_calls、持久化 JSON 形态、技能加载审计行、或历史空正文脏数据：均不展示空气泡（有来源时仍展示）
+                boolean hasPendingQuestion = messageDto.getPendingQuestion() != null;
+                // 含 tool_calls、持久化 JSON 形态、技能加载审计行、或历史空正文脏数据：均不展示空气泡（有来源/提问时仍展示）
                 boolean hideToolRound = am.hasToolCalls()
                         || isAssistantToolPersistenceJson(assistantText)
                         || isSkillLoadAuditPersistenceJson(assistantText)
-                        || (!am.hasToolCalls() && !hasReasoning && !hasSrcFile && !StringUtils.isNotBlank(assistantText));
+                        || (!am.hasToolCalls() && !hasReasoning && !hasSrcFile && !hasPendingQuestion
+                        && !StringUtils.isNotBlank(assistantText));
                 if (hideToolRound) {
                     messageDto.setDisplayInChat(Boolean.FALSE);
                     messageDto.setMessageKind(MessageDto.MessageKindEnum.TOOL_ROUND);
@@ -417,6 +425,24 @@ public final class Translator {
         String reasoning = AssistantMessageReasoningExtractor.extractFullReasoning(am);
         if (StringUtils.isNotBlank(reasoning)) {
             messageDto.setReasoningContent(reasoning);
+        }
+    }
+
+    private static void applyPendingQuestionFromAssistant(AssistantMessage am, MessageDto messageDto) {
+        if (am == null || am.getMetadata() == null) {
+            return;
+        }
+        Object raw = am.getMetadata().get(ChatMemoryMessageCodec.META_PENDING_QUESTION);
+        applyPendingQuestionFromJson(raw == null ? null : raw.toString(), messageDto);
+    }
+
+    private static void applyPendingQuestionFromJson(String questionJson, MessageDto messageDto) {
+        if (!StringUtils.isNotBlank(questionJson)) {
+            return;
+        }
+        AskQuestionDto pendingQuestion = JSON.parseObject(questionJson, AskQuestionDto.class);
+        if (pendingQuestion != null) {
+            messageDto.setPendingQuestion(pendingQuestion);
         }
     }
 

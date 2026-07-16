@@ -127,12 +127,6 @@ j2agent:
       content-segment-chars: 6000
       # 入库 content_segment 与超长 query 切分的相邻段重叠字符数（0 表示无重叠）
       content-segment-overlap-chars: 50
-  # 回合结束后是否生成「建议追问」NOTICE（关 WebSocket 前发出）
-  follow-up-suggestions:
-    enabled: false
-    timeout-seconds: 12
-    max-items: 5
-    max-item-length: 120
   chat-input:
     max-user-message-length: 32768
   active-chat-turn:

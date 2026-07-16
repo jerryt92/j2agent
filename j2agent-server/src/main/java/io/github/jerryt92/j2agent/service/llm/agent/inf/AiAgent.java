@@ -26,6 +26,7 @@ import io.github.jerryt92.j2agent.service.llm.skill.AgentSkillsAgentHook;
 import io.github.jerryt92.j2agent.service.llm.skill.AgentUiSkillLoadToolInterceptor;
 import io.github.jerryt92.j2agent.service.llm.tool.AgentToolErrorReturnInterceptor;
 import io.github.jerryt92.j2agent.service.llm.tool.AgentUiToolEventInterceptor;
+import io.github.jerryt92.j2agent.tools.AskQuestionTool;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import org.springframework.ai.chat.client.ChatClient;
@@ -129,6 +130,13 @@ public abstract class AiAgent {
     }
 
     /**
+     * 是否启用平台级 ask_question 工具；默认所有 Agent 开启，特殊 Agent 可覆盖为 false。
+     */
+    protected boolean enableAskQuestion() {
+        return true;
+    }
+
+    /**
      * 热门问题模板资源路径（相对 Agent 定义类 ClassLoader）。
      * 插件 Agent 默认 JAR 根 {@code qa-template.json}；内置 Agent 可 override 为独立路径。
      */
@@ -228,6 +236,9 @@ public abstract class AiAgent {
     @Autowired
     private org.springframework.beans.factory.ObjectProvider<
             io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentService> chatAttachmentServiceProvider;
+
+    @Autowired
+    private ObjectProvider<AskQuestionTool> askQuestionToolProvider;
 
     @Autowired(required = false)
     private DefaultQueryTransformers defaultQueryTransformers;
@@ -411,8 +422,20 @@ public abstract class AiAgent {
      */
     private ToolCallback[] buildEffectiveToolCallbacks() {
         List<ToolCallback> effectiveToolCallbacks = new ArrayList<>(Arrays.asList(buildToolCallbacks()));
+        appendAskQuestionToolCallbackIfNeeded(effectiveToolCallbacks);
         appendMcpToolCallbacksIfNeeded(effectiveToolCallbacks);
         return effectiveToolCallbacks.stream().filter(Objects::nonNull).toArray(ToolCallback[]::new);
+    }
+
+    private void appendAskQuestionToolCallbackIfNeeded(List<ToolCallback> toolCallbackList) {
+        if (!enableAskQuestion() || askQuestionToolProvider == null) {
+            return;
+        }
+        AskQuestionTool askQuestionTool = askQuestionToolProvider.getIfAvailable();
+        if (askQuestionTool == null) {
+            return;
+        }
+        toolCallbackList.add(askQuestionTool);
     }
 
     private void appendMcpToolCallbacksIfNeeded(List<ToolCallback> toolCallbackList) {
