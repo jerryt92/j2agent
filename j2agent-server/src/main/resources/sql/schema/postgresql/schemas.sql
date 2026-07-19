@@ -122,3 +122,20 @@ CREATE TABLE knowledge_source_file_hash
 );
 
 CREATE INDEX idx_sync_status ON knowledge_source_file_hash (sync_status);
+
+DROP TABLE IF EXISTS simple_rag_collection_state;
+CREATE TABLE simple_rag_collection_state
+(
+    id              varchar(32)  NOT NULL,
+    collection_name varchar(128) NOT NULL,
+    owner_agent_id  varchar(128) DEFAULT NULL,
+    sync_status     varchar(32)  NOT NULL,
+    document_count  int          NOT NULL DEFAULT 0,
+    error_message   text         DEFAULT NULL,
+    created_at      bigint       NOT NULL,
+    updated_at      bigint       NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_simple_rag_collection UNIQUE (collection_name)
+);
+
+CREATE INDEX idx_simple_rag_sync_status ON simple_rag_collection_state (sync_status);

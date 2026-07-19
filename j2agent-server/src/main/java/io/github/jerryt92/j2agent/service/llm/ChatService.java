@@ -26,6 +26,7 @@ import io.github.jerryt92.j2agent.logging.llm.AgentRunLogContext;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunLogSnapshot;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
 import io.github.jerryt92.j2agent.service.llm.rag.TurnRagSourceRegistry;
+import io.github.jerryt92.j2agent.service.question.TurnAskQuestionRegistry;
 import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
 import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnCancellationRegistry;
 import io.github.jerryt92.j2agent.service.llm.chat.ChatTurnLifecycle;
@@ -62,10 +63,6 @@ public class ChatService {
     private final ActiveChatTurnRegistry activeChatTurnRegistry;
     static Map<String, ChatCallback<AgentUiEventEnvelope>> contextChatCallbackMap = new HashMap<>();
     private final AgentRouter agentRouter;
-    /**
-     * 回合正常结束后生成输入框上方「建议追问」列表。
-     */
-    private final FollowUpSuggestionService followUpSuggestionService;
     private final ChatMemoryMessageCodec chatMemoryMessageCodec;
     private final ObjectProvider<io.github.jerryt92.j2agent.service.file.oss.ChatAttachmentService>
             chatAttachmentServiceProvider;
@@ -74,7 +71,6 @@ public class ChatService {
 
     public ChatService(ChatContextService chatContextService,
                        AgentRouter agentRouter,
-                       FollowUpSuggestionService followUpSuggestionService,
                        ChatInputProperties chatInputProperties,
                        ActiveChatTurnProperties activeChatTurnProperties,
                        ChatMemoryMessageCodec chatMemoryMessageCodec,
@@ -85,7 +81,6 @@ public class ChatService {
                        UniversalAssistantOrchestratorService universalAssistantOrchestratorService) {
         this.chatContextService = chatContextService;
         this.agentRouter = agentRouter;
-        this.followUpSuggestionService = followUpSuggestionService;
         this.chatInputProperties = chatInputProperties;
         this.activeChatTurnProperties = activeChatTurnProperties;
         this.chatMemoryMessageCodec = chatMemoryMessageCodec;
@@ -184,6 +179,8 @@ public class ChatService {
             int index = request.getMessages().size() - 1;
             TurnRagSourceRegistry.bind(turnConversationId, recordingResponseCall, turnLock, contextId, turnId, seq,
                     stateMachine, index);
+            TurnAskQuestionRegistry.bind(turnConversationId, recordingResponseCall, turnLock, contextId, turnId,
+                    seq, stateMachine, index);
             StringBuilder streamedContent = new StringBuilder();
             StringBuilder streamedReasoning = new StringBuilder();
             Object streamedTextLock = new Object();
@@ -278,9 +275,7 @@ public class ChatService {
                     releaseActiveTurn.run();
                     return;
                 }
-                // 建议追问依赖二次写 WS；任一步失败也必须收尾关连接，否则影响下一轮对话。
                 try {
-                    boolean emittedCompleted = false;
                     synchronized (turnLock) {
                         if (stateMachine.getState() != AgentState.COMPLETED
                                 && stateMachine.getState() != AgentState.FAILED
@@ -296,35 +291,6 @@ public class ChatService {
                                     AgentEventType.SYSTEM,
                                     Map.of("notice", "completed")
                             ));
-                            emittedCompleted = true;
-                        }
-                    }
-                    if (emittedCompleted) {
-                        try {
-                            String assistantSnapshot;
-                            synchronized (streamedTextLock) {
-                                assistantSnapshot = streamedContent.toString();
-                            }
-                            List<String> suggestions = followUpSuggestionService.suggest(limitedUserMessage, assistantSnapshot);
-                            if (CollectionUtils.isNotEmpty(suggestions)) {
-                                Map<String, Object> noticePayload = new HashMap<>();
-                                noticePayload.put("notice", "suggested-follow-ups");
-                                noticePayload.put("items", suggestions);
-                                synchronized (turnLock) {
-                                    chatChatCallback.responseCall.accept(AgentEventBuilder.build(
-                                            contextId,
-                                            turnId,
-                                            seq.getAndIncrement(),
-                                            AgentState.COMPLETED,
-                                            null,
-                                            AgentEventPhase.COMPLETE,
-                                            AgentEventType.NOTICE,
-                                            noticePayload
-                                    ));
-                                }
-                            }
-                        } catch (Throwable suggestOrNoticeErr) {
-                            log.warn("建议追问生成或下发失败（已忽略，不影响会话关闭）: {}", suggestOrNoticeErr.toString());
                         }
                     }
                 } finally {
@@ -334,6 +300,7 @@ public class ChatService {
                     } finally {
                         StreamedAssistantPersistence.disable(turnConversationId);
                         TurnRagSourceRegistry.clear(turnConversationId);
+                        TurnAskQuestionRegistry.clear(turnConversationId);
                         SubAgentStreamBridge.unbind(turnId);
                         ChatTurnCancellationRegistry.clear(turnId);
                         logTurnEnd(runLogSnapshot, streamStartedAtMs, turnStepRecorder, AgentState.COMPLETED);
@@ -385,6 +352,7 @@ public class ChatService {
                                     streamedReasoning, streamedTextLock, streamedAssistantFlushed, true);
                             StreamedAssistantPersistence.disable(turnConversationId);
                             TurnRagSourceRegistry.clear(turnConversationId);
+                            TurnAskQuestionRegistry.clear(turnConversationId);
                             SubAgentStreamBridge.unbind(turnId);
                             ChatTurnCancellationRegistry.clear(turnId);
                         },
@@ -403,6 +371,7 @@ public class ChatService {
                             streamedReasoning, streamedTextLock, streamedAssistantFlushed, true);
                     StreamedAssistantPersistence.disable(turnConversationId);
                     TurnRagSourceRegistry.clear(turnConversationId);
+                    TurnAskQuestionRegistry.clear(turnConversationId);
                     SubAgentStreamBridge.unbind(turnId);
                     logTurnEnd(runLogSnapshot, streamStartedAtMs, turnStepRecorder, AgentState.CANCELLED);
                     synchronized (turnLock) {
@@ -472,7 +441,8 @@ public class ChatService {
                                             turnConversationId,
                                             toolEventEmitter,
                                             finalAttachments,
-                                            limitedUserMessage));
+                                            limitedUserMessage,
+                                            request.getManualDispatchAgentId()));
                     if (outcome == UniversalAssistantOrchestratorService.OrchestrationOutcome.DISPATCHED) {
                         unbindThinkingOverride.run();
                         ChatTurnCancellationRegistry.clearDisposables(turnId);
@@ -534,6 +504,7 @@ public class ChatService {
                 ThinkingOverrideRegistry.unbind(failedConversationId);
                 StreamedAssistantPersistence.disable(failedConversationId);
                 TurnRagSourceRegistry.clear(failedConversationId);
+                TurnAskQuestionRegistry.clear(failedConversationId);
                 SubAgentStreamBridge.unbind(turnId);
                 ChatTurnCancellationRegistry.clear(turnId);
                 AgentRunLogContext.clear(failedConversationId);
@@ -775,11 +746,15 @@ public class ChatService {
             reasoning = streamedReasoning.toString();
         }
         String ragInfosJson = TurnRagSourceRegistry.drainRagInfosJson(conversationId);
-        if (content.isEmpty() && reasoning.isEmpty() && StringUtils.isBlank(ragInfosJson)) {
+        String pendingQuestionJson = TurnAskQuestionRegistry.drainQuestionJson(conversationId);
+        if (content.isEmpty() && reasoning.isEmpty()
+                && StringUtils.isBlank(ragInfosJson)
+                && StringUtils.isBlank(pendingQuestionJson)) {
             return;
         }
         chatMemory.add(conversationId,
-                List.of(buildStreamedAssistantMessage(content, reasoning, addEllipsis, ragInfosJson)));
+                List.of(buildStreamedAssistantMessage(content, reasoning, addEllipsis,
+                        ragInfosJson, pendingQuestionJson)));
     }
 
     /**
@@ -787,6 +762,14 @@ public class ChatService {
      */
     static AssistantMessage buildStreamedAssistantMessage(String content, String reasoning, boolean addEllipsis,
                                                           String ragInfosJson) {
+        return buildStreamedAssistantMessage(content, reasoning, addEllipsis, ragInfosJson, null);
+    }
+
+    /**
+     * 构造流式落库用的 assistant 消息，可附带 pendingQuestion 元数据。
+     */
+    static AssistantMessage buildStreamedAssistantMessage(String content, String reasoning, boolean addEllipsis,
+                                                          String ragInfosJson, String pendingQuestionJson) {
         String finalContent = content != null ? content : "";
         if (addEllipsis && StringUtils.isNotBlank(finalContent)) {
             finalContent = finalContent + "...";
@@ -802,6 +785,9 @@ public class ChatService {
         }
         if (StringUtils.isNotBlank(ragInfosJson)) {
             properties.put(ChatMemoryMessageCodec.META_RAG_INFOS, ragInfosJson);
+        }
+        if (StringUtils.isNotBlank(pendingQuestionJson)) {
+            properties.put(ChatMemoryMessageCodec.META_PENDING_QUESTION, pendingQuestionJson);
         }
         if (!properties.isEmpty()) {
             builder.properties(properties);

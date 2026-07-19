@@ -114,6 +114,9 @@ graph TD
         chatSvc["ChatService"]
         router["AgentRouter"]
         aiAgent["AiAgent 抽象基类"]
+        orchestrator["通用助手编排 (UniversalAssistantOrchestratorService)"]
+        dispatcher["调度器 (UniversalDispatchDecisionService)"]
+        subAgentCall["子智能体调用 (UniversalSubAgentCallService)"]
         sm["AgentTurnStateMachine"]
         toolEmitter["ToolEventEmitter"]
         ws["WebSocket 下发 AgentUiEventEnvelope"]
@@ -149,6 +152,10 @@ graph TD
     chatSvc --> router
     plugin --> router
     router --> aiAgent
+    aiAgent --> orchestrator
+    orchestrator --> dispatcher
+    dispatcher --> subAgentCall
+    subAgentCall --> router
     aiAgent --> chatMemory
     aiAgent --> retriever
     aiAgent --> toolReg
@@ -267,4 +274,4 @@ j2agent@2025
 
 ## 文档
 
-详细设计与开发文档见工作区 [j2agent-docs](../j2agent-docs/README.md)。
+详细设计与开发文档见 [j2agent-docs](https://github.com/j2agent-ai/j2agent-docs)。

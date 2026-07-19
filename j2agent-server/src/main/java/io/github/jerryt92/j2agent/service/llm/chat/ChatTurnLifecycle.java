@@ -21,6 +21,7 @@ import io.github.jerryt92.j2agent.service.llm.TurnStepRecorder;
 import io.github.jerryt92.j2agent.service.llm.memory.ChatMemoryMessageCodec;
 import io.github.jerryt92.j2agent.service.llm.memory.ConversationIdCodec;
 import io.github.jerryt92.j2agent.service.llm.rag.TurnRagSourceRegistry;
+import io.github.jerryt92.j2agent.service.question.TurnAskQuestionRegistry;
 import io.github.jerryt92.j2agent.service.llm.reasoning.SpringAiReasoningMetadataAdapter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -289,17 +290,29 @@ public final class ChatTurnLifecycle {
             reasoning = streamedReasoning.toString();
         }
         String ragInfosJson = TurnRagSourceRegistry.drainRagInfosJson(conversationId);
-        if (content.isEmpty() && reasoning.isEmpty() && StringUtils.isBlank(ragInfosJson)) {
+        String pendingQuestionJson = TurnAskQuestionRegistry.drainQuestionJson(conversationId);
+        if (content.isEmpty() && reasoning.isEmpty()
+                && StringUtils.isBlank(ragInfosJson)
+                && StringUtils.isBlank(pendingQuestionJson)) {
             return;
         }
         chatMemory.add(conversationId,
-                List.of(buildStreamedAssistantMessage(content, reasoning, addEllipsis, ragInfosJson)));
+                List.of(buildStreamedAssistantMessage(content, reasoning, addEllipsis,
+                        ragInfosJson, pendingQuestionJson)));
     }
 
     public static AssistantMessage buildStreamedAssistantMessage(String content,
                                                                  String reasoning,
                                                                  boolean addEllipsis,
                                                                  String ragInfosJson) {
+        return buildStreamedAssistantMessage(content, reasoning, addEllipsis, ragInfosJson, null);
+    }
+
+    public static AssistantMessage buildStreamedAssistantMessage(String content,
+                                                                 String reasoning,
+                                                                 boolean addEllipsis,
+                                                                 String ragInfosJson,
+                                                                 String pendingQuestionJson) {
         String finalContent = content != null ? content : "";
         if (addEllipsis && StringUtils.isNotBlank(finalContent)) {
             finalContent = finalContent + "...";
@@ -315,6 +328,9 @@ public final class ChatTurnLifecycle {
         }
         if (StringUtils.isNotBlank(ragInfosJson)) {
             properties.put(ChatMemoryMessageCodec.META_RAG_INFOS, ragInfosJson);
+        }
+        if (StringUtils.isNotBlank(pendingQuestionJson)) {
+            properties.put(ChatMemoryMessageCodec.META_PENDING_QUESTION, pendingQuestionJson);
         }
         if (!properties.isEmpty()) {
             builder.properties(properties);

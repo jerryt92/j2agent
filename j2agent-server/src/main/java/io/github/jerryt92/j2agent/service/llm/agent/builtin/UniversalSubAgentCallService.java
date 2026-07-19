@@ -16,6 +16,7 @@ import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
 import io.github.jerryt92.j2agent.service.llm.memory.ConversationIdCodec;
 import io.github.jerryt92.j2agent.service.llm.rag.TurnRagSourceRegistry;
+import io.github.jerryt92.j2agent.service.question.TurnAskQuestionRegistry;
 import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -85,6 +86,7 @@ public class UniversalSubAgentCallService {
                             + ",agentId=" + trimmedAgentId),
                     "sub-agent RAG source bridge failed");
         }
+        TurnAskQuestionRegistry.shareHolder(specialistConversationId, request.parentConversationId());
 
         SubAgentStreamBridge.Target bridge = SubAgentStreamBridge.lookup(turnId);
         StringBuilder content = bridge != null ? bridge.streamedContent() : new StringBuilder();
@@ -137,6 +139,7 @@ public class UniversalSubAgentCallService {
             return "调用子智能体时出现问题: " + ex.getMessage();
         } finally {
             ThinkingOverrideRegistry.unbind(specialistConversationId);
+            TurnAskQuestionRegistry.unshareHolder(specialistConversationId);
         }
     }
 

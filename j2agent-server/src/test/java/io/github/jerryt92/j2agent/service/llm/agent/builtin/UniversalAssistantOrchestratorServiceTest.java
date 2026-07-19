@@ -85,7 +85,8 @@ class UniversalAssistantOrchestratorServiceTest {
                         "user-1:ctx-1:universal_assistant",
                         null,
                         List.of(attachment),
-                        "用户原问题"));
+                        "用户原问题",
+                        null));
 
         assertEquals(UniversalAssistantOrchestratorService.OrchestrationOutcome.DISPATCHED, outcome);
 
@@ -94,6 +95,74 @@ class UniversalAssistantOrchestratorServiceTest {
         verify(subAgentCallService).call(eq("wiki"), eq("routing"), requestCaptor.capture());
         assertEquals(1, requestCaptor.getValue().attachments().size());
         assertEquals("chat/u/c/a.png", requestCaptor.getValue().attachments().get(0).getObjectKey());
+    }
+
+    @Test
+    void manualDispatchCallsTargetWithoutRecallOrDecision() {
+        UniversalIntentQueryService intentQueryService = Mockito.mock(UniversalIntentQueryService.class);
+        UniversalDispatchDecisionService dispatchDecisionService =
+                Mockito.mock(UniversalDispatchDecisionService.class);
+        UniversalSubAgentCallService subAgentCallService = Mockito.mock(UniversalSubAgentCallService.class);
+        AgentRouter agentRouter = Mockito.mock(AgentRouter.class);
+        ChatMemory chatMemory = Mockito.mock(ChatMemory.class);
+        AiAgent wikiAgent = Mockito.mock(AiAgent.class);
+        when(wikiAgent.getAgentId()).thenReturn("wiki");
+        when(agentRouter.listCallableSubAgents()).thenReturn(List.of(wikiAgent));
+        when(intentQueryService.buildRoutingQuery(
+                ArgumentMatchers.eq(chatMemory), anyString(), anyList(), anyString())).thenReturn("routing");
+        when(subAgentCallService.call(anyString(), anyString(), any())).thenReturn("answer");
+
+        UniversalAssistantOrchestratorService service = new UniversalAssistantOrchestratorService(
+                intentQueryService, dispatchDecisionService, subAgentCallService, agentRouter, chatMemory);
+
+        UniversalAssistantOrchestratorService.OrchestrationOutcome outcome = service.orchestrate(
+                new UniversalAssistantOrchestratorService.OrchestrationRequest(
+                        "ctx-1",
+                        "turn-1",
+                        "user-1",
+                        "user-1:ctx-1:universal_assistant",
+                        null,
+                        List.of(),
+                        "用户原问题",
+                        "wiki"));
+
+        assertEquals(UniversalAssistantOrchestratorService.OrchestrationOutcome.DISPATCHED, outcome);
+        verify(intentQueryService, never()).queryIntentAgents(anyString(), anyString(), any());
+        verify(dispatchDecisionService, never()).decide(anyString(), anyString(), anyList(), anySet(), anyBoolean(), any());
+        verify(subAgentCallService).call(eq("wiki"), eq("routing"), any());
+    }
+
+    @Test
+    void manualDispatchRejectsUnknownAgent() {
+        UniversalIntentQueryService intentQueryService = Mockito.mock(UniversalIntentQueryService.class);
+        UniversalDispatchDecisionService dispatchDecisionService =
+                Mockito.mock(UniversalDispatchDecisionService.class);
+        UniversalSubAgentCallService subAgentCallService = Mockito.mock(UniversalSubAgentCallService.class);
+        AgentRouter agentRouter = Mockito.mock(AgentRouter.class);
+        ChatMemory chatMemory = Mockito.mock(ChatMemory.class);
+        AiAgent wikiAgent = Mockito.mock(AiAgent.class);
+        when(wikiAgent.getAgentId()).thenReturn("wiki");
+        when(agentRouter.listCallableSubAgents()).thenReturn(List.of(wikiAgent));
+        when(intentQueryService.buildRoutingQuery(
+                ArgumentMatchers.eq(chatMemory), anyString(), anyList(), anyString())).thenReturn("routing");
+
+        UniversalAssistantOrchestratorService service = new UniversalAssistantOrchestratorService(
+                intentQueryService, dispatchDecisionService, subAgentCallService, agentRouter, chatMemory);
+
+        assertThrows(IllegalArgumentException.class, () -> service.orchestrate(
+                new UniversalAssistantOrchestratorService.OrchestrationRequest(
+                        "ctx-1",
+                        "turn-1",
+                        "user-1",
+                        "user-1:ctx-1:universal_assistant",
+                        null,
+                        List.of(),
+                        "用户原问题",
+                        "missing")));
+
+        verify(intentQueryService, never()).queryIntentAgents(anyString(), anyString(), any());
+        verify(dispatchDecisionService, never()).decide(anyString(), anyString(), anyList(), anySet(), anyBoolean(), any());
+        verify(subAgentCallService, never()).call(anyString(), anyString(), any());
     }
 
     @Test
@@ -142,6 +211,7 @@ class UniversalAssistantOrchestratorServiceTest {
                 "user-1:ctx-1:universal_assistant",
                 null,
                 List.of(),
-                userMessage);
+                userMessage,
+                null);
     }
 }

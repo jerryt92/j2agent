@@ -72,6 +72,7 @@ public class ChatMemoryMessageCodec {
     static final String META_REASONING_CONTENT = "reasoningContent";
     static final String META_ATTACHMENTS = "attachments";
     public static final String META_RAG_INFOS = "ragInfos";
+    public static final String META_PENDING_QUESTION = "pendingQuestion";
 
     private final ObjectMapper objectMapper;
 
@@ -125,9 +126,16 @@ public class ChatMemoryMessageCodec {
                 return new PersistedRow(2, t, meta, ragInfos);
             }
             String reasoning = extractReasoningFromMetadata(am);
+            String pendingQuestion = extractPendingQuestionFromMetadata(am);
+            Map<String, Object> metaMap = new LinkedHashMap<>();
             if (StringUtils.hasText(reasoning)) {
-                String meta = truncateMetaJson(objectMapper.writeValueAsString(
-                        Map.of(META_REASONING_CONTENT, capContentField(reasoning, "reasoningContent"))));
+                metaMap.put(META_REASONING_CONTENT, capContentField(reasoning, "reasoningContent"));
+            }
+            if (StringUtils.hasText(pendingQuestion)) {
+                metaMap.put(META_PENDING_QUESTION, pendingQuestion);
+            }
+            if (!metaMap.isEmpty()) {
+                String meta = truncateMetaJson(objectMapper.writeValueAsString(metaMap));
                 return new PersistedRow(2, t, meta, ragInfos);
             }
             return new PersistedRow(2, t, null, ragInfos);
@@ -209,6 +217,10 @@ public class ChatMemoryMessageCodec {
         }
         if (StringUtils.hasText(ragInfos)) {
             props.put(META_RAG_INFOS, ragInfos);
+        }
+        String pendingQuestion = parsePendingQuestionFromMetaJson(metaJson);
+        if (StringUtils.hasText(pendingQuestion)) {
+            props.put(META_PENDING_QUESTION, pendingQuestion);
         }
         if (!props.isEmpty()) {
             return AssistantMessage.builder().content(content).properties(props).build();
@@ -474,6 +486,18 @@ public class ChatMemoryMessageCodec {
         return SpringAiReasoningMetadataAdapter.adaptFullReasoning(am, null);
     }
 
+    private static String extractPendingQuestionFromMetadata(AssistantMessage am) {
+        if (am == null || am.getMetadata() == null) {
+            return null;
+        }
+        Object raw = am.getMetadata().get(META_PENDING_QUESTION);
+        if (raw == null) {
+            return null;
+        }
+        String value = raw.toString().trim();
+        return value.isEmpty() ? null : value;
+    }
+
     private String parseReasoningFromMetaJson(String metaJson) {
         if (!StringUtils.hasText(metaJson)) {
             return null;
@@ -485,6 +509,22 @@ public class ChatMemoryMessageCodec {
                 return null;
             }
             return rc.asText();
+        } catch (JsonProcessingException e) {
+            return null;
+        }
+    }
+
+    private String parsePendingQuestionFromMetaJson(String metaJson) {
+        if (!StringUtils.hasText(metaJson)) {
+            return null;
+        }
+        try {
+            JsonNode m = objectMapper.readTree(metaJson);
+            JsonNode question = m.get(META_PENDING_QUESTION);
+            if (question == null || question.isNull()) {
+                return null;
+            }
+            return question.isTextual() ? question.asText() : question.toString();
         } catch (JsonProcessingException e) {
             return null;
         }

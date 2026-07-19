@@ -62,7 +62,7 @@ public class ReloadableRoutingChatModel implements ChatModel {
     }
 
     /**
-     * 显式指定覆盖策略的同步调用（无 Prompt 会话键时使用，如建议追问）。
+     * 显式指定覆盖策略的同步调用（无 Prompt 会话键时使用）。
      */
     public ChatResponse call(Prompt prompt, AgentThinkingOverride thinkingOverride) {
         return resolveDelegate(prompt, thinkingOverride).call(prompt);

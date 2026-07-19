@@ -33,9 +33,6 @@ public class AgentToolErrorReturnInterceptor extends ToolInterceptor {
             if (t instanceof Error error) {
                 throw error;
             }
-            if (t instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
             String message = buildToolErrorMessage(request, t);
             String conversationId = resolveConversationId(request);
             AgentRunLogger.warnByConversationId(conversationId, AgentRunEventType.TOOL_ERROR_RETURN,

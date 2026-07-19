@@ -810,6 +810,27 @@ components:
           items:
             type: string
           description: 重载后由插件加载的 agentId 列表
+    AskQuestionDto:
+      type: object
+      description: Agent 向用户提问并等待用户补充输入
+      required: [ type, version, question, options ]
+      properties:
+        type:
+          type: string
+          enum: [ ask_question ]
+          description: 固定为 ask_question
+        version:
+          type: integer
+          description: 协议版本
+          default: 1
+        question:
+          type: string
+          description: 面向用户展示的问题
+        options:
+          type: array
+          description: LLM 生成的候选回答选项
+          items:
+            type: string
     TurnStepDto:
       type: object
       description: Agent 单轮状态轨迹中的一个步骤
@@ -869,6 +890,8 @@ components:
           description: 用户消息携带的对象存储附件
           items:
             $ref: '#/components/schemas/ChatAttachmentDto'
+        pendingQuestion:
+          $ref: '#/components/schemas/AskQuestionDto'
     ChatAttachmentDto:
       type: object
       required: [ name, contentType ]
@@ -921,6 +944,9 @@ components:
           type: string
           description: 本轮深度思考；不传则按 Agent 默认再回退提供商配置。provider_default 不向 API 传 thinking，由提供商/模型默认
           enum: [ provider_default, on, off ]
+        manualDispatchAgentId:
+          type: string
+          description: 通用助手手动直连的子智能体 ID；仅 universal_assistant 生效，传入后跳过调度器
     ChatResponseDto:
       type: object
       properties:
