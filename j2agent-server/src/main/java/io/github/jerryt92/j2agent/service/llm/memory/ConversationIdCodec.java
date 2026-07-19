@@ -8,47 +8,41 @@ import org.springframework.util.StringUtils;
  */
 public final class ConversationIdCodec {
 
-    /**
-     * 历史两段子键（{@code userId:contextId}）解析时使用的默认 agent，与库迁移默认空串一致。
-     */
-    public static final String LEGACY_AGENT_ID = "";
-
     private static final String ANONYMOUS_USER = "anonymous";
 
     private ConversationIdCodec() {
     }
 
     /**
-     * 组装会话键；{@code userId} 为空时用 anonymous；{@code agentId} 为空时用 {@link #LEGACY_AGENT_ID}。
+     * 组装会话键；{@code userId} 为空时用 anonymous；{@code contextId}、{@code agentId} 均不可为空。
      */
     public static String format(String userId, String contextId, String agentId) {
         if (!StringUtils.hasText(contextId)) {
             throw new IllegalArgumentException("contextId must not be blank.");
         }
+        if (!StringUtils.hasText(agentId)) {
+            throw new IllegalArgumentException("agentId must not be blank.");
+        }
         String uid = StringUtils.hasText(userId) ? userId.trim() : ANONYMOUS_USER;
-        String aid = agentId == null ? LEGACY_AGENT_ID : agentId;
-        return uid + ":" + contextId.trim() + ":" + aid;
+        return uid + ":" + contextId.trim() + ":" + agentId.trim();
     }
 
     /**
-     * 解析会话键；仅两段时第三段视为 {@link #LEGACY_AGENT_ID}。
+     * 解析会话键，必须为三段 {@code userId:contextId:agentId}，且各段非空。
      */
     public static Parts parse(String conversationId) {
-        if (!StringUtils.hasText(conversationId) || !conversationId.contains(":")) {
-            throw new IllegalArgumentException("conversationId must be 'userId:contextId' or 'userId:contextId:agentId'.");
+        if (!StringUtils.hasText(conversationId)) {
+            throw new IllegalArgumentException("conversationId must be 'userId:contextId:agentId'.");
         }
         String[] parts = conversationId.split(":", 3);
-        if (parts.length < 2) {
-            throw new IllegalArgumentException("conversationId must be 'userId:contextId' or 'userId:contextId:agentId'.");
+        if (parts.length != 3) {
+            throw new IllegalArgumentException("conversationId must be 'userId:contextId:agentId'.");
         }
         String userId = parts[0];
         String contextId = parts[1];
-        String agentId = parts.length >= 3 ? parts[2] : LEGACY_AGENT_ID;
-        if (!StringUtils.hasText(userId) || !StringUtils.hasText(contextId)) {
-            throw new IllegalArgumentException("userId and contextId must not be blank.");
-        }
-        if (agentId == null) {
-            agentId = LEGACY_AGENT_ID;
+        String agentId = parts[2];
+        if (!StringUtils.hasText(userId) || !StringUtils.hasText(contextId) || !StringUtils.hasText(agentId)) {
+            throw new IllegalArgumentException("userId, contextId and agentId must not be blank.");
         }
         return new Parts(userId, contextId, agentId);
     }

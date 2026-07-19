@@ -54,4 +54,16 @@ public interface SimpleRagCollectionStateMapper {
      */
     @Delete("DELETE FROM simple_rag_collection_state WHERE collection_name = #{collectionName}")
     int deleteByCollectionName(@Param("collectionName") String collectionName);
+
+    /**
+     * 按归属 Agent 查询其全部 collection 名称。
+     */
+    @Select("SELECT collection_name FROM simple_rag_collection_state WHERE owner_agent_id = #{ownerAgentId}")
+    List<String> selectCollectionNamesByOwnerAgentId(@Param("ownerAgentId") String ownerAgentId);
+
+    /**
+     * 按归属 Agent 删除其全部同步状态。
+     */
+    @Delete("DELETE FROM simple_rag_collection_state WHERE owner_agent_id = #{ownerAgentId}")
+    int deleteByOwnerAgentId(@Param("ownerAgentId") String ownerAgentId);
 }

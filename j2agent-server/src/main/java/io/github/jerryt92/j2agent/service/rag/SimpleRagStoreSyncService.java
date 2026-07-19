@@ -34,6 +34,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -226,6 +227,36 @@ public class SimpleRagStoreSyncService {
         String collectionName = toCollectionName(storeName);
         vectorDatabaseService.dropCollection(collectionName);
         stateMapper.deleteByCollectionName(collectionName);
+    }
+
+    /**
+     * 失效指定 Agent 的 SimpleRag：drop collection 并删除状态，供后续同步重建。
+     */
+    public void invalidateByOwnerAgentIds(Collection<String> ownerAgentIds) {
+        if (ownerAgentIds == null || ownerAgentIds.isEmpty()) {
+            return;
+        }
+        Set<String> uniqueAgentIds = new LinkedHashSet<>();
+        for (String ownerAgentId : ownerAgentIds) {
+            if (StringUtils.isNotBlank(ownerAgentId)) {
+                uniqueAgentIds.add(ownerAgentId.trim());
+            }
+        }
+        for (String ownerAgentId : uniqueAgentIds) {
+            List<String> collections = stateMapper.selectCollectionNamesByOwnerAgentId(ownerAgentId);
+            if (collections == null || collections.isEmpty()) {
+                continue;
+            }
+            for (String collectionName : collections) {
+                if (StringUtils.isBlank(collectionName)) {
+                    continue;
+                }
+                log.info("Invalidating SimpleRag for plugin replace: ownerAgentId={}, collection={}",
+                        ownerAgentId, collectionName);
+                vectorDatabaseService.dropCollection(collectionName);
+            }
+            stateMapper.deleteByOwnerAgentId(ownerAgentId);
+        }
     }
 
     /**

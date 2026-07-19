@@ -277,6 +277,74 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
     }
 
     /**
+     * 仅热重载指定安装目录下的插件包，其它已加载插件保持不变。
+     */
+    public AgentPluginReloadOutcome reloadPackage(String agentDir) {
+        synchronized (reloadLock) {
+            String pluginPath = resolvePluginPath();
+            List<String> jarLabels = listPluginBundleLabels(pluginPath);
+            try {
+                validateAgentDirName(agentDir);
+            } catch (IllegalArgumentException ex) {
+                return AgentPluginReloadOutcome.failure(jarLabels, currentLoadedAgentIds(), ex.getMessage());
+            }
+            if (!StringUtils.hasText(pluginPath)) {
+                return AgentPluginReloadOutcome.failure(jarLabels, currentLoadedAgentIds(),
+                        "Plugin path is not configured");
+            }
+            File agentsRoot = AgentPluginBundle.resolveAgentsRoot(pluginPath);
+            File targetDir = new File(agentsRoot, agentDir);
+            if (!targetDir.isDirectory()) {
+                return AgentPluginReloadOutcome.failure(jarLabels, currentLoadedAgentIds(),
+                        "Agent package directory not found: " + agentDir);
+            }
+            AgentPluginBundle bundle;
+            try {
+                bundle = AgentPluginBundle.fromAgentDirectory(targetDir);
+            } catch (IllegalArgumentException ex) {
+                return AgentPluginReloadOutcome.failure(jarLabels, currentLoadedAgentIds(), ex.getMessage());
+            }
+            DefaultListableBeanFactory beanFactory =
+                    (DefaultListableBeanFactory) applicationContext.getAutowireCapableBeanFactory();
+            Set<String> builtinAgentIds = collectBuiltinAgentIds(beanFactory);
+            try {
+                validateSinglePackageAgentIds(bundle, agentDir, builtinAgentIds, beanFactory);
+            } catch (AgentPluginConflictException ex) {
+                log.warn("Agent plugin package reload rejected: {}", ex.getMessage());
+                return AgentPluginReloadOutcome.failure(jarLabels, currentLoadedAgentIds(), ex.getMessage());
+            }
+            unloadBundle(agentDir);
+            try {
+                scanAndRegisterBundle(bundle, beanFactory);
+            } catch (Exception ex) {
+                log.error("Failed to reload plugin package {}: {}", agentDir, ex.getMessage(), ex);
+                return AgentPluginReloadOutcome.failure(listPluginBundleLabels(pluginPath),
+                        currentLoadedAgentIds(),
+                        ex.getMessage() != null ? ex.getMessage() : "Failed to reload plugin package");
+            }
+            List<String> loadedAgentIds = activateAllPluginBeans(beanFactory);
+            log.info("Reloaded plugin package: agentDir={}, loadedAgentIds={}", agentDir, loadedAgentIds);
+            return AgentPluginReloadOutcome.success(listPluginBundleLabels(pluginPath), loadedAgentIds);
+        }
+    }
+
+    /**
+     * 返回指定安装目录当前已加载的 agentId（用于可选重建 SimpleRag）。
+     */
+    public List<String> getLoadedAgentIdsForPackage(String agentDir) {
+        if (!StringUtils.hasText(agentDir)) {
+            return List.of();
+        }
+        return dynamicRegistrations.stream()
+                .filter(r -> r.aiAgent() && matchesAgentDir(r.jarFileName(), agentDir))
+                .map(DynamicRegistration::agentId)
+                .filter(StringUtils::hasText)
+                .sorted()
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    /**
      * 当前由本注册表加载的动态 Bean 名称集合。
      */
     public Set<String> getDynamicBeanNames() {
@@ -479,10 +547,32 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
     }
 
     private void unloadDynamicPlugins() {
+        unloadRegistrations(new ArrayList<>(dynamicRegistrations));
+        dynamicRegistrations.clear();
+    }
+
+    /**
+     * 卸载指定安装目录对应的动态 Bean 与 ClassLoader。
+     */
+    private void unloadBundle(String agentDir) {
+        List<DynamicRegistration> toUnload = dynamicRegistrations.stream()
+                .filter(r -> matchesAgentDir(r.jarFileName(), agentDir))
+                .toList();
+        if (toUnload.isEmpty()) {
+            log.info("No loaded registrations to unload for agentDir={}", agentDir);
+            return;
+        }
+        unloadRegistrations(toUnload);
+        dynamicRegistrations.removeIf(r -> matchesAgentDir(r.jarFileName(), agentDir));
+    }
+
+    /**
+     * 销毁登记的动态 Bean 并关闭其 ClassLoader（先 Agent 后依赖）。
+     */
+    private void unloadRegistrations(List<DynamicRegistration> registrations) {
         DefaultListableBeanFactory beanFactory =
                 (DefaultListableBeanFactory) applicationContext.getAutowireCapableBeanFactory();
-        List<DynamicRegistration> snapshot = new ArrayList<>(dynamicRegistrations);
-        // 先销毁 AiAgent，再销毁其依赖 Bean
+        List<DynamicRegistration> snapshot = new ArrayList<>(registrations);
         snapshot.sort((a, b) -> Boolean.compare(b.aiAgent(), a.aiAgent()));
         Set<URLClassLoader> classLoaders = new LinkedHashSet<>();
         for (DynamicRegistration registration : snapshot) {
@@ -502,7 +592,77 @@ public class AgentPluginRegistry implements BeanDefinitionRegistryPostProcessor,
             }
         }
         classLoaders.forEach(AgentPluginRegistry::closeQuietly);
-        dynamicRegistrations.clear();
+    }
+
+    /**
+     * jar 标签是否属于指定 agentDir（支持 agents/{dir}/jar 与 {dir}/jar）。
+     */
+    static boolean matchesAgentDir(String jarFileName, String agentDir) {
+        if (!StringUtils.hasText(jarFileName) || !StringUtils.hasText(agentDir)) {
+            return false;
+        }
+        String marker = agentDir + "/";
+        return jarFileName.startsWith(marker) || jarFileName.contains("/" + marker);
+    }
+
+    /**
+     * 校验单包 agentId：不与内置冲突，也不与其它已加载插件冲突。
+     */
+    private void validateSinglePackageAgentIds(AgentPluginBundle bundle,
+                                               String agentDir,
+                                               Set<String> builtinAgentIds,
+                                               DefaultListableBeanFactory beanFactory)
+            throws AgentPluginConflictException {
+        Set<String> otherLoadedIds = dynamicRegistrations.stream()
+                .filter(r -> r.aiAgent() && !matchesAgentDir(r.jarFileName(), agentDir))
+                .map(DynamicRegistration::agentId)
+                .filter(StringUtils::hasText)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<String> packageIds = new LinkedHashSet<>();
+        PluginAgentClassLoader scanLoader = null;
+        try (JarFile jar = new JarFile(bundle.jarFile())) {
+            scanLoader = new PluginAgentClassLoader(
+                    bundle.toClassLoaderUrls(), applicationContext.getClassLoader());
+            for (Class<?> agentClass : scanAiAgentClasses(jar, scanLoader)) {
+                String agentId = resolveAgentId(agentClass, beanFactory);
+                if (!StringUtils.hasText(agentId)) {
+                    log.warn("Skip plugin agentId validation for {} in {} — cannot resolve agentId",
+                            agentClass.getName(), bundle.label());
+                    continue;
+                }
+                if (builtinAgentIds.contains(agentId)) {
+                    throw new AgentPluginConflictException(
+                            "Plugin agentId conflicts with built-in agent: " + agentId
+                                    + " (class=" + agentClass.getName() + ", bundle=" + bundle.label() + ")");
+                }
+                if (!packageIds.add(agentId)) {
+                    throw new AgentPluginConflictException(
+                            "Duplicate plugin agentId in package: " + agentId);
+                }
+                if (otherLoadedIds.contains(agentId)) {
+                    throw new AgentPluginConflictException(
+                            "Plugin agentId already loaded by another package: " + agentId);
+                }
+            }
+        } catch (AgentPluginConflictException conflict) {
+            throw conflict;
+        } catch (Exception ex) {
+            if (ex instanceof MalformedURLException urlEx) {
+                throw new IllegalStateException("Failed to validate plugin bundle URLs: " + bundle.label(), urlEx);
+            }
+            throw new IllegalStateException("Failed to validate plugin JAR: " + bundle.jarFile().getAbsolutePath(), ex);
+        } finally {
+            closeQuietly(scanLoader);
+        }
+    }
+
+    private static void validateAgentDirName(String agentDir) {
+        if (!StringUtils.hasText(agentDir) || agentDir.contains("..") || agentDir.contains("/") || agentDir.contains("\\")) {
+            throw new IllegalArgumentException("Invalid agent directory name: " + agentDir);
+        }
+        if (PluginLayout.AGENTS_DIR_NAME.equals(agentDir) || PluginLayout.SKILLS_DIR_NAME.equals(agentDir)) {
+            throw new IllegalArgumentException("Reserved agent directory name: " + agentDir);
+        }
     }
 
     private void validatePluginAgentIds(List<AgentPluginBundle> bundles, Set<String> builtinAgentIds,

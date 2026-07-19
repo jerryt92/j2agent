@@ -144,6 +144,29 @@ class SimpleRagStoreSyncServiceTest {
         verify(stateMapper).deleteByCollectionName("simple_rag_old_store");
     }
 
+    @Test
+    void invalidateByOwnerAgentIdsDropsCollectionsAndDeletesState() {
+        when(stateMapper.selectCollectionNamesByOwnerAgentId("agent-1"))
+                .thenReturn(List.of("simple_rag_test_store", "simple_rag_other_store"));
+
+        service.invalidateByOwnerAgentIds(List.of("agent-1", "  ", "agent-1"));
+
+        verify(vectorDatabaseService).dropCollection("simple_rag_test_store");
+        verify(vectorDatabaseService).dropCollection("simple_rag_other_store");
+        verify(stateMapper).deleteByOwnerAgentId("agent-1");
+        verify(stateMapper, org.mockito.Mockito.times(1)).selectCollectionNamesByOwnerAgentId("agent-1");
+    }
+
+    @Test
+    void invalidateByOwnerAgentIdsIgnoresEmptyInput() {
+        service.invalidateByOwnerAgentIds(List.of());
+        service.invalidateByOwnerAgentIds(null);
+
+        verifyNoInteractions(vectorDatabaseService);
+        verify(stateMapper, never()).selectCollectionNamesByOwnerAgentId(any());
+        verify(stateMapper, never()).deleteByOwnerAgentId(any());
+    }
+
     private SimpleRagCollectionStatePo state(String collectionName, String syncStatus, int documentCount) {
         SimpleRagCollectionStatePo state = new SimpleRagCollectionStatePo();
         state.setCollectionName(collectionName);

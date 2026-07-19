@@ -641,13 +641,55 @@ paths:
             application/json:
               schema:
                 $ref: './openapi-model.yaml#/components/schemas/AgentReloadResult'
+  /v1/rest/j2agent/plugins/agents/{agentDir}/reload:
+    post:
+      tags:
+        - AgentPlugin
+      summary: 重新加载单个 Agent 插件包
+      description: 仅热重载指定安装目录；可选重建该包所属 SimpleRag 向量内容
+      operationId: reloadAgentPackage
+      parameters:
+        - name: agentDir
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 安装目录名
+        - name: rebuildSimpleRag
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: 是否重建该包所属 SimpleRag 向量（失效后同步重建）
+      responses:
+        '200':
+          description: 重载成功
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/AgentReloadResult'
+        '400':
+          description: 重载失败
+          content:
+            application/json:
+              schema:
+                $ref: './openapi-model.yaml#/components/schemas/AgentReloadResult'
   /v1/rest/j2agent/agents/reload:
     post:
       tags:
         - AgentPlugin
       summary: 重新加载 Agent 插件 JAR
-      description: 重新扫描插件目录下的 JAR 并注册 Agent；与内置 agentId 冲突时整次失败
+      description: 重新扫描插件目录下的 JAR 并注册 Agent；与内置 agentId 冲突时整次失败；可选重建全部已加载 Agent 的 SimpleRag
       operationId: reloadAgents
+      parameters:
+        - name: rebuildSimpleRag
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: 是否重建全部已加载 Agent 的 SimpleRag 向量（失效后同步重建）
       responses:
         '200':
           description: OK
@@ -711,7 +753,7 @@ paths:
             type: string
         - name: agent-id
           in: query
-          description: 智能体ID，与 WebSocket 会话一致；空串表示历史默认记忆行
+          description: 智能体ID，与 WebSocket 会话一致（必填非空）
           required: true
           schema:
             type: string

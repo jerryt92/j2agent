@@ -2,7 +2,6 @@ package io.github.jerryt92.j2agent.service.llm;
 
 import io.github.jerryt92.j2agent.config.chat.ActiveChatTurnProperties;
 import io.github.jerryt92.j2agent.config.redis.RedisKeyNamespaces;
-import io.github.jerryt92.j2agent.service.llm.memory.ConversationIdCodec;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RAtomicLong;
 import org.redisson.api.RBucket;
@@ -44,7 +43,7 @@ public class ActiveChatTurnRegistry {
         if (!StringUtils.hasText(contextId)) {
             return;
         }
-        String aid = normalizeAgentId(agentId);
+        String aid = requireAgentId(agentId);
         try {
             RAtomicLong counter = turnCounter(contextId, aid);
             long count = counter.incrementAndGet();
@@ -64,7 +63,7 @@ public class ActiveChatTurnRegistry {
         if (!StringUtils.hasText(contextId)) {
             return;
         }
-        String aid = normalizeAgentId(agentId);
+        String aid = requireAgentId(agentId);
         try {
             RAtomicLong counter = turnCounter(contextId, aid);
             if (!counter.isExists()) {
@@ -91,7 +90,7 @@ public class ActiveChatTurnRegistry {
         if (!StringUtils.hasText(contextId)) {
             return;
         }
-        String aid = normalizeAgentId(agentId);
+        String aid = requireAgentId(agentId);
         try {
             touchHeartbeat(contextId, aid);
         } catch (Exception e) {
@@ -103,7 +102,7 @@ public class ActiveChatTurnRegistry {
         if (!StringUtils.hasText(contextId)) {
             return false;
         }
-        String aid = normalizeAgentId(agentId);
+        String aid = requireAgentId(agentId);
         try {
             RAtomicLong counter = turnCounter(contextId, aid);
             if (!counter.isExists() || counter.get() <= 0) {
@@ -169,7 +168,7 @@ public class ActiveChatTurnRegistry {
     }
 
     private void forceCleanup(String contextId, String agentId) {
-        String aid = normalizeAgentId(agentId);
+        String aid = requireAgentId(agentId);
         try {
             turnCounter(contextId, aid).delete();
             activeAgentsForContext(contextId).remove(aid);
@@ -211,12 +210,15 @@ public class ActiveChatTurnRegistry {
         return Duration.ofHours(properties.getKeyFallbackTtlHours());
     }
 
-    private static String normalizeAgentId(String agentId) {
-        return agentId == null ? ConversationIdCodec.LEGACY_AGENT_ID : agentId;
+    private static String requireAgentId(String agentId) {
+        if (!StringUtils.hasText(agentId)) {
+            throw new IllegalArgumentException("agentId must not be blank.");
+        }
+        return agentId.trim();
     }
 
     private static String turnKey(String contextId, String agentId) {
-        return contextId.trim() + ":" + normalizeAgentId(agentId);
+        return contextId.trim() + ":" + requireAgentId(agentId);
     }
 
     private RAtomicLong turnCounter(String contextId, String agentId) {
