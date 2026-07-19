@@ -42,7 +42,7 @@ class UniversalIntentQueryServiceTest {
     void queryIntentAgentsThrowsWhenCancelledAfterLlmReturns() {
         AgentRouter router = Mockito.mock(AgentRouter.class);
         LlmSyncService llmSyncService = Mockito.mock(LlmSyncService.class);
-        AiAgent agent = new StubAgent("a1", "Name", "desc", "dispatch");
+        AiAgent agent = new StubAgent("a1", "Name", "desc", "orchestration");
         when(router.listCallableSubAgents()).thenReturn(List.of(agent));
         when(llmSyncService.callAssistantText(any(Prompt.class))).thenAnswer(invocation -> {
             ChatTurnCancellationRegistry.cancel("turn-1");
@@ -82,30 +82,30 @@ class UniversalIntentQueryServiceTest {
     }
 
     @Test
-    void formatCandidateBlockUsesDispatchPromptWhenPresent() {
-        AiAgent agent = new StubAgent("a1", "Name", "Public desc", "Internal dispatch hint");
+    void formatCandidateBlockUsesOrchestrationPromptWhenPresent() {
+        AiAgent agent = new StubAgent("a1", "Name", "Public desc", "Internal orchestration hint");
         String block = UniversalIntentQueryService.formatCandidateBlock(List.of(agent));
         assertTrue(block.contains("【a1】"));
-        assertTrue(block.contains("dispatchPrompt: Internal dispatch hint"));
+        assertTrue(block.contains("orchestrationPrompt: Internal orchestration hint"));
         assertTrue(!block.contains("Public desc"));
     }
 
     @Test
-    void formatCandidateBlockFallsBackToDescriptionWhenDispatchBlank() {
+    void formatCandidateBlockFallsBackToDescriptionWhenOrchestrationBlank() {
         AiAgent agent = new StubAgent("a1", "Name", "Public desc", null);
         String block = UniversalIntentQueryService.formatCandidateBlock(List.of(agent));
-        assertTrue(block.contains("dispatchPrompt: Public desc"));
+        assertTrue(block.contains("orchestrationPrompt: Public desc"));
     }
 
     @Test
-    void sanitizeCandidateJsonIncludesDispatchPromptInResult() {
-        AiAgent agent = new StubAgent("chat_assistant", "智能报表", "desc", "SQL 报表调度提示");
+    void sanitizeCandidateJsonIncludesOrchestrationPromptInResult() {
+        AiAgent agent = new StubAgent("chat_assistant", "智能报表", "desc", "SQL 报表编排提示");
         String raw = """
                 [{"agentId":"chat_assistant","name":"智能报表","relevance":"high","reason":"占比统计"}]
                 """;
         String json = UniversalIntentQueryService.sanitizeCandidateJson(raw, List.of(agent));
-        assertTrue(json.contains("dispatchPrompt"));
-        assertTrue(json.contains("SQL 报表调度提示"));
+        assertTrue(json.contains("orchestrationPrompt"));
+        assertTrue(json.contains("SQL 报表编排提示"));
     }
 
     @Test
@@ -225,13 +225,13 @@ class UniversalIntentQueryServiceTest {
         private final String id;
         private final String name;
         private final String description;
-        private final String dispatch;
+        private final String orchestrationPrompt;
 
-        private StubAgent(String id, String name, String description, String dispatch) {
+        private StubAgent(String id, String name, String description, String orchestrationPrompt) {
             this.id = id;
             this.name = name;
             this.description = description;
-            this.dispatch = dispatch;
+            this.orchestrationPrompt = orchestrationPrompt;
         }
 
         @Override
@@ -250,8 +250,8 @@ class UniversalIntentQueryServiceTest {
         }
 
         @Override
-        public String getDispatchPrompt() {
-            return dispatch;
+        public String getOrchestrationPrompt() {
+            return orchestrationPrompt;
         }
 
         @Override

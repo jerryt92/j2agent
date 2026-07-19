@@ -60,14 +60,14 @@ public class ToolEventEmitter {
     }
 
     /**
-     * 编排服务开始分发：迁移至 {@link AgentState#AGENT_DISPATCHING}。
+     * 编排服务开始：迁移至 {@link AgentState#AGENT_ORCHESTRATING}。
      */
-    public void onAgentDispatchingStart() {
+    public void onAgentOrchestratingStart() {
         if (skipIfCancelled()) {
             return;
         }
         synchronized (turnLock) {
-            AgentStateTransition transition = stateMachine.transit(AgentState.AGENT_DISPATCHING, "orchestrationStart");
+            AgentStateTransition transition = stateMachine.transit(AgentState.AGENT_ORCHESTRATING, "orchestrationStart");
             sink.accept(AgentEventBuilder.build(
                     contextId,
                     turnId,
@@ -76,7 +76,7 @@ public class ToolEventEmitter {
                     transition,
                     AgentEventPhase.START,
                     AgentEventType.SYSTEM,
-                    Map.of("notice", "agent-dispatching-started")));
+                    Map.of("notice", "agent-orchestrating-started")));
         }
     }
 

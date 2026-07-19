@@ -93,7 +93,7 @@ graph TD
         router["AgentRouter"]
         aiAgent["AiAgent Base Class"]
         orchestrator["Universal Assistant Orchestration (UniversalAssistantOrchestratorService)"]
-        dispatcher["Scheduler (UniversalDispatchDecisionService)"]
+        orchestrationDecision["Orchestration decision (UniversalOrchestrationDecisionService)"]
         subAgentCall["Sub-Agent Call (UniversalSubAgentCallService)"]
         sm["AgentTurnStateMachine"]
         toolEmitter["ToolEventEmitter"]
@@ -131,8 +131,8 @@ graph TD
     plugin --> router
     router --> aiAgent
     aiAgent --> orchestrator
-    orchestrator --> dispatcher
-    dispatcher --> subAgentCall
+    orchestrator --> orchestrationDecision
+    orchestrationDecision --> subAgentCall
     subAgentCall --> router
     aiAgent --> chatMemory
     aiAgent --> retriever

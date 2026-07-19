@@ -21,7 +21,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * 通用助手编排：需要调度时切子智能体上下文并流式输出；否则由调用方继续走通用助手 ReAct。
+ * 通用助手编排：需要委派时切子智能体上下文并流式输出；否则由调用方继续走通用助手 ReAct。
  */
 @Service
 public class UniversalAssistantOrchestratorService {
@@ -29,30 +29,30 @@ public class UniversalAssistantOrchestratorService {
     private static final int MAX_ORCHESTRATION_ROUNDS = 3;
 
     private final UniversalIntentQueryService intentQueryService;
-    private final UniversalDispatchDecisionService dispatchDecisionService;
+    private final UniversalOrchestrationDecisionService orchestrationDecisionService;
     private final UniversalSubAgentCallService subAgentCallService;
     private final AgentRouter agentRouter;
     private final ChatMemory chatMemory;
 
     public UniversalAssistantOrchestratorService(
             UniversalIntentQueryService intentQueryService,
-            UniversalDispatchDecisionService dispatchDecisionService,
+            UniversalOrchestrationDecisionService orchestrationDecisionService,
             UniversalSubAgentCallService subAgentCallService,
             AgentRouter agentRouter,
             ChatMemory chatMemory) {
         this.intentQueryService = intentQueryService;
-        this.dispatchDecisionService = dispatchDecisionService;
+        this.orchestrationDecisionService = orchestrationDecisionService;
         this.subAgentCallService = subAgentCallService;
         this.agentRouter = agentRouter;
         this.chatMemory = chatMemory;
     }
 
     /**
-     * 编排结果：{@link #CONTINUE} 由通用助手继续；{@link #DISPATCHED} 子智能体已交付，勿再启动主 ReAct。
+     * 编排结果：{@link #CONTINUE} 由通用助手继续；{@link #ORCHESTRATED} 子智能体已交付，勿再启动主 ReAct。
      */
     public enum OrchestrationOutcome {
         CONTINUE,
-        DISPATCHED
+        ORCHESTRATED
     }
 
     public record OrchestrationRequest(
@@ -63,7 +63,7 @@ public class UniversalAssistantOrchestratorService {
             ToolEventEmitter toolEventEmitter,
             List<ChatAttachmentDto> attachments,
             String userMessage,
-            String manualDispatchAgentId) {
+            String manualOrchestrateAgentId) {
     }
 
     /**
@@ -73,11 +73,11 @@ public class UniversalAssistantOrchestratorService {
         if (request == null) {
             return OrchestrationOutcome.CONTINUE;
         }
-        String manualDispatchAgentId = StringUtils.trimToNull(request.manualDispatchAgentId());
+        String manualOrchestrateAgentId = StringUtils.trimToNull(request.manualOrchestrateAgentId());
         List<AiAgent> callableSubAgents = agentRouter.listCallableSubAgents();
         if (callableSubAgents.isEmpty()) {
-            if (manualDispatchAgentId != null) {
-                throw new IllegalArgumentException("Unsupported agentId: " + manualDispatchAgentId);
+            if (manualOrchestrateAgentId != null) {
+                throw new IllegalArgumentException("Unsupported agentId: " + manualOrchestrateAgentId);
             }
             return OrchestrationOutcome.CONTINUE;
         }
@@ -98,25 +98,25 @@ public class UniversalAssistantOrchestratorService {
 
         String routingQuery = intentQueryService.buildRoutingQuery(
                 chatMemory, request.parentConversationId(), messages, formatTrace(trace));
-        // 手动指定子智能体时跳过意图召回与调度决策，直接调用
-        if (manualDispatchAgentId != null) {
-            ensureCallableManualDispatchAgent(manualDispatchAgentId, callableSubAgents);
+        // 手动指定子智能体时跳过意图召回与编排决策，直接调用
+        if (manualOrchestrateAgentId != null) {
+            ensureCallableManualOrchestrateAgent(manualOrchestrateAgentId, callableSubAgents);
             if (StringUtils.isBlank(routingQuery)) {
                 return OrchestrationOutcome.CONTINUE;
             }
             ToolEventEmitter emitter = request.toolEventEmitter();
             if (emitter != null) {
-                emitter.onAgentDispatchingStart();
+                emitter.onAgentOrchestratingStart();
             }
             String callId = UUID.randomUUID().toString();
-            String argumentsJson = "{\"agentId\":\"" + manualDispatchAgentId + "\",\"query\":"
+            String argumentsJson = "{\"agentId\":\"" + manualOrchestrateAgentId + "\",\"query\":"
                     + jsonString(routingQuery) + "}";
             long startedAt = System.currentTimeMillis();
             if (emitter != null) {
                 emitter.onToolStart(callId, SubAgentCallNames.TOOL_NAME, argumentsJson);
             }
             String result = subAgentCallService.call(
-                    manualDispatchAgentId,
+                    manualOrchestrateAgentId,
                     routingQuery,
                     new UniversalSubAgentCallService.SubAgentCallRequest(
                             request.contextId(),
@@ -129,7 +129,7 @@ public class UniversalAssistantOrchestratorService {
                 emitter.onToolSuccess(callId, SubAgentCallNames.TOOL_NAME, result,
                         System.currentTimeMillis() - startedAt);
             }
-            return OrchestrationOutcome.DISPATCHED;
+            return OrchestrationOutcome.ORCHESTRATED;
         }
 
         String candidates = intentQueryService.queryIntentAgents(
@@ -140,18 +140,18 @@ public class UniversalAssistantOrchestratorService {
         }
 
         ToolEventEmitter emitter = request.toolEventEmitter();
-        boolean dispatchingEmitted = false;
+        boolean orchestratingEmitted = false;
         int round = 0;
         while (round < MAX_ORCHESTRATION_ROUNDS) {
             if (ChatTurnCancellationRegistry.isCancelled(request.turnId())) {
                 throw new TurnCancelledException(request.turnId());
             }
-            if (!dispatchingEmitted && emitter != null) {
-                emitter.onAgentDispatchingStart();
-                dispatchingEmitted = true;
+            if (!orchestratingEmitted && emitter != null) {
+                emitter.onAgentOrchestratingStart();
+                orchestratingEmitted = true;
             }
             boolean forceComplete = round >= MAX_ORCHESTRATION_ROUNDS - 1;
-            UniversalDispatchDecisionService.DispatchDecision decision = dispatchDecisionService.decide(
+            UniversalOrchestrationDecisionService.OrchestrationDecision decision = orchestrationDecisionService.decide(
                     candidates, routingQuery, trace, invokedAgentIds, forceComplete, request.turnId());
             if (decision.isComplete()) {
                 break;
@@ -202,11 +202,11 @@ public class UniversalAssistantOrchestratorService {
 
         return invokedAgentIds.isEmpty()
                 ? OrchestrationOutcome.CONTINUE
-                : OrchestrationOutcome.DISPATCHED;
+                : OrchestrationOutcome.ORCHESTRATED;
     }
 
     /** 校验手动直连目标必须是可调用的子智能体。 */
-    private void ensureCallableManualDispatchAgent(String agentId, List<AiAgent> callableSubAgents) {
+    private void ensureCallableManualOrchestrateAgent(String agentId, List<AiAgent> callableSubAgents) {
         boolean callable = callableSubAgents.stream()
                 .map(AiAgent::getAgentId)
                 .anyMatch(agentId::equals);

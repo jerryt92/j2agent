@@ -78,17 +78,17 @@ public abstract class AiAgent {
     public abstract String getAgentDescription();
 
     /**
-     * 调度提示词：仅供通用助手被动意图召回等内部调度使用，不展示到界面。
-     * 未 override 或返回空时，{@link #resolveDispatchPrompt()} 回退为 {@link #getAgentDescription()}。
+     * 编排提示词：仅供通用助手开放召回等内部编排使用，不展示到界面。
+     * 未 override 或返回空时，{@link #resolveOrchestrationPrompt()} 回退为 {@link #getAgentDescription()}。
      */
-    public String getDispatchPrompt() {
+    public String getOrchestrationPrompt() {
         return null;
     }
 
-    /** 路由侧实际使用的调度文案。 */
-    public final String resolveDispatchPrompt() {
-        String dispatch = getDispatchPrompt();
-        return StringUtils.hasText(dispatch) ? dispatch.trim() : getAgentDescription();
+    /** 路由侧实际使用的编排文案。 */
+    public final String resolveOrchestrationPrompt() {
+        String orchestration = getOrchestrationPrompt();
+        return StringUtils.hasText(orchestration) ? orchestration.trim() : getAgentDescription();
     }
 
     public abstract String loadSystemPrompt();

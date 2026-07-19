@@ -36,8 +36,8 @@ class UniversalAssistantOrchestratorServiceTest {
     @Test
     void returnsContinueWhenNoCandidates() {
         UniversalIntentQueryService intentQueryService = Mockito.mock(UniversalIntentQueryService.class);
-        UniversalDispatchDecisionService dispatchDecisionService =
-                Mockito.mock(UniversalDispatchDecisionService.class);
+        UniversalOrchestrationDecisionService orchestrationDecisionService =
+                Mockito.mock(UniversalOrchestrationDecisionService.class);
         UniversalSubAgentCallService subAgentCallService = Mockito.mock(UniversalSubAgentCallService.class);
         AgentRouter agentRouter = Mockito.mock(AgentRouter.class);
         ChatMemory chatMemory = Mockito.mock(ChatMemory.class);
@@ -47,20 +47,20 @@ class UniversalAssistantOrchestratorServiceTest {
         when(intentQueryService.queryIntentAgents(anyString(), eq("routing"), any())).thenReturn("[]");
 
         UniversalAssistantOrchestratorService service = new UniversalAssistantOrchestratorService(
-                intentQueryService, dispatchDecisionService, subAgentCallService, agentRouter, chatMemory);
+                intentQueryService, orchestrationDecisionService, subAgentCallService, agentRouter, chatMemory);
 
         UniversalAssistantOrchestratorService.OrchestrationOutcome outcome = service.orchestrate(request("hello"));
 
         assertEquals(UniversalAssistantOrchestratorService.OrchestrationOutcome.CONTINUE, outcome);
-        verify(dispatchDecisionService, never()).decide(anyString(), anyString(), anyList(), anySet(), anyBoolean(), any());
+        verify(orchestrationDecisionService, never()).decide(anyString(), anyString(), anyList(), anySet(), anyBoolean(), any());
         verify(subAgentCallService, never()).call(anyString(), anyString(), any());
     }
 
     @Test
-    void returnsDispatchedWhenSubAgentCalled() {
+    void returnsOrchestratedWhenSubAgentCalled() {
         UniversalIntentQueryService intentQueryService = Mockito.mock(UniversalIntentQueryService.class);
-        UniversalDispatchDecisionService dispatchDecisionService =
-                Mockito.mock(UniversalDispatchDecisionService.class);
+        UniversalOrchestrationDecisionService orchestrationDecisionService =
+                Mockito.mock(UniversalOrchestrationDecisionService.class);
         UniversalSubAgentCallService subAgentCallService = Mockito.mock(UniversalSubAgentCallService.class);
         AgentRouter agentRouter = Mockito.mock(AgentRouter.class);
         ChatMemory chatMemory = Mockito.mock(ChatMemory.class);
@@ -69,13 +69,13 @@ class UniversalAssistantOrchestratorServiceTest {
         when(intentQueryService.buildRoutingQuery(
                 ArgumentMatchers.eq(chatMemory), anyString(), anyList(), anyString())).thenReturn("routing");
         when(intentQueryService.queryIntentAgents(anyString(), anyString(), any())).thenReturn("[{\"agentId\":\"wiki\"}]");
-        when(dispatchDecisionService.decide(anyString(), anyString(), anyList(), anySet(), anyBoolean(), any()))
-                .thenReturn(UniversalDispatchDecisionService.DispatchDecision.invoke("wiki", null, "ok"))
-                .thenReturn(UniversalDispatchDecisionService.DispatchDecision.complete("done"));
+        when(orchestrationDecisionService.decide(anyString(), anyString(), anyList(), anySet(), anyBoolean(), any()))
+                .thenReturn(UniversalOrchestrationDecisionService.OrchestrationDecision.invoke("wiki", null, "ok"))
+                .thenReturn(UniversalOrchestrationDecisionService.OrchestrationDecision.complete("done"));
         when(subAgentCallService.call(anyString(), anyString(), any())).thenReturn("answer");
 
         UniversalAssistantOrchestratorService service = new UniversalAssistantOrchestratorService(
-                intentQueryService, dispatchDecisionService, subAgentCallService, agentRouter, chatMemory);
+                intentQueryService, orchestrationDecisionService, subAgentCallService, agentRouter, chatMemory);
 
         UniversalAssistantOrchestratorService.OrchestrationOutcome outcome = service.orchestrate(
                 new UniversalAssistantOrchestratorService.OrchestrationRequest(
@@ -88,7 +88,7 @@ class UniversalAssistantOrchestratorServiceTest {
                         "用户原问题",
                         null));
 
-        assertEquals(UniversalAssistantOrchestratorService.OrchestrationOutcome.DISPATCHED, outcome);
+        assertEquals(UniversalAssistantOrchestratorService.OrchestrationOutcome.ORCHESTRATED, outcome);
 
         ArgumentCaptor<UniversalSubAgentCallService.SubAgentCallRequest> requestCaptor =
                 ArgumentCaptor.forClass(UniversalSubAgentCallService.SubAgentCallRequest.class);
@@ -98,10 +98,10 @@ class UniversalAssistantOrchestratorServiceTest {
     }
 
     @Test
-    void manualDispatchCallsTargetWithoutRecallOrDecision() {
+    void manualOrchestrateCallsTargetWithoutRecallOrDecision() {
         UniversalIntentQueryService intentQueryService = Mockito.mock(UniversalIntentQueryService.class);
-        UniversalDispatchDecisionService dispatchDecisionService =
-                Mockito.mock(UniversalDispatchDecisionService.class);
+        UniversalOrchestrationDecisionService orchestrationDecisionService =
+                Mockito.mock(UniversalOrchestrationDecisionService.class);
         UniversalSubAgentCallService subAgentCallService = Mockito.mock(UniversalSubAgentCallService.class);
         AgentRouter agentRouter = Mockito.mock(AgentRouter.class);
         ChatMemory chatMemory = Mockito.mock(ChatMemory.class);
@@ -113,7 +113,7 @@ class UniversalAssistantOrchestratorServiceTest {
         when(subAgentCallService.call(anyString(), anyString(), any())).thenReturn("answer");
 
         UniversalAssistantOrchestratorService service = new UniversalAssistantOrchestratorService(
-                intentQueryService, dispatchDecisionService, subAgentCallService, agentRouter, chatMemory);
+                intentQueryService, orchestrationDecisionService, subAgentCallService, agentRouter, chatMemory);
 
         UniversalAssistantOrchestratorService.OrchestrationOutcome outcome = service.orchestrate(
                 new UniversalAssistantOrchestratorService.OrchestrationRequest(
@@ -126,17 +126,17 @@ class UniversalAssistantOrchestratorServiceTest {
                         "用户原问题",
                         "wiki"));
 
-        assertEquals(UniversalAssistantOrchestratorService.OrchestrationOutcome.DISPATCHED, outcome);
+        assertEquals(UniversalAssistantOrchestratorService.OrchestrationOutcome.ORCHESTRATED, outcome);
         verify(intentQueryService, never()).queryIntentAgents(anyString(), anyString(), any());
-        verify(dispatchDecisionService, never()).decide(anyString(), anyString(), anyList(), anySet(), anyBoolean(), any());
+        verify(orchestrationDecisionService, never()).decide(anyString(), anyString(), anyList(), anySet(), anyBoolean(), any());
         verify(subAgentCallService).call(eq("wiki"), eq("routing"), any());
     }
 
     @Test
-    void manualDispatchRejectsUnknownAgent() {
+    void manualOrchestrateRejectsUnknownAgent() {
         UniversalIntentQueryService intentQueryService = Mockito.mock(UniversalIntentQueryService.class);
-        UniversalDispatchDecisionService dispatchDecisionService =
-                Mockito.mock(UniversalDispatchDecisionService.class);
+        UniversalOrchestrationDecisionService orchestrationDecisionService =
+                Mockito.mock(UniversalOrchestrationDecisionService.class);
         UniversalSubAgentCallService subAgentCallService = Mockito.mock(UniversalSubAgentCallService.class);
         AgentRouter agentRouter = Mockito.mock(AgentRouter.class);
         ChatMemory chatMemory = Mockito.mock(ChatMemory.class);
@@ -147,7 +147,7 @@ class UniversalAssistantOrchestratorServiceTest {
                 ArgumentMatchers.eq(chatMemory), anyString(), anyList(), anyString())).thenReturn("routing");
 
         UniversalAssistantOrchestratorService service = new UniversalAssistantOrchestratorService(
-                intentQueryService, dispatchDecisionService, subAgentCallService, agentRouter, chatMemory);
+                intentQueryService, orchestrationDecisionService, subAgentCallService, agentRouter, chatMemory);
 
         assertThrows(IllegalArgumentException.class, () -> service.orchestrate(
                 new UniversalAssistantOrchestratorService.OrchestrationRequest(
@@ -161,7 +161,7 @@ class UniversalAssistantOrchestratorServiceTest {
                         "missing")));
 
         verify(intentQueryService, never()).queryIntentAgents(anyString(), anyString(), any());
-        verify(dispatchDecisionService, never()).decide(anyString(), anyString(), anyList(), anySet(), anyBoolean(), any());
+        verify(orchestrationDecisionService, never()).decide(anyString(), anyString(), anyList(), anySet(), anyBoolean(), any());
         verify(subAgentCallService, never()).call(anyString(), anyString(), any());
     }
 
@@ -170,15 +170,15 @@ class UniversalAssistantOrchestratorServiceTest {
         ChatTurnCancellationRegistry.cancel("turn-1");
 
         UniversalIntentQueryService intentQueryService = Mockito.mock(UniversalIntentQueryService.class);
-        UniversalDispatchDecisionService dispatchDecisionService =
-                Mockito.mock(UniversalDispatchDecisionService.class);
+        UniversalOrchestrationDecisionService orchestrationDecisionService =
+                Mockito.mock(UniversalOrchestrationDecisionService.class);
         UniversalSubAgentCallService subAgentCallService = Mockito.mock(UniversalSubAgentCallService.class);
         AgentRouter agentRouter = Mockito.mock(AgentRouter.class);
         ChatMemory chatMemory = Mockito.mock(ChatMemory.class);
         when(agentRouter.listCallableSubAgents()).thenReturn(List.of(Mockito.mock(AiAgent.class)));
 
         UniversalAssistantOrchestratorService service = new UniversalAssistantOrchestratorService(
-                intentQueryService, dispatchDecisionService, subAgentCallService, agentRouter, chatMemory);
+                intentQueryService, orchestrationDecisionService, subAgentCallService, agentRouter, chatMemory);
 
         assertThrows(TurnCancelledException.class, () -> service.orchestrate(request("hello")));
 
@@ -193,7 +193,7 @@ class UniversalAssistantOrchestratorServiceTest {
 
         UniversalAssistantOrchestratorService service = new UniversalAssistantOrchestratorService(
                 Mockito.mock(UniversalIntentQueryService.class),
-                Mockito.mock(UniversalDispatchDecisionService.class),
+                Mockito.mock(UniversalOrchestrationDecisionService.class),
                 Mockito.mock(UniversalSubAgentCallService.class),
                 agentRouter,
                 Mockito.mock(ChatMemory.class));
