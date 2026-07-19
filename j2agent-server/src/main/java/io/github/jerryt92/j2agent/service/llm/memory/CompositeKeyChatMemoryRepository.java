@@ -73,10 +73,11 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
     public List<String> findConversationIds() {
         ChatContextRecordExample example = new ChatContextRecordExample();
         return chatContextRecordMapper.selectByExample(example).stream()
+                .filter(record -> StringUtils.hasText(record.getAgentId()))
                 .map(record -> ConversationIdCodec.format(
                         record.getUserId() == null ? "anonymous" : record.getUserId(),
                         record.getContextId(),
-                        record.getAgentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : record.getAgentId()))
+                        record.getAgentId()))
                 .collect(Collectors.toList());
     }
 
@@ -89,7 +90,7 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
         ChatContextItemExample example = new ChatContextItemExample();
         example.createCriteria()
                 .andContextIdEqualTo(parts.contextId())
-                .andAgentIdEqualTo(parts.agentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : parts.agentId())
+                .andAgentIdEqualTo(parts.agentId())
                 .andChatRoleNotEqualTo(0);
         example.setOrderByClause("message_index asc");
         List<ChatContextItem> items = chatContextItemMapper.selectByExample(example);
@@ -119,7 +120,7 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
         ConversationIdCodec.Parts parts = ConversationIdCodec.parse(conversationId);
         ensureContextRecord(parts, messages);
         updateTitleFromUserMessages(parts, messages);
-        String agentId = parts.agentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : parts.agentId();
+        String agentId = parts.agentId();
         Integer lastMessageIndex = chatMemoryExtMapper.selectLastMessageIndexForUpdate(parts.contextId(), agentId);
         int nextIndex = lastMessageIndex == null ? 0 : lastMessageIndex + 1;
 
@@ -178,7 +179,7 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
     @Transactional(rollbackFor = Throwable.class)
     public void deleteByConversationId(String conversationId) {
         ConversationIdCodec.Parts parts = ConversationIdCodec.parse(conversationId);
-        String agentId = parts.agentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : parts.agentId();
+        String agentId = parts.agentId();
         ChatContextItemExample itemExample = new ChatContextItemExample();
         itemExample.createCriteria()
                 .andContextIdEqualTo(parts.contextId())
@@ -199,7 +200,7 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
      * 首次落库时确保主记录存在，避免明细孤儿数据。
      */
     private void ensureContextRecord(ConversationIdCodec.Parts parts, List<Message> messages) {
-        String agentId = parts.agentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : parts.agentId();
+        String agentId = parts.agentId();
         ChatContextRecordKey chatContextRecordKey = new ChatContextRecordKey();
         chatContextRecordKey.setContextId(parts.contextId());
         chatContextRecordKey.setAgentId(agentId);
@@ -232,7 +233,7 @@ public class CompositeKeyChatMemoryRepository implements ChatMemoryRepository {
         if (lastUserMessage == null) {
             return;
         }
-        String agentId = parts.agentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : parts.agentId();
+        String agentId = parts.agentId();
         ChatContextRecordKey chatContextRecordKey = new ChatContextRecordKey();
         chatContextRecordKey.setContextId(parts.contextId());
         chatContextRecordKey.setAgentId(agentId);

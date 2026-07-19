@@ -981,7 +981,7 @@ components:
           description: 聊天上下文ID
         agentId:
           type: string
-          description: 智能体ID（与记忆隔离维度一致；空串表示历史默认）
+          description: 智能体ID（与记忆隔离维度一致，非空）
         title:
           type: string
           description: 标题
@@ -1011,7 +1011,7 @@ components:
           description: 上下文ID
         agentId:
           type: string
-          description: 智能体ID（空串表示历史默认行）
+          description: 智能体ID（必填非空，与记忆隔离维度一致）
         index:
           type: integer
           description: 消息序号

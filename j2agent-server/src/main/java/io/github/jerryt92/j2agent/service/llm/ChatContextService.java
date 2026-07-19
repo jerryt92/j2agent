@@ -62,10 +62,13 @@ public class ChatContextService {
     }
 
     /**
-     * 与库表、会话键对齐的 agentId；{@code null} 视为历史默认空串。
+     * 要求 agentId 非空，与会话键 / 库表主键一致。
      */
-    private static String normalizeAgentId(String agentId) {
-        return agentId == null ? ConversationIdCodec.LEGACY_AGENT_ID : agentId;
+    private static String requireAgentId(String agentId) {
+        if (!StringUtils.hasText(agentId)) {
+            throw new IllegalArgumentException("agentId must not be blank.");
+        }
+        return agentId.trim();
     }
 
     /**
@@ -98,7 +101,7 @@ public class ChatContextService {
      * 按 contextId + agentId 取一条会话记录并加载 Spring AI 记忆中的消息列表。
      */
     public ChatContextBo getChatContext(String contextId, String userId, String agentId) {
-        String aid = normalizeAgentId(agentId);
+        String aid = requireAgentId(agentId);
         ChatContextRecordKey chatContextRecordKey = new ChatContextRecordKey();
         chatContextRecordKey.setContextId(contextId);
         chatContextRecordKey.setAgentId(aid);
@@ -138,7 +141,7 @@ public class ChatContextService {
         }
         for (String contextId : contextIds) {
             if (StringUtils.hasText(agentId)) {
-                if (activeChatTurnRegistry.isActive(contextId, normalizeAgentId(agentId))) {
+                if (activeChatTurnRegistry.isActive(contextId, requireAgentId(agentId))) {
                     throw new ResponseStatusException(
                             HttpStatus.CONFLICT,
                             ErrorConstants.CHAT_CONTEXT_IN_PROGRESS);
@@ -168,12 +171,15 @@ public class ChatContextService {
         ChatContextRecordExample example = new ChatContextRecordExample();
         var criteria = example.createCriteria().andUserIdEqualTo(uid);
         if (StringUtils.hasText(agentId)) {
-            criteria.andAgentIdEqualTo(normalizeAgentId(agentId));
+            criteria.andAgentIdEqualTo(requireAgentId(agentId));
         }
         List<ChatContextRecord> rows = chatContextRecordMapper.selectByExample(example);
         for (ChatContextRecord record : rows) {
             String contextId = record.getContextId();
-            String aid = record.getAgentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : record.getAgentId();
+            String aid = record.getAgentId();
+            if (!StringUtils.hasText(aid)) {
+                continue;
+            }
             if (activeChatTurnRegistry.isActive(contextId, aid)) {
                 continue;
             }
@@ -192,7 +198,7 @@ public class ChatContextService {
 
     private void deleteOneContextRecord(String uid, String contextId, String agentId) {
         if (StringUtils.hasText(agentId)) {
-            String aid = normalizeAgentId(agentId);
+            String aid = requireAgentId(agentId);
             ChatContextRecordKey chatContextRecordKey = new ChatContextRecordKey();
             chatContextRecordKey.setContextId(contextId);
             chatContextRecordKey.setAgentId(aid);
@@ -205,7 +211,10 @@ public class ChatContextService {
             ex.createCriteria().andContextIdEqualTo(contextId).andUserIdEqualTo(uid);
             List<ChatContextRecord> rows = chatContextRecordMapper.selectByExample(ex);
             for (ChatContextRecord r : rows) {
-                String aid = r.getAgentId() == null ? ConversationIdCodec.LEGACY_AGENT_ID : r.getAgentId();
+                String aid = r.getAgentId();
+                if (!StringUtils.hasText(aid)) {
+                    continue;
+                }
                 chatMemoryRepository.deleteByConversationId(ConversationIdCodec.format(uid, contextId, aid));
             }
             if (rows.isEmpty() || !hasContextRecords(contextId)) {
@@ -236,7 +245,7 @@ public class ChatContextService {
         chatContextRecordExample.setLimit(limit);
         var criteria = chatContextRecordExample.createCriteria().andUserIdEqualTo(session.getUserId());
         if (StringUtils.hasText(agentIdFilter)) {
-            criteria.andAgentIdEqualTo(normalizeAgentId(agentIdFilter));
+            criteria.andAgentIdEqualTo(requireAgentId(agentIdFilter));
         }
         List<ChatContextRecord> chatContextRecordList = chatContextRecordMapper.selectByExample(chatContextRecordExample);
         List<HistoryContextItem> historyContextItemList = new ArrayList<>();
@@ -251,12 +260,12 @@ public class ChatContextService {
     }
 
     /**
-     * 消息反馈：请求体须带 agentId（可与空串历史行对齐）。
+     * 消息反馈：请求体须带非空 agentId。
      */
     public void addMessageFeedback(MessageFeedbackRequest messageFeedbackRequest) {
         UserContextBo session = loginService.getSession();
         if (session != null) {
-            String aid = normalizeAgentId(messageFeedbackRequest.getAgentId());
+            String aid = requireAgentId(messageFeedbackRequest.getAgentId());
             ChatContextBo chatContextBo = getChatContext(messageFeedbackRequest.getContextId(), session.getUserId(), aid);
             if (chatContextBo != null) {
                 ChatContextItemExample example = new ChatContextItemExample();
