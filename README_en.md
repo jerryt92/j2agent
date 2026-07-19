@@ -2,6 +2,8 @@
 
 [![GitHub](https://img.shields.io/badge/GitHub-J2Agent-blue?logo=github)](https://github.com/j2agent-ai/j2agent)
 
+Live demo: [https://j2agent.aiibii.com/](https://j2agent.aiibii.com/)
+
 J2Agent is an Agent runtime platform built on Java Spring AI. Powered by Spring AI and Spring AI Alibaba, it provides agent execution, multi-agent routing, RAG retrieval augmentation, MCP / Skills tool integration, pluggable business agents, and infrastructure integration with PostgreSQL, Redis, and Milvus.
 
 ## Contributors
@@ -90,6 +92,9 @@ graph TD
         chatSvc["ChatService"]
         router["AgentRouter"]
         aiAgent["AiAgent Base Class"]
+        orchestrator["Universal Assistant Orchestration (UniversalAssistantOrchestratorService)"]
+        dispatcher["Scheduler (UniversalDispatchDecisionService)"]
+        subAgentCall["Sub-Agent Call (UniversalSubAgentCallService)"]
         sm["AgentTurnStateMachine"]
         toolEmitter["ToolEventEmitter"]
         ws["WebSocket AgentUiEventEnvelope"]
@@ -125,6 +130,10 @@ graph TD
     chatSvc --> router
     plugin --> router
     router --> aiAgent
+    aiAgent --> orchestrator
+    orchestrator --> dispatcher
+    dispatcher --> subAgentCall
+    subAgentCall --> router
     aiAgent --> chatMemory
     aiAgent --> retriever
     aiAgent --> toolReg
@@ -240,3 +249,7 @@ j2agent@2025
 ## Frontend
 
 [j2agent-ui](https://github.com/j2agent-ai/j2agent-ui)
+
+## Docs
+
+Detailed design and development docs are available in [j2agent-docs](https://github.com/j2agent-ai/j2agent-docs).
