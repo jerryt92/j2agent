@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
-class UniversalDispatchDecisionServiceTest {
+class UniversalOrchestrationDecisionServiceTest {
 
     @AfterEach
     void tearDown() {
@@ -32,7 +32,7 @@ class UniversalDispatchDecisionServiceTest {
             ChatTurnCancellationRegistry.cancel("turn-1");
             return "{\"action\":\"complete\",\"reason\":\"ok\"}";
         });
-        UniversalDispatchDecisionService service = new UniversalDispatchDecisionService(llmSyncService);
+        UniversalOrchestrationDecisionService service = new UniversalOrchestrationDecisionService(llmSyncService);
         assertThrows(TurnCancelledException.class, () -> service.decide(
                 "[{\"agentId\":\"wiki\"}]",
                 "routing",
@@ -47,8 +47,8 @@ class UniversalDispatchDecisionServiceTest {
         String raw = """
                 {"action":"invoke","agentId":"wiki","reason":"需要知识库"}
                 """;
-        UniversalDispatchDecisionService.DispatchDecision decision =
-                UniversalDispatchDecisionService.parseDecision(raw);
+        UniversalOrchestrationDecisionService.OrchestrationDecision decision =
+                UniversalOrchestrationDecisionService.parseDecision(raw);
         assertTrue(decision.isInvoke());
         assertEquals("wiki", decision.agentId());
         assertEquals(null, decision.query());
@@ -59,8 +59,8 @@ class UniversalDispatchDecisionServiceTest {
         String raw = """
                 {"action":"invoke","agentId":"wiki","query":"查文档","reason":"需要知识库"}
                 """;
-        UniversalDispatchDecisionService.DispatchDecision decision =
-                UniversalDispatchDecisionService.parseDecision(raw);
+        UniversalOrchestrationDecisionService.OrchestrationDecision decision =
+                UniversalOrchestrationDecisionService.parseDecision(raw);
         assertTrue(decision.isInvoke());
         assertEquals("wiki", decision.agentId());
         assertEquals("查文档", decision.query());
@@ -71,15 +71,15 @@ class UniversalDispatchDecisionServiceTest {
         String raw = """
                 {"action":"complete","reason":"无需子智能体"}
                 """;
-        UniversalDispatchDecisionService.DispatchDecision decision =
-                UniversalDispatchDecisionService.parseDecision(raw);
+        UniversalOrchestrationDecisionService.OrchestrationDecision decision =
+                UniversalOrchestrationDecisionService.parseDecision(raw);
         assertTrue(decision.isComplete());
     }
 
     @Test
     void parseInvalidFallsBackToComplete() {
-        UniversalDispatchDecisionService.DispatchDecision decision =
-                UniversalDispatchDecisionService.parseDecision("not json");
+        UniversalOrchestrationDecisionService.OrchestrationDecision decision =
+                UniversalOrchestrationDecisionService.parseDecision("not json");
         assertTrue(decision.isComplete());
     }
 

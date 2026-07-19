@@ -6,8 +6,8 @@ package io.github.jerryt92.j2agent.model;
 public enum AgentState {
     /** 初始状态，尚未开始本轮执行。 */
     IDLE,
-    /** 通用助手被动子智能体意图召回中（分发 LLM）。 */
-    AGENT_DISPATCHING,
+    /** 通用助手编排决策中（召回 / 决策）。 */
+    AGENT_ORCHESTRATING,
     /** 已接收用户输入，模型正在推理。 */
     THINKING,
     /** 正在流式输出文本内容。 */

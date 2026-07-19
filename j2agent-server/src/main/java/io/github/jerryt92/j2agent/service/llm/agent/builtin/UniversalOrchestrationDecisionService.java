@@ -21,10 +21,10 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
-public class UniversalDispatchDecisionService {
+public class UniversalOrchestrationDecisionService {
 
     private static final String DECISION_SYSTEM_PROMPT = """
-            你是通用助手的子智能体调度决策器。根据候选列表、对话上下文与已执行的子智能体调用记录，输出唯一 JSON 对象（不要 Markdown）：
+            你是通用助手的子智能体编排决策器。根据候选列表、对话上下文与已执行的子智能体调用记录，输出唯一 JSON 对象（不要 Markdown）：
             {"action":"invoke"|"complete","agentId":"...","reason":"..."}
             规则：
             1. action=invoke 时 agentId 必填；子智能体将直接接收完整父会话上下文，无需提炼 query
@@ -35,11 +35,11 @@ public class UniversalDispatchDecisionService {
 
     private final LlmSyncService llmSyncService;
 
-    public UniversalDispatchDecisionService(LlmSyncService llmSyncService) {
+    public UniversalOrchestrationDecisionService(LlmSyncService llmSyncService) {
         this.llmSyncService = llmSyncService;
     }
 
-    public DispatchDecision decide(
+    public OrchestrationDecision decide(
             String candidatesJson,
             String routingQuery,
             List<OrchestrationTraceEntry> trace,
@@ -48,7 +48,7 @@ public class UniversalDispatchDecisionService {
         return decide(candidatesJson, routingQuery, trace, invokedAgentIds, forceComplete, null);
     }
 
-    public DispatchDecision decide(
+    public OrchestrationDecision decide(
             String candidatesJson,
             String routingQuery,
             List<OrchestrationTraceEntry> trace,
@@ -59,10 +59,10 @@ public class UniversalDispatchDecisionService {
             throw new TurnCancelledException(turnId);
         }
         if (forceComplete) {
-            return DispatchDecision.complete("max rounds reached");
+            return OrchestrationDecision.complete("max rounds reached");
         }
         if (UniversalIntentQueryService.isCandidatesEmpty(candidatesJson)) {
-            return DispatchDecision.complete("no candidates");
+            return OrchestrationDecision.complete("no candidates");
         }
         String traceBlock = formatTrace(trace);
         String invokedBlock = invokedAgentIds == null || invokedAgentIds.isEmpty()
@@ -97,37 +97,37 @@ public class UniversalDispatchDecisionService {
         } catch (TurnCancelledException ex) {
             throw ex;
         } catch (Exception ex) {
-            log.warn("dispatch decision LLM failed: {}", ex.toString());
-            return DispatchDecision.complete("decision LLM error");
+            log.warn("orchestration decision LLM failed: {}", ex.toString());
+            return OrchestrationDecision.complete("decision LLM error");
         }
     }
 
-    static DispatchDecision parseDecision(String raw) {
+    static OrchestrationDecision parseDecision(String raw) {
         if (StringUtils.isBlank(raw)) {
-            return DispatchDecision.complete("empty decision");
+            return OrchestrationDecision.complete("empty decision");
         }
         String json = extractJsonObject(raw.trim());
         if (json == null) {
-            return DispatchDecision.complete("invalid decision json");
+            return OrchestrationDecision.complete("invalid decision json");
         }
         try {
             JSONObject obj = JSON.parseObject(json);
             if (obj == null) {
-                return DispatchDecision.complete("null decision");
+                return OrchestrationDecision.complete("null decision");
             }
             String action = StringUtils.defaultIfBlank(obj.getString("action"), "complete").trim().toLowerCase();
             if ("invoke".equals(action)) {
                 String agentId = StringUtils.trimToNull(obj.getString("agentId"));
                 if (agentId == null) {
-                    return DispatchDecision.complete("incomplete invoke");
+                    return OrchestrationDecision.complete("incomplete invoke");
                 }
                 String query = StringUtils.trimToNull(obj.getString("query"));
-                return DispatchDecision.invoke(agentId, query, StringUtils.defaultString(obj.getString("reason")));
+                return OrchestrationDecision.invoke(agentId, query, StringUtils.defaultString(obj.getString("reason")));
             }
-            return DispatchDecision.complete(StringUtils.defaultString(obj.getString("reason")));
+            return OrchestrationDecision.complete(StringUtils.defaultString(obj.getString("reason")));
         } catch (Exception ex) {
-            log.warn("dispatch decision parse failed: {}", ex.toString());
-            return DispatchDecision.complete("parse error");
+            log.warn("orchestration decision parse failed: {}", ex.toString());
+            return OrchestrationDecision.complete("parse error");
         }
     }
 
@@ -151,14 +151,14 @@ public class UniversalDispatchDecisionService {
         return text.substring(start, end + 1);
     }
 
-    public record DispatchDecision(String action, String agentId, String query, String reason) {
+    public record OrchestrationDecision(String action, String agentId, String query, String reason) {
 
-        public static DispatchDecision invoke(String agentId, String query, String reason) {
-            return new DispatchDecision("invoke", agentId, query, reason);
+        public static OrchestrationDecision invoke(String agentId, String query, String reason) {
+            return new OrchestrationDecision("invoke", agentId, query, reason);
         }
 
-        public static DispatchDecision complete(String reason) {
-            return new DispatchDecision("complete", null, null, reason);
+        public static OrchestrationDecision complete(String reason) {
+            return new OrchestrationDecision("complete", null, null, reason);
         }
 
         public boolean isInvoke() {

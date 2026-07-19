@@ -837,7 +837,7 @@ components:
       properties:
         state:
           type: string
-          enum: [ "IDLE", "AGENT_DISPATCHING", "THINKING", "STREAMING_TEXT", "CALLING_TOOL", "LOAD_SKILL", "COMPLETED", "FAILED", "CANCELLED" ]
+          enum: [ "IDLE", "AGENT_ORCHESTRATING", "THINKING", "STREAMING_TEXT", "CALLING_TOOL", "LOAD_SKILL", "COMPLETED", "FAILED", "CANCELLED" ]
           description: Agent 状态
         toolName:
           type: string
@@ -944,9 +944,9 @@ components:
           type: string
           description: 本轮深度思考；不传则按 Agent 默认再回退提供商配置。provider_default 不向 API 传 thinking，由提供商/模型默认
           enum: [ provider_default, on, off ]
-        manualDispatchAgentId:
+        manualOrchestrateAgentId:
           type: string
-          description: 通用助手手动直连的子智能体 ID；仅 universal_assistant 生效，传入后跳过调度器
+          description: 通用助手手动直连的子智能体 ID；仅 universal_assistant 生效，传入后跳过编排决策
     ChatResponseDto:
       type: object
       properties:

@@ -442,8 +442,8 @@ public class ChatService {
                                             toolEventEmitter,
                                             finalAttachments,
                                             limitedUserMessage,
-                                            request.getManualDispatchAgentId()));
-                    if (outcome == UniversalAssistantOrchestratorService.OrchestrationOutcome.DISPATCHED) {
+                                            request.getManualOrchestrateAgentId()));
+                    if (outcome == UniversalAssistantOrchestratorService.OrchestrationOutcome.ORCHESTRATED) {
                         unbindThinkingOverride.run();
                         ChatTurnCancellationRegistry.clearDisposables(turnId);
                         chatChatCallback.completeCall.run();
@@ -555,7 +555,7 @@ public class ChatService {
             AgentStateTransition transition = null;
             if (StringUtils.isNotBlank(answerDelta)
                     && (stateMachine.getState() == AgentState.THINKING
-                    || stateMachine.getState() == AgentState.AGENT_DISPATCHING
+                    || stateMachine.getState() == AgentState.AGENT_ORCHESTRATING
                     || stateMachine.getState() == AgentState.CALLING_TOOL
                     || stateMachine.getState() == AgentState.LOAD_SKILL)) {
                 transition = stateMachine.transit(AgentState.STREAMING_TEXT, "firstAnswerToken");

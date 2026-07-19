@@ -117,7 +117,7 @@ graph TD
         router["AgentRouter"]
         aiAgent["AiAgent 抽象基类"]
         orchestrator["通用助手编排 (UniversalAssistantOrchestratorService)"]
-        dispatcher["调度器 (UniversalDispatchDecisionService)"]
+        orchestrationDecision["编排决策 (UniversalOrchestrationDecisionService)"]
         subAgentCall["子智能体调用 (UniversalSubAgentCallService)"]
         sm["AgentTurnStateMachine"]
         toolEmitter["ToolEventEmitter"]
@@ -155,8 +155,8 @@ graph TD
     plugin --> router
     router --> aiAgent
     aiAgent --> orchestrator
-    orchestrator --> dispatcher
-    dispatcher --> subAgentCall
+    orchestrator --> orchestrationDecision
+    orchestrationDecision --> subAgentCall
     subAgentCall --> router
     aiAgent --> chatMemory
     aiAgent --> retriever
