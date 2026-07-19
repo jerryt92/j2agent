@@ -2,6 +2,8 @@
 
 [![GitHub](https://img.shields.io/badge/GitHub-J2Agent-blue?logo=github)](https://github.com/j2agent-ai/j2agent)
 
+体验地址：[https://j2agent.aiibii.com/](https://j2agent.aiibii.com/)
+
 J2Agent 是一个基于 Java Spring AI 的 Agent 运行平台。基于 Spring AI 与 Spring AI Alibaba，提供 Agent 推理执行、多智能体路由、RAG 检索增强、MCP / Skills 工具接入与可插拔业务 Agent 扩展，并集成 PostgreSQL、Redis、Milvus 等基础设施。
 
 ## 贡献者
