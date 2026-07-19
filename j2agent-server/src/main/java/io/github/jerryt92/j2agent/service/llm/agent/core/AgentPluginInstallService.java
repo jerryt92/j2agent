@@ -2,6 +2,7 @@ package io.github.jerryt92.j2agent.service.llm.agent.core;
 
 import io.github.jerryt92.j2agent.config.plugin.PluginLayout;
 import io.github.jerryt92.j2agent.config.plugin.PluginProperties;
+import io.github.jerryt92.j2agent.service.rag.SimpleRagStoreSyncService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -28,13 +29,16 @@ public class AgentPluginInstallService {
     private final PluginProperties pluginProperties;
     private final AgentPluginRegistry agentPluginRegistry;
     private final AgentPluginReloadService agentPluginReloadService;
+    private final SimpleRagStoreSyncService simpleRagStoreSyncService;
 
     public AgentPluginInstallService(PluginProperties pluginProperties,
                                      AgentPluginRegistry agentPluginRegistry,
-                                     AgentPluginReloadService agentPluginReloadService) {
+                                     AgentPluginReloadService agentPluginReloadService,
+                                     SimpleRagStoreSyncService simpleRagStoreSyncService) {
         this.pluginProperties = pluginProperties;
         this.agentPluginRegistry = agentPluginRegistry;
         this.agentPluginReloadService = agentPluginReloadService;
+        this.simpleRagStoreSyncService = simpleRagStoreSyncService;
     }
 
     public AgentInstallOutcome installPackage(MultipartFile file, boolean replace) {
@@ -181,6 +185,11 @@ public class AgentPluginInstallService {
                 agentPluginReloadService.reload();
             }
             throw ex;
+        }
+
+        // 替换时失效所属 SimpleRag，使后续 reload 同步走重建而非 COMPLETED 跳过
+        if (replace) {
+            simpleRagStoreSyncService.invalidateByOwnerAgentIds(incomingAgentIds);
         }
 
         AgentPluginRegistry.AgentPluginReloadOutcome reloadOutcome = agentPluginReloadService.reload();

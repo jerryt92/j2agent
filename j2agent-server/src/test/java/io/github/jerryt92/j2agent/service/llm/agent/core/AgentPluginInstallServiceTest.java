@@ -1,6 +1,7 @@
 package io.github.jerryt92.j2agent.service.llm.agent.core;
 
 import io.github.jerryt92.j2agent.config.plugin.PluginProperties;
+import io.github.jerryt92.j2agent.service.rag.SimpleRagStoreSyncService;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream;
@@ -21,7 +22,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -33,6 +36,7 @@ class AgentPluginInstallServiceTest {
     private PluginProperties pluginProperties;
     private AgentPluginRegistry agentPluginRegistry;
     private AgentPluginReloadService agentPluginReloadService;
+    private SimpleRagStoreSyncService simpleRagStoreSyncService;
     private AgentPluginInstallService installService;
 
     @BeforeEach
@@ -44,8 +48,9 @@ class AgentPluginInstallServiceTest {
 
         agentPluginRegistry = mock(AgentPluginRegistry.class);
         agentPluginReloadService = mock(AgentPluginReloadService.class);
+        simpleRagStoreSyncService = mock(SimpleRagStoreSyncService.class);
         installService = new AgentPluginInstallService(
-                pluginProperties, agentPluginRegistry, agentPluginReloadService);
+                pluginProperties, agentPluginRegistry, agentPluginReloadService, simpleRagStoreSyncService);
 
         when(agentPluginRegistry.runExclusive(any())).thenAnswer(invocation -> {
             Callable<?> callable = invocation.getArgument(0);
@@ -95,6 +100,16 @@ class AgentPluginInstallServiceTest {
         assertTrue(outcome.success());
         assertTrue(Files.exists(agentsRoot.resolve("demo-agent").resolve("demo.jar")));
         verify(agentPluginRegistry).unloadPlugins();
+        verify(simpleRagStoreSyncService).invalidateByOwnerAgentIds(eq(List.of("demo_agent")));
+        verify(agentPluginReloadService).reload();
+    }
+
+    @Test
+    void shouldNotInvalidateSimpleRagOnFreshInstall() throws Exception {
+        MockMultipartFile file = packageArchive("demo-agent.tar.gz");
+        AgentPluginInstallService.AgentInstallOutcome outcome = installService.installPackage(file, false);
+        assertTrue(outcome.success());
+        verify(simpleRagStoreSyncService, never()).invalidateByOwnerAgentIds(any());
         verify(agentPluginReloadService).reload();
     }
 

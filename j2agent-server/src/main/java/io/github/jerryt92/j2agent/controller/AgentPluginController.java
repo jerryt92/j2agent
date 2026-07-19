@@ -76,8 +76,21 @@ public class AgentPluginController implements AgentPluginApi {
     }
 
     @Override
-    public ResponseEntity<AgentReloadResult> reloadAgents() {
-        AgentPluginRegistry.AgentPluginReloadOutcome outcome = agentPluginReloadService.reload();
+    public ResponseEntity<AgentReloadResult> reloadAgentPackage(String agentDir, Boolean rebuildSimpleRag) {
+        boolean rebuild = Boolean.TRUE.equals(rebuildSimpleRag);
+        AgentPluginRegistry.AgentPluginReloadOutcome outcome =
+                agentPluginReloadService.reloadPackage(agentDir, rebuild);
+        AgentReloadResult result = toReloadResult(outcome);
+        if (!outcome.success()) {
+            return ResponseEntity.badRequest().body(result);
+        }
+        return ResponseEntity.ok(result);
+    }
+
+    @Override
+    public ResponseEntity<AgentReloadResult> reloadAgents(Boolean rebuildSimpleRag) {
+        boolean rebuild = Boolean.TRUE.equals(rebuildSimpleRag);
+        AgentPluginRegistry.AgentPluginReloadOutcome outcome = agentPluginReloadService.reload(rebuild);
         AgentReloadResult result = toReloadResult(outcome);
         if (!outcome.success()) {
             return ResponseEntity.badRequest().body(result);
