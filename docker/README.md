@@ -32,13 +32,19 @@ docker compose up -d --build
 J2AGENT_HTTPS_ENABLED=true
 ```
 
+如果需要保留 HTTP 入口并自动跳转到 HTTPS，可额外设置 HTTP 重定向端口：
+
+```properties
+J2AGENT_HTTP_REDIRECT_PORT=30110
+```
+
 再按默认命令启动：
 
 ```bash
 docker compose up -d --build
 ```
 
-HTTPS 模式不改变端口，只把 `J2AGENT_PORT` 上的访问协议从 HTTP 切换为 HTTPS；应用容器会直接启用 Spring Boot HTTPS，不引入反向代理。自签证书会触发浏览器安全提示，生产环境请替换 `${J2AGENT_VOLUMES_PATH}/volumes/j2agent/certs` 下的证书和私钥。
+HTTPS 模式不改变端口，只把 `J2AGENT_PORT` 上的访问协议从 HTTP 切换为 HTTPS；应用容器会直接启用 Spring Boot HTTPS，不引入反向代理。配置 `J2AGENT_HTTP_REDIRECT_PORT` 后，访问 `http://localhost:30110/...` 会重定向到 `https://localhost:30111/...`。自签证书会触发浏览器安全提示，生产环境请替换 `${J2AGENT_VOLUMES_PATH}/volumes/j2agent/certs` 下的证书和私钥。
 
 构建 `j2agent` 镜像时，Dockerfile 会**优先**使用 `j2agent/*.tar.gz`（与本目录 `Dockerfile` 同级），否则回退到 `j2agent-starter/target/*.tar.gz`。离线部署建议将 Maven 产出的 `j2agent-*.tar.gz` 放到 `j2agent/` 再构建，详见 [构建与启动 §1.1](../../j2agent-docs/基础设施/docker部署/构建与启动.md#11-镜像构建时如何找到-targz)。
 

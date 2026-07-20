@@ -139,3 +139,31 @@ CREATE TABLE simple_rag_collection_state
 );
 
 CREATE INDEX idx_simple_rag_sync_status ON simple_rag_collection_state (sync_status);
+
+DROP TABLE IF EXISTS knowledge_repository;
+CREATE TABLE knowledge_repository
+(
+    id                       varchar(32)   NOT NULL,
+    repo_code                varchar(128)  NOT NULL,
+    protocol                 varchar(32)   DEFAULT NULL,
+    enabled                  boolean       NOT NULL DEFAULT true,
+    update_interval_minutes  int           NOT NULL DEFAULT 60,
+    status                   varchar(32)   NOT NULL,
+    remote_url               varchar(2048) DEFAULT NULL,
+    default_branch           varchar(256)  DEFAULT NULL,
+    last_revision            varchar(256)  DEFAULT NULL,
+    last_revision_message    text          DEFAULT NULL,
+    last_revision_author     varchar(256)  DEFAULT NULL,
+    last_revision_time       bigint        DEFAULT NULL,
+    last_sync_time           bigint        DEFAULT NULL,
+    last_error               text          DEFAULT NULL,
+    protocol_config          jsonb         DEFAULT '{}'::jsonb,
+    credential_config_cipher text          DEFAULT NULL,
+    created_at               bigint        NOT NULL,
+    updated_at               bigint        NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_knowledge_repository_code UNIQUE (repo_code)
+);
+
+CREATE INDEX idx_knowledge_repository_protocol ON knowledge_repository (protocol);
+CREATE INDEX idx_knowledge_repository_due ON knowledge_repository (enabled, status, last_sync_time);

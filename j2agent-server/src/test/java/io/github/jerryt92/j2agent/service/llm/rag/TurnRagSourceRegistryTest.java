@@ -91,6 +91,42 @@ class TurnRagSourceRegistryTest {
     }
 
     @Test
+    void shouldDedupeSameFileAcrossMultiplePublishCalls() {
+        List<AgentUiEventEnvelope> events = new ArrayList<>();
+        TurnRagSourceRegistry.bind(
+                PERSIST_ID,
+                events::add,
+                new Object(),
+                "ctx",
+                "turn",
+                new AtomicLong(0L),
+                new AgentTurnStateMachine(),
+                1);
+
+        FileDto fileByPath = new FileDto()
+                .fullFileName("a.md")
+                .relativePath("docs/a.md")
+                .url(io.github.jerryt92.j2agent.service.file.StaticFileService.toRepoFileUrl("docs/a.md"));
+        RagInfoDto infoByPath = new RagInfoDto().textChunkId("chunk-a").srcFile(fileByPath);
+        TurnRagSourceRegistry.publishSources(PERSIST_ID, List.of(fileByPath), List.of(infoByPath), true);
+
+        FileDto fileByUrl = new FileDto()
+                .fullFileName("a.md")
+                .url(io.github.jerryt92.j2agent.service.file.StaticFileService.toRepoFileUrl("docs/a.md"));
+        RagInfoDto infoByUrl = new RagInfoDto().textChunkId("chunk-a2").srcFile(fileByUrl);
+        TurnRagSourceRegistry.publishSources(PERSIST_ID, List.of(fileByUrl), List.of(infoByUrl), true);
+
+        assertEquals(1, events.size());
+        MessageDto lastMessage = ((ChatResponseDto) events.getFirst().getPayload()).getMessage();
+        assertEquals(1, lastMessage.getSrcFile().size());
+        assertEquals("docs/a.md", lastMessage.getSrcFile().getFirst().getRelativePath());
+
+        String ragJson = TurnRagSourceRegistry.drainRagInfosJson(PERSIST_ID);
+        assertNotNull(ragJson);
+        assertEquals(1, com.alibaba.fastjson2.JSONArray.parseArray(ragJson, RagInfoDto.class).size());
+    }
+
+    @Test
     void shareHolderReturnsFalseWhenParentMissing() {
         assertTrue(!TurnRagSourceRegistry.shareHolder(RUNTIME_ID, PERSIST_ID));
     }

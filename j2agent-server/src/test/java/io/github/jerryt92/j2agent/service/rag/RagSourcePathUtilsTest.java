@@ -1,5 +1,7 @@
 package io.github.jerryt92.j2agent.service.rag;
 
+import io.github.jerryt92.j2agent.model.FileDto;
+import io.github.jerryt92.j2agent.service.file.StaticFileService;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -28,5 +30,26 @@ class RagSourcePathUtilsTest {
     void shouldRejectUnsupportedPaths() {
         assertNull(RagSourcePathUtils.normalizeKbSourceRelativePath("readme.txt"));
         assertNull(RagSourcePathUtils.normalizeKbSourceRelativePath("rag-system"));
+    }
+
+    @Test
+    void shouldNormalizeRepoUrlAndEncodedSlashVariantsToSamePath() {
+        assertEquals("wiki/doc.md",
+                RagSourcePathUtils.normalizeKbSourceRelativePath("wiki%2Fdoc.md"));
+        assertEquals("wiki/doc.md",
+                RagSourcePathUtils.normalizeKbSourceRelativePath(
+                        "/v1/rest/j2agent/file/repo/wiki%2Fdoc.md"));
+    }
+
+    @Test
+    void shouldDedupeByRelativePathOrRepoUrl() {
+        FileDto byPath = new FileDto()
+                .relativePath("docs/a.md")
+                .url(StaticFileService.toRepoFileUrl("docs/a.md"));
+        FileDto byUrlOnly = new FileDto()
+                .url(StaticFileService.toRepoFileUrl("docs/a.md"));
+
+        assertEquals(RagSourcePathUtils.sourceDedupeKey(byPath),
+                RagSourcePathUtils.sourceDedupeKey(byUrlOnly));
     }
 }
