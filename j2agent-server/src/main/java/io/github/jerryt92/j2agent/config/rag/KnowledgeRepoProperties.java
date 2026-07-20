@@ -31,4 +31,8 @@ public class KnowledgeRepoProperties {
      * 须在 {@code application.yaml} 的 {@code j2agent.knowledge.repo} 下配置。
      */
     private int contentSegmentOverlapChars;
+    /**
+     * 远程知识库凭据加密密钥。生产环境应显式配置并保持稳定。
+     */
+    private String credentialSecret = "j2agent-knowledge-repository-default-key";
 }

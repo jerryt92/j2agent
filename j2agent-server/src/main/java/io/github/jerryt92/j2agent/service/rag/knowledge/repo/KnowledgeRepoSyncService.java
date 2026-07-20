@@ -29,6 +29,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
 /**
@@ -38,6 +41,7 @@ import java.util.stream.Stream;
 @Service
 @DependsOn("flywayInitializer")
 public class KnowledgeRepoSyncService {
+    private static final long WATCH_SYNC_DEBOUNCE_MILLIS = 30_000L;
 
     /**
      * 文件最新状态：含 collection 与可选 Milvus 分区列表。
@@ -58,6 +62,8 @@ public class KnowledgeRepoSyncService {
     private final KnowledgeRepoSyncProgressTracker progressTracker;
     private final KnowledgeRepoHashCache hashCache = new KnowledgeRepoHashCache();
     private final Set<Path> watchedDirectories = ConcurrentHashMap.newKeySet();
+    private final AtomicBoolean watchSyncScheduled = new AtomicBoolean(false);
+    private final AtomicLong lastWatchEventTime = new AtomicLong(0L);
     private WatchService watchService;
     private volatile Consumer<String> watchSyncTrigger;
 
@@ -255,6 +261,7 @@ public class KnowledgeRepoSyncService {
     private void doSyncBodyInternal(Path rootPath, KnowledgeRepoSyncGuard guard) {
         progressTracker.setPhase(KnowledgeRepoSyncPhase.SCANNING);
         metadataService.reloadMetadata();
+        Map<String, String> previousSnapshot = hashTreeService.loadSnapshot();
         Map<String, String> previousFileCollectionMap = hashTreeService.loadActiveFileCollections();
         Map<String, Long> previousCollectionCounts = hashTreeService.loadActiveCollectionCounts();
         Set<String> previousActiveCollections = new HashSet<>(previousCollectionCounts.keySet());
@@ -264,6 +271,7 @@ public class KnowledgeRepoSyncService {
         Map<String, Long> latestCollectionCounts = toCollectionCounts(latestFileCollectionMap);
         logCollectionSet("同步前", previousActiveCollections);
         logCollectionStats("本轮扫描", latestCollectionCounts);
+        hashCache.replaceAll(previousSnapshot);
         KnowledgeRepoHashCache.DiffResult diffResult = hashCache.diff(latestSnapshot);
         progressTracker.registerDiff(
                 diffResult.deleted(),
@@ -281,6 +289,8 @@ public class KnowledgeRepoSyncService {
             String collection = previousFileCollectionMap.get(deletedPath);
             if (collection != null && !collection.isBlank()) {
                 milvusKnowledgeWriteService.deleteBySourceFile(collection, deletedPath);
+            } else {
+                knowledgeTextChunkService.deleteBySourceFile(deletedPath);
             }
             hashTreeService.markDeleted(Path.of(deletedPath), now);
             progressTracker.markFileDeleted(deletedPath);
@@ -605,10 +615,7 @@ public class KnowledgeRepoSyncService {
                         if (event.kind() == StandardWatchEventKinds.ENTRY_CREATE && Files.isDirectory(changedPath)) {
                             registerAllDirectoriesSafely(changedPath);
                         }
-                        Consumer<String> trigger = watchSyncTrigger;
-                        if (trigger != null) {
-                            trigger.accept("watch");
-                        }
+                        scheduleWatchSync();
                     }
                     if (!key.reset()) {
                         watchedDirectories.remove(watchedDir.toAbsolutePath().normalize());
@@ -618,6 +625,36 @@ public class KnowledgeRepoSyncService {
         } catch (IOException e) {
             throw new IllegalStateException("启动目录监听失败", e);
         }
+    }
+
+    private void scheduleWatchSync() {
+        lastWatchEventTime.set(System.currentTimeMillis());
+        if (!watchSyncScheduled.compareAndSet(false, true)) {
+            return;
+        }
+        Thread.startVirtualThread(() -> {
+            try {
+                while (!Thread.currentThread().isInterrupted()) {
+                    long quietMillis = System.currentTimeMillis() - lastWatchEventTime.get();
+                    long remainingMillis = WATCH_SYNC_DEBOUNCE_MILLIS - quietMillis;
+                    if (remainingMillis <= 0) {
+                        break;
+                    }
+                    TimeUnit.MILLISECONDS.sleep(Math.min(remainingMillis, WATCH_SYNC_DEBOUNCE_MILLIS));
+                }
+                Consumer<String> trigger = watchSyncTrigger;
+                if (trigger != null && !Thread.currentThread().isInterrupted()) {
+                    trigger.accept("watch");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                watchSyncScheduled.set(false);
+                if (System.currentTimeMillis() - lastWatchEventTime.get() < WATCH_SYNC_DEBOUNCE_MILLIS) {
+                    scheduleWatchSync();
+                }
+            }
+        });
     }
 
     /**
@@ -672,5 +709,6 @@ public class KnowledgeRepoSyncService {
             watchService = null;
         }
         watchedDirectories.clear();
+        watchSyncScheduled.set(false);
     }
 }
