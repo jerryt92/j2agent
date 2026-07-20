@@ -1,7 +1,11 @@
 package io.github.jerryt92.j2agent.service.rag;
 
+import io.github.jerryt92.j2agent.model.FileDto;
+import io.github.jerryt92.j2agent.service.file.StaticFileService;
 import org.apache.commons.lang3.StringUtils;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 
@@ -11,6 +15,7 @@ import java.util.Locale;
 public final class RagSourcePathUtils {
 
     private static final String RAG_SYSTEM_SOURCE = "rag-system";
+    private static final String REPO_FILE_PATH_MARKER = "/file/repo/";
 
     /** 与 {@link io.github.jerryt92.j2agent.service.rag.knowledge.repo.KnowledgeRepoSyncService} 入库后缀一致。 */
     private static final List<String> KB_SOURCE_EXTENSIONS = List.of(".asciidoc", ".adoc", ".md");
@@ -30,6 +35,19 @@ public final class RagSourcePathUtils {
             return null;
         }
         path = path.replace('\\', '/');
+        if (path.contains(REPO_FILE_PATH_MARKER)) {
+            String fromUrl = StaticFileService.extractRepoRelativePath(path);
+            if (StringUtils.isNotBlank(fromUrl)) {
+                path = fromUrl;
+            }
+        }
+        if (path.contains("%")) {
+            try {
+                path = URLDecoder.decode(path, StandardCharsets.UTF_8);
+            } catch (IllegalArgumentException ignored) {
+                // 保留原值，避免畸形编码导致来源丢失
+            }
+        }
         while (path.startsWith("./")) {
             path = path.substring(2);
         }
@@ -55,6 +73,28 @@ public final class RagSourcePathUtils {
     /** 路径是否可解析为知识库文档来源。 */
     public static boolean isKbSourceRelativePath(Object raw) {
         return normalizeKbSourceRelativePath(raw) != null;
+    }
+
+    /**
+     * RAG 来源去重键：优先规范化相对路径，否则从 repo 直链反解；无法识别时回退 url。
+     */
+    public static String sourceDedupeKey(FileDto fileDto) {
+        if (fileDto == null) {
+            return null;
+        }
+        String fromRelative = normalizeKbSourceRelativePath(fileDto.getRelativePath());
+        if (fromRelative != null) {
+            return fromRelative;
+        }
+        if (StringUtils.isNotBlank(fileDto.getUrl())) {
+            String normalizedUrl = StaticFileService.normalizeRepoFileUrl(fileDto.getUrl());
+            String fromUrl = normalizeKbSourceRelativePath(StaticFileService.extractRepoRelativePath(normalizedUrl));
+            if (fromUrl != null) {
+                return fromUrl;
+            }
+            return normalizedUrl.trim();
+        }
+        return null;
     }
 
     private static boolean hasKbSourceExtension(String path) {

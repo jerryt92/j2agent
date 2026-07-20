@@ -166,6 +166,28 @@ class TranslatorRagSourceHistoryTest {
     }
 
     @Test
+    void shouldDedupeDuplicateRelativePathsInRagInfosJson() {
+        FileDto fileA = new FileDto()
+                .id(1)
+                .fullFileName("a.md")
+                .relativePath("docs/a.md")
+                .url(StaticFileService.toRepoFileUrl("docs/a.md"));
+        FileDto fileADup = new FileDto()
+                .id(2)
+                .fullFileName("a.md")
+                .relativePath("./docs/a.md")
+                .url(StaticFileService.toRepoFileUrl("docs/a.md"));
+        String ragInfosJson = JSON.toJSONString(List.of(
+                new RagInfoDto().srcFile(fileA),
+                new RagInfoDto().srcFile(fileADup)));
+
+        List<FileDto> files = Translator.parseSrcFilesFromRagInfosJson(ragInfosJson);
+
+        assertEquals(1, files.size());
+        assertEquals("docs/a.md", files.getFirst().getRelativePath());
+    }
+
+    @Test
     void shouldDedupeSrcFilesByRelativePathNotHashId() {
         FileDto fileA = new FileDto()
                 .id(1)

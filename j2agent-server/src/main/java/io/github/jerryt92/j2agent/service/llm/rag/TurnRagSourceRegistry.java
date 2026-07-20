@@ -12,6 +12,7 @@ import io.github.jerryt92.j2agent.service.llm.AgentEventBuilder;
 import io.github.jerryt92.j2agent.service.llm.AgentTurnStateMachine;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
 import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
+import io.github.jerryt92.j2agent.service.rag.RagSourcePathUtils;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -206,16 +207,7 @@ public final class TurnRagSourceRegistry {
     }
 
     private static String pathKey(FileDto fileDto) {
-        if (fileDto == null) {
-            return null;
-        }
-        if (StringUtils.hasText(fileDto.getRelativePath())) {
-            return fileDto.getRelativePath().replace('\\', '/');
-        }
-        if (StringUtils.hasText(fileDto.getUrl())) {
-            return fileDto.getUrl();
-        }
-        return null;
+        return RagSourcePathUtils.sourceDedupeKey(fileDto);
     }
 
     private static void pushSrcFilePatch(Holder holder) {

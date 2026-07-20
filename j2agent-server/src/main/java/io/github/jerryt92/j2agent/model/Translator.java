@@ -12,6 +12,7 @@ import io.github.jerryt92.j2agent.service.llm.ChatContextBo;
 import io.github.jerryt92.j2agent.service.llm.TurnStepItem;
 import io.github.jerryt92.j2agent.service.llm.memory.ChatMemoryMessageCodec;
 import io.github.jerryt92.j2agent.service.llm.reasoning.AssistantMessageReasoningExtractor;
+import io.github.jerryt92.j2agent.service.rag.RagSourcePathUtils;
 import io.github.jerryt92.j2agent.service.rag.knowledge.bo.KnowledgeVectorBo;
 import io.github.jerryt92.j2agent.service.rag.vdb.milvus.MilvusSchemaDefinition;
 import io.github.jerryt92.j2agent.utils.HashUtil;
@@ -27,7 +28,6 @@ import org.springframework.util.CollectionUtils;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -234,14 +234,9 @@ public final class Translator {
         messageDto.setFeedback(io.github.jerryt92.j2agent.model.MessageDto.FeedbackEnum.fromValue(message.getFeedback().getValue()));
         messageDto.setContent(message.getContent());
         if (!CollectionUtils.isEmpty(message.getRagInfos())) {
-            Map<Integer, FileDto> fileDtoMap = new HashMap<>();
-            for (RagInfoDto ragInfoDto : message.getRagInfos()) {
-                if (ragInfoDto.getSrcFile() != null) {
-                    fileDtoMap.put(ragInfoDto.getSrcFile().getId(), ragInfoDto.getSrcFile());
-                }
-            }
-            if (!CollectionUtils.isEmpty(fileDtoMap)) {
-                messageDto.setSrcFile(new ArrayList<>(fileDtoMap.values()));
+            List<FileDto> fileDtos = parseSrcFilesFromRagInfosJson(JSON.toJSONString(message.getRagInfos()));
+            if (!CollectionUtils.isEmpty(fileDtos)) {
+                messageDto.setSrcFile(fileDtos);
             }
         }
         return messageDto;
@@ -476,9 +471,7 @@ public final class Translator {
             }
             FileDto srcFile = ragInfoDto.getSrcFile();
             normalizeRepoFileDto(srcFile);
-            String dedupeKey = StringUtils.isNotBlank(srcFile.getRelativePath())
-                    ? srcFile.getRelativePath().replace('\\', '/')
-                    : (StringUtils.isNotBlank(srcFile.getUrl()) ? srcFile.getUrl() : null);
+            String dedupeKey = RagSourcePathUtils.sourceDedupeKey(srcFile);
             if (dedupeKey == null) {
                 dedupeKey = "idx-" + deduped.size();
             }

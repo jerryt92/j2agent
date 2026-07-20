@@ -191,4 +191,24 @@ class RagSourceFileServiceTest {
         assertEquals(1, resolved.srcFiles().size());
         assertEquals(path, resolved.srcFiles().getFirst().getRelativePath());
     }
+
+    @Test
+    void shouldDedupeSameSourceFileWithDifferentMetadataRepresentations() {
+        String path = "docs/shared.md";
+        Document byRelativePath = Document.builder()
+                .text("chunk-a")
+                .metadata(Map.of("sourceFile", path, "textChunkId", "id-a"))
+                .build();
+        Document byEncodedPath = Document.builder()
+                .text("chunk-b")
+                .metadata(Map.of("sourceFile", "docs%2Fshared.md", "textChunkId", "id-b"))
+                .build();
+
+        RagSourceFileService.ResolvedRagSources resolved =
+                ragSourceFileService.resolveUniqueMdSources(List.of(byRelativePath, byEncodedPath));
+
+        assertEquals(1, resolved.srcFiles().size());
+        assertEquals(path, resolved.srcFiles().getFirst().getRelativePath());
+        assertEquals(1, resolved.stats().skippedDuplicate());
+    }
 }
