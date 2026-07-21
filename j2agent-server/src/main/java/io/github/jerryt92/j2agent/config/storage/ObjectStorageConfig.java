@@ -5,6 +5,7 @@ import io.github.jerryt92.j2agent.service.file.oss.provider.MinioObjectStorageSe
 import io.github.jerryt92.j2agent.service.file.oss.provider.OssObjectStorageService;
 import io.github.jerryt92.j2agent.service.file.oss.provider.QiniuObjectStorageService;
 import io.github.jerryt92.j2agent.service.file.oss.provider.R2ObjectStorageService;
+import io.github.jerryt92.j2agent.service.file.oss.provider.RustfsObjectStorageService;
 
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
@@ -35,6 +36,7 @@ public class ObjectStorageConfig {
         requireText(properties.getBucket(), "j2agent.storage.bucket");
         return switch (properties.getType()) {
             case MINIO -> createMinioService(properties);
+            case RUSTFS -> createRustfsService(properties);
             case OSS -> createOssService(properties);
             case QINIU -> createQiniuService(properties);
             case R2 -> createR2Service(properties);
@@ -44,6 +46,11 @@ public class ObjectStorageConfig {
     private ObjectStorageService createMinioService(ObjectStorageProperties properties) {
         S3Clients clients = createS3Clients(properties.getS3(), "j2agent.storage.s3");
         return new MinioObjectStorageService(clients.s3Client(), clients.presigner(), properties.getBucket());
+    }
+
+    private ObjectStorageService createRustfsService(ObjectStorageProperties properties) {
+        S3Clients clients = createS3Clients(properties.getS3(), "j2agent.storage.s3");
+        return new RustfsObjectStorageService(clients.s3Client(), clients.presigner(), properties.getBucket());
     }
 
     private ObjectStorageService createOssService(ObjectStorageProperties properties) {

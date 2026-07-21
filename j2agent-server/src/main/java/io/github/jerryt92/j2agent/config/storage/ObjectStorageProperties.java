@@ -38,6 +38,7 @@ public class ObjectStorageProperties {
 
     public enum StorageType {
         MINIO,
+        RUSTFS,
         OSS,
         QINIU,
         R2

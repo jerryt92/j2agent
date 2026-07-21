@@ -6,6 +6,7 @@ import io.github.jerryt92.j2agent.service.file.oss.provider.MinioObjectStorageSe
 import io.github.jerryt92.j2agent.service.file.oss.provider.OssObjectStorageService;
 import io.github.jerryt92.j2agent.service.file.oss.provider.QiniuObjectStorageService;
 import io.github.jerryt92.j2agent.service.file.oss.provider.R2ObjectStorageService;
+import io.github.jerryt92.j2agent.service.file.oss.provider.RustfsObjectStorageService;
 
 import org.junit.jupiter.api.Test;
 
@@ -23,6 +24,16 @@ class ObjectStorageConfigTest {
         properties.getS3().setSecretAccessKey("secret-access-key");
 
         assertInstanceOf(MinioObjectStorageService.class, config.objectStorageService(properties));
+    }
+
+    @Test
+    void shouldCreateRustfsService() {
+        ObjectStorageProperties properties = baseProperties(ObjectStorageProperties.StorageType.RUSTFS);
+        properties.getS3().setEndpoint("http://127.0.0.1:9000");
+        properties.getS3().setAccessKeyId("access-key-id");
+        properties.getS3().setSecretAccessKey("secret-access-key");
+
+        assertInstanceOf(RustfsObjectStorageService.class, config.objectStorageService(properties));
     }
 
     @Test
