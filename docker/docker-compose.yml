@@ -65,16 +65,25 @@ services:
   rustfs:
     image: *rustfs_image
     platform: linux/amd64
+    user: root
+    entrypoint: [ "/bin/sh", "-c" ]
+    command:
+      - |
+        mkdir -p /data /logs
+        chown -R 10001:10001 /data /logs
+        exec /usr/bin/rustfs /data
     environment:
       RUSTFS_ACCESS_KEY: "${RUSTFS_ACCESS_KEY}"
       RUSTFS_SECRET_KEY: "${RUSTFS_SECRET_KEY}"
       RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_OBS_LOG_DIRECTORY: /logs
     ports:
       # 宿主机默认端口取 RustFS 默认容器端口前缀加 1：9000->19000，9001->19001
       - "${RUSTFS_API_PORT}:9000"
       - "${RUSTFS_CONSOLE_PORT}:9001"
     volumes:
       - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}rustfs${DIR_PATH_SEPARATOR}data:/data
+      - ${J2AGENT_VOLUMES_PATH}${DIR_PATH_SEPARATOR}volumes${DIR_PATH_SEPARATOR}rustfs${DIR_PATH_SEPARATOR}logs:/logs
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://127.0.0.1:9000/health" ]
       interval: 15s
@@ -163,9 +172,9 @@ services:
       J2AGENT_STORAGE_ACCESS_MODE: "${J2AGENT_STORAGE_ACCESS_MODE:-proxy}"
       J2AGENT_STORAGE_SYNC_RETENTION_DAYS: "${J2AGENT_STORAGE_SYNC_RETENTION_DAYS}"
       J2AGENT_STORAGE_SYNC_CLEANUP_CRON: "${J2AGENT_STORAGE_SYNC_CLEANUP_CRON}"
-      OSS_ENDPOINT: "${OSS_ENDPOINT}"
-      OSS_ACCESS_KEY_ID: "${OSS_ACCESS_KEY_ID}"
-      OSS_ACCESS_KEY_SECRET: "${OSS_ACCESS_KEY_SECRET}"
+      ALIYUN_OSS_ENDPOINT: "${ALIYUN_OSS_ENDPOINT}"
+      ALIYUN_OSS_ACCESS_KEY_ID: "${ALIYUN_OSS_ACCESS_KEY_ID}"
+      ALIYUN_OSS_ACCESS_KEY_SECRET: "${ALIYUN_OSS_ACCESS_KEY_SECRET}"
       QINIU_ACCESS_KEY: "${QINIU_ACCESS_KEY}"
       QINIU_SECRET_KEY: "${QINIU_SECRET_KEY}"
       QINIU_DOMAIN: "${QINIU_DOMAIN}"
