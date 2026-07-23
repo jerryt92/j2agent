@@ -2,6 +2,7 @@ package io.github.jerryt92.j2agent.service.llm.agent.builtin;
 
 import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
 import io.github.jerryt92.j2agent.service.llm.universal.UniversalAssistantConstants;
+import io.github.jerryt92.j2agent.model.I18nString;
 import io.github.jerryt92.j2agent.service.rag.inf.DynamicKnowledgeCollectionsRetriever;
 import io.github.jerryt92.j2agent.service.rag.retrieval.Retriever;
 import org.springframework.ai.rag.retrieval.search.DocumentRetriever;
@@ -24,13 +25,17 @@ public class KnowledgeQaAssistantAgent extends AiAgent {
     }
 
     @Override
-    public String getAgentName() {
-        return UniversalAssistantConstants.KNOWLEDGE_QA_DISPLAY_NAME;
+    public I18nString getAgentName() {
+        return new I18nString()
+                .zhCN(UniversalAssistantConstants.KNOWLEDGE_QA_DISPLAY_NAME)
+                .enUS("Knowledge QA Assistant");
     }
 
     @Override
-    public String getAgentDescription() {
-        return "按用户选择的一个或多个知识库进行问答。";
+    public I18nString getAgentDescription() {
+        return new I18nString()
+                .zhCN("按用户选择的一个或多个知识库进行问答。")
+                .enUS("Answer questions using one or more knowledge bases selected by the user.");
     }
 
     @Override

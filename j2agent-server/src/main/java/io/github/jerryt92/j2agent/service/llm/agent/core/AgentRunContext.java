@@ -1,6 +1,7 @@
 package io.github.jerryt92.j2agent.service.llm.agent.core;
 
 import io.github.jerryt92.j2agent.model.ChatAttachmentDto;
+import io.github.jerryt92.j2agent.model.security.UserContextBo;
 import io.github.jerryt92.j2agent.service.llm.tool.ToolEventEmitter;
 
 import java.util.List;
@@ -15,6 +16,7 @@ public record AgentRunContext(
         String turnId,
         String conversationId,
         String agentId,
+        UserContextBo userContext,
         List<ChatAttachmentDto> attachments,
         List<String> knowledgeCollections,
         ToolEventEmitter toolEventEmitter,
@@ -24,5 +26,10 @@ public record AgentRunContext(
     public AgentRunContext {
         attachments = attachments == null ? List.of() : List.copyOf(attachments);
         knowledgeCollections = knowledgeCollections == null ? List.of() : List.copyOf(knowledgeCollections);
+    }
+
+    /** 从 userContext 取当前语言标识。 */
+    public String language() {
+        return userContext == null ? null : userContext.getLanguage();
     }
 }

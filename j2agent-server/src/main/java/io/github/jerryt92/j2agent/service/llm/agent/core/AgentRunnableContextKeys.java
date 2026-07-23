@@ -23,8 +23,14 @@ public final class AgentRunnableContextKeys {
     public static final String CONTEXT_KEY_USER_ID =
             AgentRunnableContextKeys.class.getName() + ".userId";
 
+    public static final String CONTEXT_KEY_USER_CONTEXT =
+            AgentRunnableContextKeys.class.getName() + ".userContext";
+
     public static final String CONTEXT_KEY_AGENT_ID =
             AgentRunnableContextKeys.class.getName() + ".agentId";
+
+    public static final String CONTEXT_KEY_LANGUAGE =
+            AgentRunnableContextKeys.class.getName() + ".language";
 
     public static final String CONTEXT_KEY_KNOWLEDGE_COLLECTIONS =
             AgentRunnableContextKeys.class.getName() + ".knowledgeCollections";

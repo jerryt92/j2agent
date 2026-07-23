@@ -14,6 +14,7 @@ import io.github.jerryt92.j2agent.model.ChatCallback;
 import io.github.jerryt92.j2agent.model.ChatRequestDto;
 import io.github.jerryt92.j2agent.model.ChatResponseDto;
 import io.github.jerryt92.j2agent.model.MessageDto;
+import io.github.jerryt92.j2agent.model.security.UserContextBo;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRouter;
 import io.github.jerryt92.j2agent.service.llm.agent.core.AgentRunContext;
 import io.github.jerryt92.j2agent.service.llm.agent.inf.AiAgent;
@@ -103,7 +104,12 @@ public class ChatService {
         contextChatCallbackMap.remove(contextId);
     }
 
-    public void handleChat(ChatCallback<AgentUiEventEnvelope> chatChatCallback, ChatRequestDto request, String userId, String agentId) {
+    public void handleChat(
+            ChatCallback<AgentUiEventEnvelope> chatChatCallback,
+            ChatRequestDto request,
+            UserContextBo userContext,
+            String agentId) {
+        String userId = userContext == null ? null : userContext.getUserId();
         String turnId = UUIDv7Utils.randomUUIDv7();
         ChatTurnCancellationRegistry.clear(turnId);
         AtomicLong seq = new AtomicLong(0L);
@@ -270,6 +276,7 @@ public class ChatService {
                     turnId,
                     turnConversationId,
                     resolvedAgentId,
+                    userContext,
                     finalAttachments,
                     knowledgeCollections,
                     toolEventEmitter,
@@ -462,7 +469,8 @@ public class ChatService {
                                             toolEventEmitter,
                                             finalAttachments,
                                             limitedUserMessage,
-                                            request.getManualOrchestrateAgentId()));
+                                            request.getManualOrchestrateAgentId(),
+                                            userContext));
                     if (outcome == UniversalAssistantOrchestratorService.OrchestrationOutcome.ORCHESTRATED) {
                         unbindThinkingOverride.run();
                         ChatTurnCancellationRegistry.clearDisposables(turnId);

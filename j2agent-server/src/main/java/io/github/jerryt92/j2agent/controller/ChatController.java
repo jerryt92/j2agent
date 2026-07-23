@@ -121,7 +121,8 @@ public class ChatController extends AbstractWebSocketHandler implements ChatApi 
      */
     @Override
     public ResponseEntity<AgentInfoList> listAgents() {
-        return ResponseEntity.ok(agentRouter.listRegisteredAgents());
+        UserContextBo session = loginService.getSession();
+        return ResponseEntity.ok(agentRouter.listRegisteredAgents(session == null ? null : session.getLanguage()));
     }
 
     @Override
@@ -197,7 +198,11 @@ public class ChatController extends AbstractWebSocketHandler implements ChatApi 
         };
         chatChatCallback.completeCall = () -> closeSession(wsSession);
         String agentId = (String) wsSession.getAttributes().get(AGENT_ID_ATTRIBUTE);
-        chatService.handleChat(chatChatCallback, chatRequestDto, userContextBo == null ? null : userContextBo.getUserId(), agentId);
+        chatService.handleChat(
+                chatChatCallback,
+                chatRequestDto,
+                userContextBo,
+                agentId);
     }
 
     /**
