@@ -82,8 +82,7 @@ public class ChatController extends AbstractWebSocketHandler implements ChatApi 
         UserContextBo session = loginService.getSession();
         ChatContextBo chatContextBo = chatContextService.getChatContext(contextId, session == null ? null : session.getUserId(), agentId);
         boolean ragSourceDisplayEnabled = UniversalAssistantConstants.isUniversalAssistant(agentId)
-                ? true
-                : agentRouter.route(agentId).isRagSourceDisplayEnabled();
+                || UniversalAssistantConstants.isKnowledgeQaAssistant(agentId) || agentRouter.route(agentId).isRagSourceDisplayEnabled();
         ChatContextDto dto = chatContextBo == null
                 ? new ChatContextDto().messages(List.of())
                 : Translator.translateToChatContextDto(chatContextBo, ragSourceDisplayEnabled);

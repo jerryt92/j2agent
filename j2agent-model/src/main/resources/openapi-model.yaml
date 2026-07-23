@@ -947,6 +947,11 @@ components:
         manualOrchestrateAgentId:
           type: string
           description: 通用助手手动直连的子智能体 ID；仅 universal_assistant 生效，传入后跳过编排决策
+        knowledgeCollections:
+          type: array
+          description: 通用知识库问答助手本轮选择的知识库 collection 列表；仅 knowledge_qa_assistant 生效
+          items:
+            type: string
     ChatResponseDto:
       type: object
       properties:

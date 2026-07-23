@@ -16,7 +16,13 @@ public record AgentRunContext(
         String conversationId,
         String agentId,
         List<ChatAttachmentDto> attachments,
+        List<String> knowledgeCollections,
         ToolEventEmitter toolEventEmitter,
         boolean subAgentCallRun,
         boolean userMessagePrePersisted) {
+
+    public AgentRunContext {
+        attachments = attachments == null ? List.of() : List.copyOf(attachments);
+        knowledgeCollections = knowledgeCollections == null ? List.of() : List.copyOf(knowledgeCollections);
+    }
 }

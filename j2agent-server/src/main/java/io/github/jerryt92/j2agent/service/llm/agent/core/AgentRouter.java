@@ -72,6 +72,7 @@ public class AgentRouter {
     public AgentInfoList listRegisteredAgents() {
         List<AgentInfoDto> items = agents.values().stream()
                 .filter(a -> !UniversalAssistantConstants.isUniversalAssistant(a.getAgentId()))
+                .filter(a -> !UniversalAssistantConstants.isKnowledgeQaAssistant(a.getAgentId()))
                 .sorted(Comparator.comparingInt(AiAgent::getSort)
                         .thenComparing(AiAgent::getAgentId))
                 .map(a -> new AgentInfoDto()
@@ -91,6 +92,7 @@ public class AgentRouter {
     public List<AiAgent> listCallableSubAgents() {
         return agents.values().stream()
                 .filter(a -> !UniversalAssistantConstants.isUniversalAssistant(a.getAgentId()))
+                .filter(a -> !UniversalAssistantConstants.isKnowledgeQaAssistant(a.getAgentId()))
                 .sorted(Comparator.comparingInt(AiAgent::getSort)
                         .thenComparing(AiAgent::getAgentId))
                 .collect(Collectors.toList());

@@ -105,6 +105,7 @@ public class UniversalSubAgentCallService {
                 specialistConversationId,
                 trimmedAgentId,
                 attachments,
+                List.of(),
                 request.toolEventEmitter(),
                 true,
                 false);

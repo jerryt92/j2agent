@@ -26,6 +26,9 @@ public final class AgentRunnableContextKeys {
     public static final String CONTEXT_KEY_AGENT_ID =
             AgentRunnableContextKeys.class.getName() + ".agentId";
 
+    public static final String CONTEXT_KEY_KNOWLEDGE_COLLECTIONS =
+            AgentRunnableContextKeys.class.getName() + ".knowledgeCollections";
+
     /**
      * 子智能体调用标记：为 true 时记忆 Advisor 不读写子智能体记忆表（无状态子调用，兼容旧 Orchestrator）。
      */

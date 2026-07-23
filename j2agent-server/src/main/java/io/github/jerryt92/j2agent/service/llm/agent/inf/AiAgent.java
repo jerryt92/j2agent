@@ -279,12 +279,22 @@ public abstract class AiAgent {
         runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_TURN_ID, context.turnId());
         runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_USER_ID, context.userId());
         runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_AGENT_ID, context.agentId());
+        if (!context.knowledgeCollections().isEmpty()) {
+            runnableConfig.context().put(
+                    AgentRunnableContextKeys.CONTEXT_KEY_KNOWLEDGE_COLLECTIONS,
+                    context.knowledgeCollections());
+        }
         if (context.subAgentCallRun()) {
             runnableConfig.context().put(AgentRunnableContextKeys.CONTEXT_KEY_SUB_AGENT_CALL_RUN, Boolean.TRUE);
         }
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put(ChatMemory.CONVERSATION_ID, context.conversationId());
         metadata.put("attachments", context.attachments());
+        if (!context.knowledgeCollections().isEmpty()) {
+            metadata.put(
+                    AgentRunnableContextKeys.CONTEXT_KEY_KNOWLEDGE_COLLECTIONS,
+                    context.knowledgeCollections());
+        }
         if (context.subAgentCallRun()) {
             metadata.put(ReactCompatibleMessageChatMemoryAdvisor.META_SUB_AGENT_CALL_RUN, Boolean.TRUE);
         }

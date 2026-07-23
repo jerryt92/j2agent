@@ -46,9 +46,12 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import reactor.core.Disposable;
 import reactor.core.Exceptions;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -251,6 +254,11 @@ public class ChatService {
             agentChatMemoryRef.set(aiAgentForConversation.getChatMemory());
             final ChatMemory agentChatMemory = agentChatMemoryRef.get();
             final boolean universalAssistant = UniversalAssistantConstants.isUniversalAssistant(resolvedAgentId);
+            final List<String> knowledgeCollections = normalizeKnowledgeCollections(request.getKnowledgeCollections());
+            if (UniversalAssistantConstants.isKnowledgeQaAssistant(resolvedAgentId)
+                    && knowledgeCollections.isEmpty()) {
+                throw new IllegalArgumentException("Knowledge collections are required.");
+            }
             if (universalAssistant) {
                 ChatTurnLifecycle.persistTurnUserMessage(
                         agentChatMemory, turnConversationId, limitedUserMessage, finalAttachments);
@@ -263,6 +271,7 @@ public class ChatService {
                     turnConversationId,
                     resolvedAgentId,
                     finalAttachments,
+                    knowledgeCollections,
                     toolEventEmitter,
                     false,
                     universalAssistant);
@@ -681,6 +690,9 @@ public class ChatService {
                 if (msg.contains("No user message")) {
                     return "noUserMessage";
                 }
+                if (msg.contains("Knowledge collections are required")) {
+                    return "knowledgeCollectionsRequired";
+                }
             }
         }
         if (LlmProviderErrorFormatter.isProviderCallFailure(t)) {
@@ -847,6 +859,20 @@ public class ChatService {
             }
         }
         throw new IllegalArgumentException("No user message found in request.");
+    }
+
+    private static List<String> normalizeKnowledgeCollections(List<String> rawCollections) {
+        if (CollectionUtils.isEmpty(rawCollections)) {
+            return List.of();
+        }
+        Set<String> normalized = new LinkedHashSet<>();
+        for (String raw : rawCollections) {
+            String collection = StringUtils.trimToNull(raw);
+            if (collection != null) {
+                normalized.add(collection);
+            }
+        }
+        return new ArrayList<>(normalized);
     }
 
     /**
