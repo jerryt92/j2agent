@@ -508,7 +508,25 @@ components:
         data:
           type: array
           items:
-            type: string
+            $ref: '#/components/schemas/KnowledgeCollectionDto'
+    KnowledgeCollectionDto:
+      type: object
+      properties:
+        collection:
+          type: string
+          description: Milvus collection 名称，用于检索请求
+        name:
+          type: string
+          description: 前端展示名称
+        repoCode:
+          type: string
+          description: 知识库目录名
+        repositoryName:
+          type: string
+          description: 仓库级展示名称
+        type:
+          type: string
+          description: 仓库类型
     KnowledgeSyncResult:
       type: object
       description: 知识库目录同步提交结果（异步接受或拒绝）
