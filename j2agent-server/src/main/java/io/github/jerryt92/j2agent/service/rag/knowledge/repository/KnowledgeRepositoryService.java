@@ -123,7 +123,7 @@ public class KnowledgeRepositoryService {
                 request.getRepoCode(),
                 deriveRepoCodeFromRemoteUrl(remoteUrl)));
         if (mapper.selectByRepoCode(repoCode) != null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "repository remote config already exists");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "repository directory name already exists");
         }
         Path repoPath = resolveRepoPath(repoCode);
         if (Files.exists(repoPath)) {
