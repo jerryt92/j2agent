@@ -12,5 +12,5 @@ esac
 
 sed \
   -e "s|__J2AGENT_PORT__|${J2AGENT_PORT}|g" \
-  -e "s|__J2AGENT_NGINX_PORT__|${J2AGENT_NGINX_PORT}|g" \
+  -e "s|__J2AGENT_NGINX_HTTPS_PORT__|${J2AGENT_NGINX_HTTPS_PORT}|g" \
   "$template" > /etc/nginx/conf.d/10-http.conf

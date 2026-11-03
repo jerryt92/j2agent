@@ -199,11 +199,11 @@ services:
         /bin/sh /opt/j2agent/nginx-config/docker-entrypoint.d/10-configure-http.sh
         exec /docker-entrypoint.sh nginx -g 'daemon off;'
     ports:
-      - "${J2AGENT_NGINX_PORT:-30112}:443"
-      - "${J2AGENT_HTTP_PORT:-30113}:80"
+      - "${J2AGENT_NGINX_HTTPS_PORT:-30112}:443"
+      - "${J2AGENT_NGINX_HTTP_PORT:-30113}:80"
     environment:
       J2AGENT_PORT: "${J2AGENT_PORT}"
-      J2AGENT_NGINX_PORT: "${J2AGENT_NGINX_PORT:-30112}"
+      J2AGENT_NGINX_HTTPS_PORT: "${J2AGENT_NGINX_HTTPS_PORT:-30112}"
       J2AGENT_ENFORCE_HTTPS: "${J2AGENT_ENFORCE_HTTPS:-false}"
       J2AGENT_HTTPS_CERT_FILE: "${J2AGENT_HTTPS_CERT_FILE:-j2agent.crt}"
       J2AGENT_HTTPS_KEY_FILE: "${J2AGENT_HTTPS_KEY_FILE:-j2agent.key}"

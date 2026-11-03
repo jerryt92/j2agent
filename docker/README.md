@@ -29,7 +29,7 @@ docker compose up -d --build
 然后编辑 `.env`：
 
 ```properties
-J2AGENT_NGINX_PORT=30112
+J2AGENT_NGINX_HTTPS_PORT=30112
 ```
 
 再按默认命令启动：
@@ -38,7 +38,7 @@ J2AGENT_NGINX_PORT=30112
 docker compose up -d --build
 ```
 
-访问 `https://localhost:${J2AGENT_NGINX_PORT}`。Nginx 从 `${J2AGENT_VOLUMES_PATH}/volumes/nginx/certs` 只读加载证书和私钥，并反向代理到容器内的 `j2agent:${J2AGENT_PORT}`。自签证书会触发浏览器安全提示，生产环境请替换为可信 CA 签发的证书。
+访问 `https://localhost:${J2AGENT_NGINX_HTTPS_PORT}`。Nginx 从 `${J2AGENT_VOLUMES_PATH}/volumes/nginx/certs` 只读加载证书和私钥，并反向代理到容器内的 `j2agent:${J2AGENT_PORT}`。自签证书会触发浏览器安全提示，生产环境请替换为可信 CA 签发的证书。
 
 Nginx 每次启动前都会将 `docker/nginx` 中的默认模板与启动脚本覆盖复制到 `${J2AGENT_VOLUMES_PATH}/volumes/nginx/{templates,http-templates,docker-entrypoint.d}`，然后从该卷读取配置。服务器上的 Nginx 配置修改会在下次启动时被部署包默认配置覆盖。
 
@@ -53,7 +53,7 @@ Nginx 每次启动前都会将 `docker/nginx` 中的默认模板与启动脚本�
 HTTP 端口始终由 Nginx 监听；通过 `.env` 的开关决定直接 HTTP 访问或重定向到 HTTPS：
 
 ```properties
-J2AGENT_HTTP_PORT=30110
+J2AGENT_NGINX_HTTP_PORT=30110
 J2AGENT_ENFORCE_HTTPS=true
 ```
 

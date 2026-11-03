@@ -57,7 +57,7 @@ docker/gen-self-signed-cert.sh
 然后编辑 `docker/.env`：
 
 ```properties
-J2AGENT_NGINX_PORT=30112
+J2AGENT_NGINX_HTTPS_PORT=30112
 ```
 
 再按默认命令启动：
@@ -66,15 +66,15 @@ J2AGENT_NGINX_PORT=30112
 docker compose -f docker/docker-compose.yml up -d --build
 ```
 
-访问 `https://localhost:${J2AGENT_NGINX_PORT}`。Nginx 从 `${J2AGENT_VOLUMES_PATH}/volumes/nginx/certs` 只读加载证书和私钥，并反向代理到容器内 `j2agent:${J2AGENT_PORT}`。自签证书会触发浏览器安全提示，生产环境请替换为可信 CA 签发的证书。续期或替换证书后，在 `docker/` 目录执行 `./reload-nginx-cert.sh`；它会优雅 reload Nginx，不重启应用。
+访问 `https://localhost:${J2AGENT_NGINX_HTTPS_PORT}`。Nginx 从 `${J2AGENT_VOLUMES_PATH}/volumes/nginx/certs` 只读加载证书和私钥，并反向代理到容器内 `j2agent:${J2AGENT_PORT}`。自签证书会触发浏览器安全提示，生产环境请替换为可信 CA 签发的证书。续期或替换证书后，在 `docker/` 目录执行 `./reload-nginx-cert.sh`；它会优雅 reload Nginx，不重启应用。
 
 可配置项（`docker/.env`，参考 `docker/.env.example`）：
 
 - `J2AGENT_VOLUMES_PATH`：宿主机配置/数据根目录（默认 `~/j2agent`）
 - `COMPOSE_PROJECT_NAME`：容器前缀（默认 `j2agent`）
 - `J2AGENT_PORT`：应用容器端口（默认 `30111`，不映射到宿主机）
-- `J2AGENT_NGINX_PORT`：Nginx HTTPS 宿主机端口（默认 `30112`）
-- `J2AGENT_HTTP_PORT`：Nginx HTTP 宿主机端口（默认 `30113`）
+- `J2AGENT_NGINX_HTTPS_PORT`：Nginx HTTPS 宿主机端口（默认 `30112`）
+- `J2AGENT_NGINX_HTTP_PORT`：Nginx HTTP 宿主机端口（默认 `30113`）
 - `J2AGENT_ENFORCE_HTTPS`：`true` 时 HTTP 返回 308 到 HTTPS；`false`（默认）时 HTTP 直接反代应用
 - `J2AGENT_HTTPS_CERT_FILE` / `J2AGENT_HTTPS_KEY_FILE`：PEM 证书与私钥文件名，兼容 nginx 常用证书格式；宿主机目录为 `${J2AGENT_VOLUMES_PATH}/volumes/nginx/certs`
 - `TAG`：镜像标签
@@ -82,7 +82,7 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 访问：
 
-- UI：`https://localhost:30112/`（端口以 `J2AGENT_NGINX_PORT` 为准）
+- UI：`https://localhost:30112/`（端口以 `J2AGENT_NGINX_HTTPS_PORT` 为准）
 - 健康检查：`https://localhost:30112/v1/api/j2agent/health-check`
 - HTTP：`http://localhost:30113/`（`J2AGENT_ENFORCE_HTTPS=true` 时重定向到 HTTPS）
 

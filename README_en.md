@@ -51,7 +51,7 @@ docker compose -f docker/docker-compose.yml up -d --build
 Nginx exposes HTTPS while the application port remains internal to the Compose network. Generate certificates before the first deployment and set:
 
 ```properties
-J2AGENT_NGINX_PORT=30112
+J2AGENT_NGINX_HTTPS_PORT=30112
 ```
 
 Configurable options (`docker/.env`, see `docker/.env.example`):
@@ -59,8 +59,8 @@ Configurable options (`docker/.env`, see `docker/.env.example`):
 - `J2AGENT_VOLUMES_PATH`: Host configuration/data root directory (default `~/j2agent`)
 - `COMPOSE_PROJECT_NAME`: Container prefix (default `j2agent`)
 - `J2AGENT_PORT`: Application container port (default `30111`; not published to the host)
-- `J2AGENT_NGINX_PORT`: Nginx HTTPS host port (default `30112`)
-- `J2AGENT_HTTP_PORT`: Nginx HTTP host port (default `30113`)
+- `J2AGENT_NGINX_HTTPS_PORT`: Nginx HTTPS host port (default `30112`)
+- `J2AGENT_NGINX_HTTP_PORT`: Nginx HTTP host port (default `30113`)
 - `J2AGENT_ENFORCE_HTTPS`: `true` returns a 308 redirect from HTTP to HTTPS; `false` (default) proxies HTTP directly
 - `J2AGENT_HTTPS_CERT_FILE` / `J2AGENT_HTTPS_KEY_FILE`: PEM certificate and private key file names in `${J2AGENT_VOLUMES_PATH}/volumes/nginx/certs`
 - `TAG`: Image tag
@@ -68,7 +68,7 @@ Configurable options (`docker/.env`, see `docker/.env.example`):
 
 Access:
 
-- UI: `https://localhost:30112/` (port follows `J2AGENT_NGINX_PORT`)
+- UI: `https://localhost:30112/` (port follows `J2AGENT_NGINX_HTTPS_PORT`)
 - Health check: `https://localhost:30112/v1/api/j2agent/health-check`
 - HTTP: `http://localhost:30113/` (redirects to HTTPS when `J2AGENT_ENFORCE_HTTPS=true`)
 
