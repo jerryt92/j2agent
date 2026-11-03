@@ -218,7 +218,7 @@ public class UniversalAssistantOrchestratorService {
             routingQuery = intentQueryService.buildRoutingQuery(
                     chatMemory, request.parentConversationId(), messages, formatTrace(trace));
             candidates = intentQueryService.queryIntentAgents(
-                    request.parentConversationId(), routingQuery, request.turnId());
+                    request.parentConversationId(), routingQuery, request.turnId(), callableSubAgents);
             round++;
         }
 

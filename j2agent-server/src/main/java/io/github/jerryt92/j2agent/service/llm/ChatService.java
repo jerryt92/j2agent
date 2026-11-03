@@ -317,7 +317,26 @@ public class ChatService {
                             "msgPreview", AgentRunLogger.preview(latestUserMessage)),
                     "user message accepted");
             AtomicLong streamStartedAtMs = new AtomicLong(0L);
+            AtomicLong turnStartedAtMs = new AtomicLong(System.currentTimeMillis());
             chatChatCallback.completeCall = () -> {
+                if (!terminated.get()) {
+                    boolean hasAnswer;
+                    int answerChars;
+                    int reasoningChars;
+                    synchronized (streamedTextLock) {
+                        hasAnswer = StringUtils.isNotBlank(streamedContent.toString());
+                        answerChars = streamedContent.length();
+                        reasoningChars = streamedReasoning.length();
+                    }
+                    boolean hasQuestion = StringUtils.isNotBlank(TurnAskQuestionRegistry.drainQuestionJson(turnConversationId));
+                    AgentRunLogger.info(runLogSnapshot, AgentRunEventType.CHAT,
+                            AgentRunLogger.kv("phase", "delivery", "answerChars", answerChars, "reasoningChars", reasoningChars, "hasAnswer", hasAnswer, "hasQuestion", hasQuestion),
+                            "checking turn output before completion");
+                    if (!hasAnswer && !hasQuestion) {
+                        chatChatCallback.errorCall.accept(new IllegalStateException("LLM 流式响应为空：未产生有效回答或提问"));
+                        return;
+                    }
+                }
                 if (!terminated.compareAndSet(false, true)) {
                     releaseActiveTurn.run();
                     return;
@@ -351,7 +370,7 @@ public class ChatService {
                         TurnAskQuestionRegistry.clear(turnConversationId);
                         SubAgentStreamBridge.unbind(turnId);
                         ChatTurnCancellationRegistry.clear(turnId);
-                        logTurnEnd(runLogSnapshot, streamStartedAtMs, turnStepRecorder, AgentState.COMPLETED);
+                        logTurnEnd(runLogSnapshot, turnStartedAtMs, turnStepRecorder, AgentState.COMPLETED);
                         flushTurnTrace.run();
                         chatOutputEventCache.clearSnapshot(contextId, resolvedAgentId);
                         runOriginalCompleteCall(originalCompleteCall);
@@ -383,7 +402,7 @@ public class ChatService {
                                 "bufferedLen", bufferedLen),
                         LlmProviderErrorFormatter.formatForLog(t),
                         t);
-                logTurnEnd(runLogSnapshot, streamStartedAtMs, turnStepRecorder, AgentState.FAILED);
+                logTurnEnd(runLogSnapshot, turnStartedAtMs, turnStepRecorder, AgentState.FAILED);
                 terminateTurnWithFailure(
                         chatChatCallback,
                         contextId,
@@ -425,7 +444,7 @@ public class ChatService {
                     TurnRagSourceRegistry.clear(turnConversationId);
                     TurnAskQuestionRegistry.clear(turnConversationId);
                     SubAgentStreamBridge.unbind(turnId);
-                    logTurnEnd(runLogSnapshot, streamStartedAtMs, turnStepRecorder, AgentState.CANCELLED);
+                    logTurnEnd(runLogSnapshot, turnStartedAtMs, turnStepRecorder, AgentState.CANCELLED);
                     chatOutputEventCache.clearSnapshot(contextId, resolvedAgentId);
                     synchronized (turnLock) {
                         if (stateMachine.getState() != AgentState.COMPLETED

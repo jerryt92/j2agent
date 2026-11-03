@@ -75,6 +75,7 @@ public final class LlmBackedChatModelFactory {
         OpenAiApi.Builder apiBuilder = OpenAiApi.builder()
                 .baseUrl(cfg.getBaseUrl())
                 .apiKey(cfg.getApiKey() == null ? "" : cfg.getApiKey())
+                .restClientBuilder(LlmReactiveHttpClientFactory.createRestClientBuilder("llm-openai"))
                 .webClientBuilder(LlmReactiveHttpClientFactory.createWebClientBuilder("llm-openai"));
         if (StringUtils.isNotBlank(completionsPath)) {
             apiBuilder.completionsPath(completionsPath);
@@ -103,6 +104,7 @@ public final class LlmBackedChatModelFactory {
                 .baseUrl(baseUrl)
                 .apiKey(cfg.getApiKey() == null ? "" : cfg.getApiKey())
                 .completionsPath(completionsPath)
+                .restClientBuilder(LlmReactiveHttpClientFactory.createRestClientBuilder("llm-lm-studio"))
                 .webClientBuilder(LlmReactiveHttpClientFactory.createWebClientBuilder("llm-lm-studio"));
         OpenAiChatOptions.Builder optionsBuilder = OpenAiChatOptions.builder()
                 .model(cfg.getModelName())

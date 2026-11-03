@@ -1,6 +1,8 @@
 package io.github.jerryt92.j2agent.service.llm.agent.builtin.universalagent;
 
 import com.alibaba.fastjson2.JSON;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunLogger;
+import io.github.jerryt92.j2agent.logging.llm.AgentRunEventType;
 import com.alibaba.fastjson2.JSONObject;
 import io.github.jerryt92.j2agent.service.llm.LlmSyncService;
 import io.github.jerryt92.j2agent.service.llm.agent.builtin.OrchestrationTraceEntry;
@@ -104,22 +106,58 @@ public class UniversalOrchestrationDecisionService {
                 %s
                 """.formatted(
                 candidatesJson.trim(),
-                routingQuery.trim(),
+                StringUtils.defaultString(routingQuery).trim(),
                 traceBlock,
                 invokedBlock);
-        try {
-            Prompt prompt = new Prompt(List.of(
-                    new SystemMessage(DECISION_SYSTEM_PROMPT),
-                    new UserMessage(userBlock)));
-            String raw = llmSyncService.callAssistantText(prompt, conversationId);
+        long started = System.currentTimeMillis();
+        for (int attempt = 1; attempt <= 2; attempt++) {
             throwIfCancelled(turnId);
-            return parseDecision(raw);
-        } catch (TurnCancelledException ex) {
-            throw ex;
-        } catch (Exception ex) {
-            log.warn("orchestration decision LLM failed: {}", ex.toString());
-            return OrchestrationDecision.complete("decision LLM error");
+            logDecision(conversationId, "start", attempt, started, null, "", "");
+            try {
+                Prompt prompt = new Prompt(List.of(new SystemMessage(DECISION_SYSTEM_PROMPT), new UserMessage(userBlock)));
+                String raw = llmSyncService.callAssistantText(prompt, conversationId);
+                throwIfCancelled(turnId);
+                OrchestrationDecision decision = parseDecision(raw);
+                if (isValidDecision(raw)) {
+                    logDecision(conversationId, "result", attempt, started, decision, "", raw);
+                    return decision;
+                }
+                logDecision(conversationId, "invalid", attempt, started, decision, "invalid response", raw);
+            } catch (TurnCancelledException ex) {
+                throw ex;
+            } catch (Exception ex) {
+                logDecision(conversationId, "error", attempt, started, null, ex.toString(), "");
+            }
         }
+        OrchestrationDecision fallback = OrchestrationDecision.complete("decision unavailable after 2 attempts");
+        logDecision(conversationId, "fallback", 2, started, fallback, "", "");
+        return fallback;
+    }
+
+    private static boolean isValidDecision(String raw) {
+        if (StringUtils.isBlank(raw)) return false;
+        String json = extractJsonObject(raw);
+        if (json == null) return false;
+        try {
+            JSONObject obj = JSON.parseObject(json);
+            String action = obj.getString("action");
+            return "complete".equalsIgnoreCase(StringUtils.trim(action))
+                    || ("invoke".equalsIgnoreCase(StringUtils.trim(action)) && StringUtils.isNotBlank(obj.getString("agentId")));
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    private static void logDecision(String conversationId, String phase, int attempt, long started,
+                                    OrchestrationDecision decision, String error, String raw) {
+        AgentRunLogger.infoByConversationId(conversationId, AgentRunEventType.ORCHESTRATION_DECISION,
+                AgentRunLogger.kv("phase", phase, "attempt", attempt,
+                        "elapsedMs", System.currentTimeMillis() - started,
+                        "action", decision == null ? "" : decision.action(),
+                        "agentId", decision == null ? "" : decision.agentId(),
+                        "reason", decision == null ? "" : AgentRunLogger.preview(decision.reason()),
+                        "error", AgentRunLogger.preview(error)),
+                "orchestration decision; response=" + AgentRunLogger.preview(raw));
     }
 
     private void throwIfCancelled(String turnId) {

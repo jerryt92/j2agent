@@ -19,5 +19,6 @@ public enum AgentRunEventType {
     LLM_RETRY,
     /** 通用助手编排：开放意图召回 LLM */
     INTENT_RECALL,
+    ORCHESTRATION_DECISION,
     ERROR
 }

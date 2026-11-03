@@ -28,7 +28,7 @@ class UniversalOrchestrationDecisionServiceTest {
     @Test
     void decideThrowsWhenCancelledAfterLlmReturns() {
         LlmSyncService llmSyncService = Mockito.mock(LlmSyncService.class);
-        when(llmSyncService.callAssistantText(any(Prompt.class))).thenAnswer(invocation -> {
+        when(llmSyncService.callAssistantText(any(Prompt.class), any())).thenAnswer(invocation -> {
             ChatTurnCancellationRegistry.cancel("turn-1");
             return "{\"action\":\"complete\",\"reason\":\"ok\"}";
         });
@@ -40,6 +40,34 @@ class UniversalOrchestrationDecisionServiceTest {
                 Set.of(),
                 false,
                 "turn-1"));
+    }
+
+    @Test
+    void invalidDecisionRetriesBeforeFallingBack() {
+        LlmSyncService llm = Mockito.mock(LlmSyncService.class);
+        when(llm.callAssistantText(any(Prompt.class), any())).thenReturn("", "{\"action\":\"invoke\",\"agentId\":\"wiki\"}");
+        var decision = new UniversalOrchestrationDecisionService(llm).decide("[{\"agentId\":\"wiki\"}]", "routing", List.of(), Set.of(), false);
+        assertTrue(decision.isInvoke());
+        Mockito.verify(llm, Mockito.times(2)).callAssistantText(any(Prompt.class), any());
+    }
+
+    @Test
+    void repeatedInvalidDecisionFallsBackWithoutInvokingArbitraryAgent() {
+        LlmSyncService llm = Mockito.mock(LlmSyncService.class);
+        when(llm.callAssistantText(any(Prompt.class), any())).thenReturn("{\"action\":\"bogus\"}");
+        var decision = new UniversalOrchestrationDecisionService(llm).decide("[{\"agentId\":\"wiki\"}]", "routing", List.of(), Set.of(), false);
+        assertTrue(decision.isComplete());
+        assertEquals("decision unavailable after 2 attempts", decision.reason());
+        Mockito.verify(llm, Mockito.times(2)).callAssistantText(any(Prompt.class), any());
+    }
+
+    @Test
+    void explicitCompleteDoesNotRetry() {
+        LlmSyncService llm = Mockito.mock(LlmSyncService.class);
+        when(llm.callAssistantText(any(Prompt.class), any())).thenReturn("{\"action\":\"complete\",\"reason\":\"missing date\"}");
+        var decision = new UniversalOrchestrationDecisionService(llm).decide("[{\"agentId\":\"wiki\"}]", "routing", List.of(), Set.of(), false);
+        assertEquals("missing date", decision.reason());
+        Mockito.verify(llm).callAssistantText(any(Prompt.class), any());
     }
 
     @Test
